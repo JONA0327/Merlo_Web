@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -v)",
+      "Bash(php -l \"vendor/laravel/framework/src/Illuminate/Foundation/resources/exceptions/renderer/markdown.blade.php\")",
+      "WebSearch",
+      "Bash(./vendor/bin/pint app/Http/Controllers/Admin/AdminPackageController.php app/Http/Controllers/Admin/AdminUserController.php)",
+      "Bash(node drive-paqueteria-check.mjs)",
+      "Bash(node drive-qr-shot.mjs)"
+    ]
+  }
+}
