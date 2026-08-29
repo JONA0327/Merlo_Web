@@ -63,9 +63,12 @@
                                 </div>
 
                                 <div class="flex items-center gap-5">
-                                    <div class="text-right">
+                                    <div class="text-right space-y-0.5">
                                         <p class="text-xs uppercase tracking-[0.2em] text-[#2B1113]/50">Costo</p>
-                                        <p class="font-[Poppins] text-3xl font-extrabold text-[#8C1D2B]">{{ $trip->formatted_price }}</p>
+                                        <p class="font-[Poppins] text-2xl font-extrabold text-[#8C1D2B]">{{ $trip->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }} <span class="text-xs font-semibold text-[#2B1113]/40">ida</span></p>
+                                        @if ($trip->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP))
+                                            <p class="font-[Poppins] text-base font-bold text-[#8C1D2B]/80">{{ $trip->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP) }} <span class="text-[10px] font-semibold text-[#2B1113]/40">redondo</span></p>
+                                        @endif
                                     </div>
 
                                     @if ($trip->hasSeatMap())

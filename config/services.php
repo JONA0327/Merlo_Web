@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    // OpenPay sandbox (Mexico). Sandbox keys come from the dashboard
+    // when you sign up; production keys are issued after OpenPay's
+    // manual compliance review (see their docs).
+    'openpay' => [
+        'id' => env('OPENPAY_ID'),
+        'private_key' => env('OPENPAY_PRIVATE_KEY'),
+        'public_key' => env('OPENPAY_PUBLIC_KEY'),
+        'sandbox' => env('OPENPAY_SANDBOX', true),
+        'country' => env('OPENPAY_COUNTRY', 'MX'),
+    ],
+
 ];

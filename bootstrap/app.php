@@ -18,6 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'superadmin' => EnsureUserIsSuperAdmin::class,
             'paqueteria.access' => EnsureUserCanAccessPaqueteria::class,
         ]);
+
+        // OpenPay posts the webhook directly from their servers —
+        // there is no CSRF token to validate against. The controller
+        // verifies the payload (see OpenPayService::verifyWebhook)
+        // before acting on it.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/openpay',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

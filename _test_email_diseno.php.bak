@@ -1,0 +1,19 @@
+<?php
+require __DIR__ . '/vendor/autoload.php';
+$app = require __DIR__ . '/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+try {
+    $user = new \App\Models\User([
+        'name' => 'Jonathan',
+        'email' => 'jona03278@gmail.com',
+    ]);
+    $user->exists = true; // pretend it exists so views can use it
+
+    \Illuminate\Support\Facades\Mail::to('jona03278@gmail.com')
+        ->send(new \App\Mail\PasswordResetCodeMail($user, '482917'));
+
+    echo "OK - Correo con diseno enviado a jona03278@gmail.com" . PHP_EOL;
+} catch (\Throwable $e) {
+    echo "ERROR: " . $e->getMessage() . PHP_EOL;
+}

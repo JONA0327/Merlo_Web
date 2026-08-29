@@ -90,12 +90,22 @@
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label for="ticket_price" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Costo del boleto</label>
-                        <input id="ticket_price" name="ticket_price" type="text" value="{{ old('ticket_price', $route->ticket_price ?? $route->price) }}" placeholder="$650" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        @error('ticket_price')
-                            <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
-                        @enderror
+                    <div class="rounded-xl border border-[#8C1D2B]/20 bg-[#8C1D2B]/5 p-3 sm:col-span-2">
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-[#2B1113]/60">Precios del viaje</p>
+                        <div class="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                            <div>
+                                <span class="text-[10px] font-semibold text-[#2B1113]/40">Solo ida:</span>
+                                <span class="ml-1 font-[Poppins] text-base font-extrabold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }}</span>
+                            </div>
+                            <div>
+                                <span class="text-[10px] font-semibold text-[#2B1113]/40">Redondo:</span>
+                                <span class="ml-1 font-[Poppins] text-base font-extrabold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP) ?? '—' }}</span>
+                            </div>
+                        </div>
+                        <a href="{{ route('admin.precios.index') }}" class="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-[#8C1D2B] hover:text-[#6F1622]">
+                            Editar precios
+                            <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
+                        </a>
                     </div>
 
                     <div>

@@ -1,0 +1,17 @@
+<?php
+require __DIR__ . '/vendor/autoload.php';
+$app = require __DIR__ . '/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+try {
+    $users = User::all(['id', 'name', 'email', 'role', 'email_verified_at', 'created_at']);
+    echo "=== USERS ===" . PHP_EOL;
+    foreach ($users as $u) {
+        echo "ID: {$u->id} | Name: {$u->name} | Email: {$u->email} | Role: {$u->role} | Verified: " . ($u->email_verified_at ? 'yes' : 'no') . " | Created: {$u->created_at}" . PHP_EOL;
+    }
+} catch (\Throwable $e) {
+    echo "ERROR: " . $e->getMessage() . PHP_EOL;
+}

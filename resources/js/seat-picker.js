@@ -12,7 +12,23 @@ if (csrfToken) {
 const SEAT_SIZE = 40;
 const HOLD_MINUTES = 10;
 
+// Per-trip-type prices keyed by the same constants the controller uses.
+// When the customer toggles "Solo ida" / "Viaje redondo", the seat
+// picker reads from this map to update the subtotal and the hidden
+// trip_type form input.
+const PRICE_BY_TYPE = {
+    one_way: Number(config.priceOneWay ?? 0),
+    round_trip: Number(config.priceRoundTrip ?? 0),
+};
+let currentTripType = config.defaultTripType === 'round_trip' ? 'round_trip' : 'one_way';
+
 const AVAILABLE_COLORS = { fill: '#22C55E', stroke: '#15803D' };
+// "Other-type" seat: this seat is bookable in general, but NOT for
+// the trip type the customer currently has selected. Render it as a
+// dimmed version of the regular seat so it reads as "off" without
+// disappearing entirely (the customer might toggle to see the other
+// prices and want a sense of the layout).
+const OTHER_TYPE_COLORS = { fill: '#E5E7EB', stroke: '#9CA3AF' };
 const HELD_COLORS = { fill: '#FACC15', stroke: '#A16207' };
 const PURCHASED_COLORS = { fill: '#EF4444', stroke: '#991B1B' };
 const DISABLED_COLORS = { fill: '#D1D5DB', stroke: '#6B7280' };
@@ -136,9 +152,7 @@ const stage = new Konva.Stage({
     width: naturalWidth,
     height: naturalHeight,
 });
-const backgroundLayer = new Konva.Layer(contentOffset);
 const layer = new Konva.Layer(contentOffset);
-stage.add(backgroundLayer);
 stage.add(layer);
 
 // Shrink (never enlarge) the whole plan to fit whatever width the card
@@ -161,25 +175,6 @@ function fitStageToContainer() {
 
 window.addEventListener('resize', fitStageToContainer);
 fitStageToContainer();
-
-if (config.backgroundImageUrl) {
-    const imageObj = new Image();
-    imageObj.crossOrigin = 'anonymous';
-    imageObj.onload = () => {
-        const bgImage = new Konva.Image({
-            image: imageObj,
-            x: 0,
-            y: 0,
-            width: config.canvasWidth,
-            height: config.canvasHeight,
-            listening: false,
-            opacity: 0.6,
-        });
-        backgroundLayer.add(bgImage);
-        backgroundLayer.draw();
-    };
-    imageObj.src = config.backgroundImageUrl;
-}
 
 const form = document.getElementById('seat-form');
 const countEl = document.getElementById('seat-count');
@@ -219,7 +214,24 @@ function isSelectable(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (purchasedIds.has(seat.id)) return false;
     if (heldByOther.has(seat.id)) return false;
+    // Per-trip-type restriction set by the admin on the seat editor.
+    // A seat flagged 'one_way' is not bookable when the customer is on
+    // the round-trip toggle (and vice versa). 'both' is unrestricted.
+    const allowed = seat.allowed_trip_type ?? 'both';
+    if (allowed !== 'both' && allowed !== currentTripType) return false;
     return true;
+}
+
+// Like isSelectable but excluding the trip-type filter — used by
+// colorsFor so non-matching seats still show up as "dimmed" instead
+// of dropping off the canvas. Clicks on them are still blocked by
+// the listening=false flip below.
+function isOtherType(seat) {
+    if (seat.kind === 'object' || seat.type === 'disabled') return false;
+    if (purchasedIds.has(seat.id)) return false;
+    if (heldByOther.has(seat.id)) return false;
+    const allowed = seat.allowed_trip_type ?? 'both';
+    return allowed !== 'both' && allowed !== currentTripType;
 }
 
 function colorsFor(seat) {
@@ -228,15 +240,13 @@ function colorsFor(seat) {
         return { fill: hexToRgba(stroke, 0.05), stroke };
     }
     if (seat.kind === 'object' && seat.type === 'divider') {
-        // A "vitral"-style glass panel, not a solid block — needs to read as
-        // a subtle divider even placed right against (or slightly overlapping)
-        // a seat, never as an opaque box hiding what's under it.
         return { fill: hexToRgba(OBJECT_COLORS.stroke, 0.12), stroke: hexToRgba(OBJECT_COLORS.stroke, 0.5) };
     }
     if (seat.kind === 'object') return OBJECT_COLORS;
     if (seat.type === 'disabled') return DISABLED_COLORS;
     if (purchasedIds.has(seat.id)) return PURCHASED_COLORS;
     if (heldByOther.has(seat.id) || heldByMe.has(seat.id)) return HELD_COLORS;
+    if (isOtherType(seat)) return OTHER_TYPE_COLORS;
     return AVAILABLE_COLORS;
 }
 
@@ -249,7 +259,8 @@ function updateSummary() {
     submitButton.disabled = selectedIds.size === 0;
 
     if (subtotalEl) {
-        subtotalEl.textContent = formatCurrency((config.pricePerSeat ?? 0) * selectedIds.size);
+        const unitPrice = PRICE_BY_TYPE[currentTripType] ?? 0;
+        subtotalEl.textContent = formatCurrency(unitPrice * selectedIds.size);
     }
 
     if (selectedListEl) {
@@ -274,6 +285,45 @@ function updateSummary() {
         }
     }
 }
+
+// Trip type toggle (Solo ida / Viaje redondo). Updates the price, the
+// hidden form input, repaints every seat so non-matching ones fall into
+// the dimmed "other-type" color, and re-evaluates which seats are
+// clickable.
+function setTripType(type) {
+    if (type !== 'one_way' && type !== 'round_trip') return;
+    currentTripType = type;
+
+    const input = document.getElementById('trip-type-input');
+    if (input) input.value = type;
+
+    // Toggle the visual active state on the two buttons.
+    const tabs = document.querySelectorAll('[data-trip-type]');
+    tabs.forEach((tab) => {
+        const isActive = tab.getAttribute('data-trip-type') === type;
+        tab.classList.toggle('bg-[#8C1D2B]', isActive);
+        tab.classList.toggle('text-white', isActive);
+        tab.classList.toggle('text-[#2B1113]/60', !isActive);
+    });
+
+    // Repaint the whole layer: the listening state on the Konva groups
+    // flips too, so clicks on a now-disabled seat fall through to the
+    // empty area below.
+    config.seats.forEach((seat) => {
+        const node = seatNodesById.get(seat.id);
+        if (!node) return;
+        const colors = colorsFor(seat);
+        node.rect.fill(colors.fill);
+        node.rect.stroke(colors.stroke);
+        node.group.listening(isSelectable(seat));
+    });
+    layer.batchDraw();
+    updateSummary();
+}
+
+document.querySelectorAll('[data-trip-type]').forEach((tab) => {
+    tab.addEventListener('click', () => setTripType(tab.getAttribute('data-trip-type')));
+});
 
 function toggleHiddenInput(seatId, isSelected) {
     const existing = form.querySelector(`input[name="seat_ids[]"][value="${seatId}"]`);
@@ -497,6 +547,11 @@ if (deckLowerTab && deckUpperTab) {
 
 switchDeck('lower');
 layer.draw();
+
+// Apply the default trip type to the seat layer — must happen after
+// seatNodesById is populated, otherwise the first paint would treat
+// all seats as "available" regardless of the per-seat trip-type tag.
+setTripType(currentTripType);
 updateSummary();
 
 /* ---------- Live updates (Reverb + Echo) ----------

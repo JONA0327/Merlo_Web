@@ -1,0 +1,54 @@
+<?php
+
+require __DIR__.'/vendor/autoload.php';
+$app = require __DIR__.'/bootstrap/app.php';
+$app->make('Illuminate\Contracts\Console\Kernel')->bootstrap();
+
+use App\Models\SeatReservation;
+use App\Models\User;
+
+// Show what's there before cleanup
+echo "=== Antes de limpiar ===\n";
+$total = SeatReservation::count();
+$testByPhone = SeatReservation::where('customer_phone', '+529991234567')->count();
+$testByIp = SeatReservation::where('ip_address', '127.0.0.1')->count();
+$testByNotes = SeatReservation::where('notes', 'like', 'group:%')->count();
+$realReservations = SeatReservation::whereNotIn('customer_phone', ['+529991234567'])
+    ->where('ip_address', '!=', '127.0.0.1')
+    ->count();
+echo "Total reservaciones: $total\n";
+echo "  Creadas en mis smoke tests (por phone): $testByPhone\n";
+echo "  Creadas en mis smoke tests (por ip): $testByIp\n";
+echo "  Creadas en mis smoke tests (por notes group:*): $testByNotes\n";
+echo "  Reservaciones reales (no-test): $realReservations\n";
+
+// Find the user(s) touched by tests
+$testUsers = User::where('phone', '+529991234567')
+    ->orWhereNotNull('openpay_customer_id')
+    ->get();
+echo "\nUsuarios modificados por los tests:\n";
+foreach ($testUsers as $u) {
+    echo "  #{$u->id} {$u->email} - phone=".($u->phone ?? 'null')." openpay_customer_id=".($u->openpay_customer_id ?? 'null')."\n";
+}
+
+echo "\n=== Limpiando ===\n";
+
+// Delete all reservations created during the OpenPay tests
+$deleted = SeatReservation::where('customer_phone', '+529991234567')
+    ->orWhere('ip_address', '127.0.0.1')
+    ->delete();
+echo "Reservaciones de prueba eliminadas: $deleted\n";
+
+// Revert the test user's phone and openpay_customer_id
+$userChanges = User::where('phone', '+529991234567')
+    ->orWhereNotNull('openpay_customer_id')
+    ->update([
+        'phone' => null,
+        'openpay_customer_id' => null,
+    ]);
+echo "Usuarios reseteados: $userChanges\n";
+
+echo "\n=== Después de limpiar ===\n";
+echo "Total reservaciones: ".SeatReservation::count()."\n";
+echo "Total usuarios con phone: ".User::whereNotNull('phone')->count()."\n";
+echo "Total usuarios con openpay_customer_id: ".User::whereNotNull('openpay_customer_id')->count()."\n";

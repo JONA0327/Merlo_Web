@@ -4,12 +4,8 @@ use App\Models\BusUnit;
 use App\Models\BusUnitSeat;
 use App\Models\LandingRoute;
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 
-test('admin can upload a background image and enable the upper deck', function () {
-    Storage::fake('public');
-
+test('admin can update a bus unit and enable the upper deck', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
     $busUnit = BusUnit::create(['name' => 'Autobús 1']);
 
@@ -20,15 +16,14 @@ test('admin can upload a background image and enable the upper deck', function (
         'canvas_height' => 600,
         'has_upper_deck' => 1,
         'is_active' => 1,
-        'background_image' => UploadedFile::fake()->image('plano.jpg'),
     ]);
 
     $response->assertRedirect(route('admin.unidades.edit', $busUnit));
 
     $busUnit->refresh();
     expect($busUnit->has_upper_deck)->toBeTrue();
-    expect($busUnit->background_image)->not->toBeNull();
-    Storage::disk('public')->assertExists($busUnit->background_image);
+    expect($busUnit->description)->toBe('Doble piso');
+    expect($busUnit->is_active)->toBeTrue();
 });
 
 test('seats with the same label are allowed on different decks but not on the same deck', function () {

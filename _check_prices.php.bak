@@ -1,0 +1,23 @@
+<?php
+
+require __DIR__.'/vendor/autoload.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+echo App\Models\TripTicketPrice::count()." precios en trip_ticket_prices\n";
+foreach (App\Models\TripTicketPrice::with('landingRoute')->get() as $p) {
+    echo "- {$p->landingRoute->from} -> {$p->landingRoute->to} | {$p->trip_type} | ".$p->formatted_price.($p->is_active ? ' (visible)' : ' (oculto)')."\n";
+}
+
+echo "\nVerificando columnas nuevas en seat_reservations:\n";
+$cols = Illuminate\Support\Facades\Schema::getColumnListing('seat_reservations');
+echo (in_array('trip_type', $cols) ? '[ok]' : '[falta]')." trip_type\n";
+echo (in_array('unit_price', $cols) ? '[ok]' : '[falta]')." unit_price\n";
+
+echo "\nVerificando columna allowed_trip_type en bus_unit_seats:\n";
+echo (in_array('allowed_trip_type', Illuminate\Support\Facades\Schema::getColumnListing('bus_unit_seats')) ? '[ok]' : '[falta]')." allowed_trip_type\n";
+
+echo "\nAsientos por tipo permitido:\n";
+foreach (\Illuminate\Support\Facades\DB::table('bus_unit_seats')->select('allowed_trip_type', \Illuminate\Support\Facades\DB::raw('count(*) as c'))->groupBy('allowed_trip_type')->get() as $row) {
+    echo "- {$row->allowed_trip_type}: {$row->c}\n";
+}

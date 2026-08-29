@@ -31,17 +31,13 @@ class AdminLandingRouteController extends Controller
             'duration' => ['required', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'price' => ['nullable', 'string', 'max:50'],
             'departure_time' => ['nullable', 'string', 'max:20'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
-            'ticket_price' => ['nullable', 'string', 'max:50'],
             'is_active' => ['nullable', 'boolean'],
             'featured' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
-
-        $ticketPrice = $validated['ticket_price'] ?? $validated['price'] ?? '$0';
 
         // A trip with a seat map doesn't get to have a made-up seat count —
         // it's however many bookable seats that unit's layout actually has.
@@ -60,14 +56,12 @@ class AdminLandingRouteController extends Controller
             'departure_time' => $validated['departure_time'] ?? '00:00',
             'available_seats' => $validated['available_seats'] ?? 1,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
-            'ticket_price' => $ticketPrice,
-            'price' => $ticketPrice,
             'is_active' => $validated['is_active'] ?? true,
             'featured' => $validated['featured'] ?? false,
             'sort_order' => $validated['sort_order'] ?? 0,
         ]);
 
-        return redirect()->route('admin.viajes')->with('success', 'Ruta agregada correctamente.');
+        return redirect()->route('admin.viajes')->with('success', 'Ruta agregada correctamente. Ahora configura el precio desde la sección "Precios de boleto".');
     }
 
     public function edit(LandingRoute $landingRoute): View
@@ -89,17 +83,13 @@ class AdminLandingRouteController extends Controller
             'duration' => ['required', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'price' => ['nullable', 'string', 'max:50'],
             'departure_time' => ['nullable', 'string', 'max:20'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
-            'ticket_price' => ['nullable', 'string', 'max:50'],
             'is_active' => ['nullable', 'boolean'],
             'featured' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
-
-        $ticketPrice = $validated['ticket_price'] ?? $validated['price'] ?? $landingRoute->ticket_price ?? '$0';
 
         // Same rule as store(): a seat-mapped trip's available count is
         // whatever bookable seats remain in that unit's layout, not a
@@ -120,8 +110,6 @@ class AdminLandingRouteController extends Controller
             'departure_time' => $validated['departure_time'] ?? $landingRoute->departure_time,
             'available_seats' => $validated['available_seats'] ?? $landingRoute->available_seats,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
-            'ticket_price' => $ticketPrice,
-            'price' => $ticketPrice,
             'is_active' => $validated['is_active'] ?? $landingRoute->is_active,
             'featured' => $validated['featured'] ?? $landingRoute->featured,
             'sort_order' => $validated['sort_order'] ?? $landingRoute->sort_order,

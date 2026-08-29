@@ -5,8 +5,13 @@ use App\Http\Controllers\Admin\AdminBusUnitSeatController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
+use App\Http\Controllers\Admin\AdminPaymentController;
+use App\Http\Controllers\Admin\AdminSeatReservationController;
 use App\Http\Controllers\Admin\AdminSettingController;
+use App\Http\Controllers\Admin\AdminTripCheckinController;
+use App\Http\Controllers\Admin\AdminTripTicketPriceController;
 use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\OpenPayWebhookController;
 use App\Http\Controllers\ClientDashboardController;
 use App\Http\Controllers\PackageTrackingController;
 use App\Http\Controllers\ProfileController;
@@ -61,6 +66,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'store'])->name('travel.seats.hold');
     Route::delete('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'destroy'])->name('travel.seats.hold.destroy');
 
+    // Payment result pages. The store() redirect lands here after
+    // the OpenPay charge call returns, so the customer always sees
+    // a server-rendered receipt / barcode / error.
+    Route::get('/pago/{reservation}/exitoso', [SeatPickerController::class, 'success'])->name('travel.payment.success');
+    Route::get('/pago/{reservation}/pendiente', [SeatPickerController::class, 'pending'])->name('travel.payment.pending');
+    Route::get('/pago/{reservation}/error', [SeatPickerController::class, 'error'])->name('travel.payment.error');
+
     Route::prefix('dashboard')->name('cliente.')->group(function () {
         Route::get('/carrito', [ClientDashboardController::class, 'carrito'])->name('carrito');
         Route::get('/compras', [ClientDashboardController::class, 'compras'])->name('compras');
@@ -90,6 +102,27 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::put('/unidades/{busUnit}/asientos', [AdminBusUnitSeatController::class, 'sync'])->name('unidades.seats.sync');
     Route::delete('/unidades/{busUnit}', [AdminBusUnitController::class, 'destroy'])->name('unidades.destroy');
     Route::get('/ventas', [AdminController::class, 'ventas'])->name('ventas');
+    Route::get('/pagos', [AdminPaymentController::class, 'index'])->name('pagos.index');
+    Route::get('/pagos/{reservation}', [AdminPaymentController::class, 'show'])->name('pagos.show');
+    Route::post('/pagos/{reservation}/reembolsar', [AdminPaymentController::class, 'refund'])->name('pagos.refund');
+    Route::get('/asientos', [AdminSeatReservationController::class, 'index'])->name('asientos.index');
+    Route::get('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'show'])->name('asientos.show');
+    Route::post('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'store'])->name('asientos.store');
+    Route::post('/asientos/{landingRoute}/reservas/{reservation}/enviar', [AdminSeatReservationController::class, 'sendTicket'])->name('asientos.send');
+    Route::delete('/asientos/{landingRoute}/reservas/{reservation}', [AdminSeatReservationController::class, 'destroy'])->name('asientos.destroy');
+    Route::get('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'availability'])->name('asientos.availability');
+    Route::put('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'updateAvailability'])->name('asientos.availability.update');
+    Route::get('/precios', [AdminTripTicketPriceController::class, 'index'])->name('precios.index');
+    Route::post('/precios', [AdminTripTicketPriceController::class, 'update'])->name('precios.update');
+    // Operator-side QR check-in. The {code?} part is optional so
+    // /admin/checkin (no code) lands on the search form, and
+    // /admin/checkin/{code} (the QR target) lands straight on the
+    // ticket detail.
+    Route::get('/checkin', [AdminTripCheckinController::class, 'index'])->name('checkin.index');
+    Route::post('/checkin', [AdminTripCheckinController::class, 'lookup'])->name('checkin.lookup');
+    Route::get('/checkin/{code}', [AdminTripCheckinController::class, 'lookup'])->name('checkin.scan');
+    Route::post('/checkin/{reservation}/outbound', [AdminTripCheckinController::class, 'verifyOutbound'])->name('checkin.outbound');
+    Route::post('/checkin/{reservation}/return', [AdminTripCheckinController::class, 'verifyReturn'])->name('checkin.return');
     Route::get('/usuarios/crear', [AdminUserController::class, 'create'])->name('usuarios.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('usuarios.store');
     Route::get('/configuraciones', [AdminSettingController::class, 'edit'])->name('configuraciones');
@@ -109,5 +142,13 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::post('/paqueteria/paquetes/{package}/estado', [AdminPackageController::class, 'updateStatus'])->name('paqueteria.paquetes.update-status');
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
 });
+
+// OpenPay webhook — public, signature-verified inside the controller.
+// OpenPay only POSTs here for asynchronous payment-method events
+// (OXXO barcode paid, SPEI transfer received, chargebacks, refunds),
+// so it doesn't go through the auth middleware. The URL is excluded
+// from CSRF in bootstrap/app.php since OpenPay can't supply a token.
+Route::post('/webhooks/openpay', [OpenPayWebhookController::class, 'handle'])
+    ->name('webhooks.openpay');
 
 require __DIR__.'/auth.php';

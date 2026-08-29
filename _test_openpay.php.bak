@@ -1,0 +1,14 @@
+<?php
+require __DIR__ . '/packages/openpay/openpay-php-loader.php';
+use Openpay\Data\Openpay as Openpay;
+
+Openpay::setId('test_merchant_id');
+Openpay::setApiKey('test_api_key');
+Openpay::setSandboxMode(true);
+
+$op = Openpay::getInstance('test_merchant_id', 'test_api_key', 'MX', null);
+echo 'Instance: ' . get_class($op) . PHP_EOL;
+echo 'Customers: ' . get_class($op->customers) . PHP_EOL;
+echo 'Charges: ' . get_class($op->charges) . PHP_EOL;
+echo 'Sandbox: ' . (Openpay::getSandboxMode() ? 'true' : 'false') . PHP_EOL;
+echo 'OK' . PHP_EOL;

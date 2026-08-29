@@ -1,0 +1,32 @@
+<?php
+require __DIR__ . '/vendor/autoload.php';
+$app = require __DIR__ . '/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+use Illuminate\Support\Facades\DB;
+
+try {
+    $jobs = DB::table('jobs')->orderBy('id', 'desc')->limit(5)->get();
+    echo "=== JOBS TABLE (last 5) ===" . PHP_EOL;
+    foreach ($jobs as $job) {
+        echo "ID: {$job->id} | Queue: {$job->queue} | Attempts: {$job->attempts} | Available: {$job->available_at}" . PHP_EOL;
+        $payload = json_decode($job->payload, true);
+        echo "  Job: " . ($payload['displayName'] ?? 'unknown') . PHP_EOL;
+        if (isset($payload['data']['command'])) {
+            $cmd = unserialize($payload['data']['command']);
+            echo "  Command class: " . get_class($cmd) . PHP_EOL;
+        }
+        echo "---" . PHP_EOL;
+    }
+
+    echo PHP_EOL . "=== FAILED JOBS (last 5) ===" . PHP_EOL;
+    $failed = DB::table('failed_jobs')->orderBy('id', 'desc')->limit(5)->get();
+    foreach ($failed as $f) {
+        echo "ID: {$f->id} | Exception: " . substr($f->exception, 0, 100) . "..." . PHP_EOL;
+        $payload = json_decode($f->payload, true);
+        echo "  Job: " . ($payload['displayName'] ?? 'unknown') . PHP_EOL;
+        echo "---" . PHP_EOL;
+    }
+} catch (\Throwable $e) {
+    echo "ERROR: " . $e->getMessage() . PHP_EOL;
+}

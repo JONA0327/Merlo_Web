@@ -95,17 +95,19 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label for="ticket_price" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Costo del boleto</label>
-                        <input id="ticket_price" name="ticket_price" type="text" value="{{ old('ticket_price') }}" placeholder="$650" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        @error('ticket_price')
-                            <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    <div>
                         <label for="sort_order" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Orden</label>
                         <input id="sort_order" name="sort_order" type="number" min="0" value="{{ old('sort_order', 0) }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                     </div>
+                </div>
+
+                <div class="rounded-xl border border-[#8C1D2B]/20 bg-[#8C1D2B]/5 p-3 text-xs text-[#2B1113]/70">
+                    <p>El <strong>costo del boleto</strong> (ida y redondo) se configura en una sección aparte, después de guardar el viaje.</p>
+                    <p class="mt-1">
+                        <a href="{{ route('admin.precios.index') }}" class="inline-flex items-center gap-1 font-bold text-[#8C1D2B] hover:text-[#6F1622]">
+                            Ir a Precios de boleto
+                            <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
+                        </a>
+                    </p>
                 </div>
 
                 <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#8C1D2B] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/20 hover:bg-[#6F1622] transition-colors">
@@ -130,7 +132,14 @@
                                     <p class="font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->from }} → {{ $route->to }}</p>
                                     <p class="mt-1 text-sm text-[#2B1113]/60">{{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }} · {{ $route->departure_time_formatted ?? 'Horario no definido' }} · {{ $route->duration }}</p>
                                     <p class="mt-0.5 text-sm text-[#2B1113]/60">Regreso: {{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
-                                    <p class="mt-0.5 text-sm text-[#2B1113]/60">{{ $route->formatted_price }} · Asientos: {{ $route->available_seats ?? 0 }}</p>
+                                    <div class="mt-0.5 flex flex-wrap items-center gap-2 text-sm">
+                                        <span class="font-semibold text-[#2B1113]/60">Ida:</span>
+                                        <span class="font-bold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }}</span>
+                                        <span class="text-[#2B1113]/30">·</span>
+                                        <span class="font-semibold text-[#2B1113]/60">Redondo:</span>
+                                        <span class="font-bold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP) ?? '—' }}</span>
+                                    </div>
+                                    <p class="mt-0.5 text-xs text-[#2B1113]/50">Asientos: {{ $route->available_seats ?? 0 }} · <a href="{{ route('admin.precios.index') }}" class="text-[#8C1D2B] hover:underline font-semibold">Editar precios</a></p>
                                 </div>
                                 <div class="flex flex-col items-end gap-2">
                                     <span class="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $route->is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600' }}">

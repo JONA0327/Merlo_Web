@@ -18,6 +18,7 @@ class AdminController extends Controller
     {
         return view('admin.viajes', [
             'routes' => LandingRoute::query()
+                ->with(['prices'])
                 ->orderBy('sort_order')
                 ->orderBy('id')
                 ->get(),

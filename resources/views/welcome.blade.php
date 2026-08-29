@@ -236,42 +236,23 @@
                 @endphp
 
                 @forelse ($landingRoutes as $route)
-                    <div class="group rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                        <div class="flex items-center justify-between">
-                            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-[#8C1D2B]/10 text-[#8C1D2B]">
-                                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 00-2 2v6a2 2 0 002 2h1.05a2.5 2.5 0 014.9 0H12a1 1 0 001-1v-2h2.05a1 1 0 00.923-.617l1.027-2.47A1 1 0 0016.028 6H14V5a1 1 0 00-1-1H3z"/><path d="M6 15.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
-                            </span>
-                            <span class="text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">Directo</span>
+                    {{-- The whole card is always a link so the customer can
+                         move forward regardless of how complete the admin's
+                         setup is on the back end:
+                           * Has a bus unit attached → go straight to the
+                             seat picker (the "elegir asientos" page that
+                             already has a Konva map for this trip).
+                           * No bus unit yet → fall back to the search
+                             results with from/to prefilled, where the user
+                             can pick the same trip again and (in the future)
+                             get routed to whichever flow is appropriate. --}}
+                    <a href="{{ $route->hasSeatMap() ? route('travel.seats', $route) : route('travel.search', ['from' => $route->from, 'to' => $route->to, 'date' => optional($route->day)->format('Y-m-d'), 'passengers' => 1]) }}" class="group block rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:ring-[#8C1D2B]/30 transition-all duration-300 cursor-pointer">
+                        @include('partials.landing-route-card', ['route' => $route])
+                        <div class="mt-4 flex items-center justify-end gap-1.5 text-xs font-bold text-[#8C1D2B] opacity-70 group-hover:opacity-100 transition-opacity">
+                            {{ $route->hasSeatMap() ? 'Elegir asientos' : 'Ver disponibilidad' }}
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
                         </div>
-                        <p class="mt-5 font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->from }}</p>
-                        <div class="my-2 flex items-center gap-2 text-[#2B1113]/30">
-                            <span class="h-1.5 w-1.5 rounded-full bg-[#F5B301]"></span>
-                            <span class="h-px flex-1 border-t border-dashed border-current"></span>
-                            <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
-                            <span class="h-1.5 w-1.5 rounded-full bg-[#8C1D2B]"></span>
-                        </div>
-                        <p class="font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->to }}</p>
-
-                        <div class="mt-5 flex items-center justify-between border-t border-black/5 pt-4">
-                            <div>
-                                <p class="text-xs text-[#2B1113]/50">Duración</p>
-                                <p class="text-sm font-semibold">{{ $route->duration }}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-xs text-[#2B1113]/50">Desde</p>
-                                <p class="font-[Poppins] text-lg font-extrabold text-[#8C1D2B]">{{ $route->formatted_price }}</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-3 space-y-0.5">
-                            @if ($route->day)
-                                <p class="text-xs font-semibold text-[#2B1113]/50">Salida: {{ $route->day->format('d/m/Y') }}@if ($route->departure_time_formatted) &middot; {{ $route->departure_time_formatted }} @endif</p>
-                            @endif
-                            @if ($route->return_date)
-                                <p class="text-xs font-semibold text-[#2B1113]/50">Regreso: {{ $route->return_date->format('d/m/Y') }}</p>
-                            @endif
-                        </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="col-span-full text-center py-12">
                         <p class="text-[#2B1113]/60 font-medium">Viajes destacados próximamente</p>

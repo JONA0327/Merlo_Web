@@ -49,9 +49,29 @@
                             Distribución de Asientos
                         </a>
 
+                        <a href="{{ route('admin.asientos.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'asientos' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+                            Apartar asientos
+                        </a>
+
+                        <a href="{{ route('admin.precios.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'precios' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.75a.75.75 0 00-1.5 0v.541c-.42.087-.808.222-1.147.414-1.012.572-1.353 1.61-.786 2.629.317.567.875.92 1.446 1.148.453.18.881.31 1.237.45v1.698c-.42-.087-.808-.222-1.147-.414-.591-.333-1.105-.86-1.244-1.546a.75.75 0 00-1.48.253c.243 1.332 1.156 2.247 2.184 2.785.378.197.74.327 1.087.404v.518a.75.75 0 001.5 0v-.518c.42-.087.808-.222 1.147-.414 1.012-.572 1.353-1.61.786-2.629-.317-.567-.875-.92-1.446-1.148a10.21 10.0 00-1.237-.45v-1.698c.42.087.808.222 1.147.414.591.333 1.105.86 1.244 1.546a.75.75 0 001.48-.253c-.243-1.332-1.156-2.247-2.184-2.785A4.59 4.59 0 0010.75 6.79V6.25z" clip-rule="evenodd"/></svg>
+                            Precios de boleto
+                        </a>
+
+                        <a href="{{ route('admin.checkin.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'checkin' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm6-9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3zm6-9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3zM2 14a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3z" clip-rule="evenodd"/></svg>
+                            Check-in
+                        </a>
+
                         <a href="{{ route('admin.ventas') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'ventas' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 10.818v2.614A3.13 3.13 0 0011.888 13c.482-.315.612-.648.612-.875 0-.227-.13-.56-.612-.875a3.13 3.13 0 00-1.138-.432zM8.33 8.62c.053.055.115.11.184.164.208.16.46.284.736.363V6.603a2.45 2.45 0 00-.35.13c-.14.065-.27.143-.386.233-.377.292-.514.627-.514.909 0 .184.058.39.202.591.036.05.08.1.128.152z"/><path fill-rule="evenodd" d="M11.999 3a1 1 0 10-2 0v.42a4.617 4.617 0 00-1.997.798c-.55.425-.999 1.09-.999 1.897 0 .84.46 1.487 1.058 1.913.328.235.703.415 1.101.552v2.647a2.87 2.87 0 01-.734-.363 1 1 0 10-1.229 1.578A4.891 4.891 0 009 13.417V14a1 1 0 102 0v-.428a4.62 4.62 0 001.997-.798c.55-.425.999-1.09.999-1.897 0-.84-.46-1.487-1.058-1.913A4.294 4.294 0 0011 8.417V5.905a2.5 2.5 0 01.573.257 1 1 0 10.923-1.775 4.618 4.618 0 00-1.497-.552V3z" clip-rule="evenodd"/></svg>
                             Ventas
+                        </a>
+
+                        <a href="{{ route('admin.pagos.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'pagos' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 4A1.5 1.5 0 014 2.5h12A1.5 1.5 0 0117.5 4v3a1.5 1.5 0 01-1.5 1.5h-12A1.5 1.5 0 012.5 7V4zM2 11.5A1.5 1.5 0 013.5 10h13a1.5 1.5 0 011.5 1.5v4.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 012 16v-4.5z" clip-rule="evenodd"/><path d="M5 14a1 1 0 100-2 1 1 0 000 2zM5 6a1 1 0 100-2 1 1 0 000 2z"/></svg>
+                            Pagos
                         </a>
 
                         <div class="pt-4 mt-4 border-t border-white/10">
@@ -119,10 +139,14 @@
                                 ['key' => 'dashboard', 'label' => 'Resumen', 'route' => 'admin.dashboard'],
                                 ['key' => 'viajes', 'label' => 'Viajes', 'route' => 'admin.viajes'],
                                 ['key' => 'paqueteria', 'label' => 'Paquetería', 'route' => 'admin.paqueteria'],
-                                ['key' => 'unidades', 'label' => 'Asientos', 'route' => 'admin.unidades'],
+                                ['key' => 'unidades', 'label' => 'Plantilla', 'route' => 'admin.unidades'],
+                                ['key' => 'asientos', 'label' => 'Apartar', 'route' => 'admin.asientos.index'],
+                                ['key' => 'precios', 'label' => 'Precios', 'route' => 'admin.precios.index'],
+                                ['key' => 'checkin', 'label' => 'Check-in', 'route' => 'admin.checkin.index'],
                                 ['key' => 'ventas', 'label' => 'Ventas', 'route' => 'admin.ventas'],
+                                ['key' => 'pagos', 'label' => 'Pagos', 'route' => 'admin.pagos.index'],
                                 ['key' => 'usuarios', 'label' => 'Usuarios', 'route' => 'admin.usuarios.create'],
-                                ['key' => 'configuraciones', 'label' => 'Configuraciones', 'route' => 'admin.configuraciones'],
+                                ['key' => 'configuraciones', 'label' => 'Config.', 'route' => 'admin.configuraciones'],
                             ]
                             : [
                                 ['key' => 'paqueteria', 'label' => 'Paquetería', 'route' => 'admin.paqueteria'],

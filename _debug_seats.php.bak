@@ -1,0 +1,44 @@
+<?php
+
+require __DIR__.'/vendor/autoload.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+// Find the SLP → CDMX trip and dump all its seats
+$trip = App\Models\LandingRoute::where('from', 'San Luis Potosí')->first();
+if (!$trip) {
+    echo "Trip not found\n";
+    exit;
+}
+
+$busUnit = $trip->busUnit;
+echo "Trip: {$trip->from} -> {$trip->to}\n";
+echo "Bus unit: {$busUnit->name}\n";
+echo "Canvas: {$busUnit->canvas_width} x {$busUnit->canvas_height}\n";
+echo "\n";
+
+$seats = $busUnit->seats;
+$byKind = $seats->groupBy('kind');
+foreach ($byKind as $kind => $group) {
+    echo "=== $kind: " . $group->count() . " ===\n";
+    foreach ($group as $s) {
+        $mode = $s->allowed_trip_type ?? 'both';
+        echo sprintf("  id=%-4d %-12s %-12s deck=%s pos=(%3d,%3d) size=%dx%d mode=%s\n",
+            $s->id, $s->kind, $s->type, $s->deck, $s->pos_x, $s->pos_y, $s->width, $s->height, $mode
+        );
+    }
+}
+echo "\n";
+
+// Compute the content bounds that the JS would compute
+$paintable = $seats->where('kind', 'seat');
+if ($paintable->count() > 0) {
+    $minX = $paintable->min('pos_x');
+    $minY = $paintable->min('pos_y');
+    $maxX = $paintable->max(fn($s) => $s->pos_x + $s->width);
+    $maxY = $paintable->max(fn($s) => $s->pos_y + $s->height);
+    echo "Content bounds (paintable only):\n";
+    echo "  minX=$minX, minY=$minY, maxX=$maxX, maxY=$maxY\n";
+    echo "  width=" . ($maxX - $minX) . " height=" . ($maxY - $minY) . "\n";
+    echo "  naturalWidth=" . (($maxX - $minX) + 48) . " naturalHeight=" . (($maxY - $minY) + 48) . "\n";
+}

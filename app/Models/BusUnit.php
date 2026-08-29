@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 class BusUnit extends Model
 {
@@ -14,7 +13,6 @@ class BusUnit extends Model
     protected $fillable = [
         'name',
         'description',
-        'background_image',
         'has_upper_deck',
         'canvas_width',
         'canvas_height',
@@ -36,11 +34,6 @@ class BusUnit extends Model
     public function landingRoutes(): HasMany
     {
         return $this->hasMany(LandingRoute::class);
-    }
-
-    public function getBackgroundImageUrlAttribute(): ?string
-    {
-        return $this->background_image ? Storage::disk('public')->url($this->background_image) : null;
     }
 
     public function bookableSeatsCount(): int

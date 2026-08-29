@@ -38,6 +38,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'role',
         'email_verified_at',
+        'openpay_customer_id',
+        'phone',
     ];
 
     /**
@@ -80,6 +82,22 @@ class User extends Authenticatable implements MustVerifyEmail
     public function seatReservations(): HasMany
     {
         return $this->hasMany(SeatReservation::class);
+    }
+
+    /**
+     * Cards the customer has saved (tokenized via OpenPay) for
+     * one-click checkout. Sensitive PAN/CVV never touches the
+     * database — we only store the OpenPay card id plus the
+     * non-sensitive metadata OpenPay exposes (brand, last 4, exp).
+     */
+    public function savedCards(): HasMany
+    {
+        return $this->hasMany(SavedCard::class);
+    }
+
+    public function defaultSavedCard(): ?SavedCard
+    {
+        return $this->savedCards()->orderByDesc('is_default')->orderByDesc('id')->first();
     }
 
     /**

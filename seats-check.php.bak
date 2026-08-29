@@ -1,0 +1,58 @@
+<?php
+
+require __DIR__.'/vendor/autoload.php';
+$app = require __DIR__.'/bootstrap/app.php';
+$app->make('Illuminate\Contracts\Console\Kernel')->bootstrap();
+
+use App\Models\SeatReservation;
+use App\Models\SeatHold;
+use App\Models\BusUnitSeat;
+use App\Models\LandingRoute;
+
+echo "=== Estado actual de 'comprado' / 'retenido' ===\n\n";
+
+// 1. Reservations still in DB
+$resCount = SeatReservation::count();
+echo "Total SeatReservation rows: $resCount\n";
+if ($resCount > 0) {
+    $rows = SeatReservation::with('landingRoute', 'seat')->get();
+    foreach ($rows as $r) {
+        echo "  #{$r->id} trip={$r->landing_route_id} seat={$r->bus_unit_seat_id} status={$r->payment_status} method={$r->payment_method}\n";
+    }
+}
+
+// 2. Active SeatHolds
+$holdCount = SeatHold::where('expires_at', '>', now())->count();
+$holdExpired = SeatHold::where('expires_at', '<=', now())->count();
+echo "\nSeatHold activos (no vencidos): $holdCount\n";
+echo "SeatHold vencidos (basura): $holdExpired\n";
+if ($holdCount > 0) {
+    $rows = SeatHold::with('landingRoute')->where('expires_at', '>', now())->get();
+    foreach ($rows as $h) {
+        echo "  hold #{$h->id} trip={$h->landing_route_id} seat={$h->bus_unit_seat_id} user={$h->user_id} expires={$h->expires_at}\n";
+    }
+}
+
+// 3. The specific seats that were used in the test reservations
+// Look at the audit: which seats did my smoke tests target?
+echo "\n=== Asientos que estuvieron en los smoke tests ===\n";
+$testSeats = [349, 350, 351, 352, 353, 354, 355]; // from earlier test output (seat ids around 349-355)
+foreach ($testSeats as $seatId) {
+    $seat = BusUnitSeat::find($seatId);
+    if ($seat) {
+        $hasRes = SeatReservation::where('bus_unit_seat_id', $seatId)->exists();
+        $hasHold = SeatHold::where('bus_unit_seat_id', $seatId)->where('expires_at', '>', now())->exists();
+        echo "  Seat #{$seatId} ({$seat->label}): reservation=" . ($hasRes ? 'YES' : 'no') . " hold=" . ($hasHold ? 'YES' : 'no') . "\n";
+    }
+}
+
+// 4. available_seats on the trip(s) we tested
+echo "\n=== available_seats en los viajes ===\n";
+$trip = LandingRoute::has('busUnit.seats')->first();
+if ($trip) {
+    $actualBookableSeats = $trip->busUnit->seats()->where('kind', 'seat')->where('type', '!=', 'disabled')->count();
+    echo "Trip #{$trip->id} {$trip->from} -> {$trip->to}\n";
+    echo "  available_seats (DB): {$trip->available_seats}\n";
+    echo "  Asientos reservables reales en el bus: {$actualBookableSeats}\n";
+    echo "  Diferencia: " . ($actualBookableSeats - $trip->available_seats) . "\n";
+}
