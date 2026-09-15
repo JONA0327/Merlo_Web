@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('seat-holds:prune')->everyFiveMinutes();
+Schedule::command('transfer-reservations:prune')->hourly();
+Schedule::command('return-changes:void-expired')->daily();

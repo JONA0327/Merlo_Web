@@ -10,6 +10,7 @@ class Setting extends Model
         'whatsapp_number',
         'facebook_url',
         'instagram_url',
+        'return_resale_validity_hours',
     ];
 
     /**
@@ -35,5 +36,15 @@ class Setting extends Model
         $digits = preg_replace('/\D/', '', $this->whatsapp_number);
 
         return $digits !== '' ? $digits : null;
+    }
+
+    /**
+     * How many hours a released return leg stays purchasable before
+     * the resale window closes. Falls back to the column default
+     * (24) if somehow null.
+     */
+    public function returnResaleValidityHours(): int
+    {
+        return (int) ($this->return_resale_validity_hours ?? 24);
     }
 }

@@ -34,6 +34,13 @@
                 <x-input-error :messages="$errors->get('instagram_url')" class="mt-2" />
             </div>
 
+            <div class="border-t border-black/5 pt-5">
+                <x-input-label for="return_resale_validity_hours" value="Vigencia de reventa de regreso (horas)" />
+                <x-text-input id="return_resale_validity_hours" name="return_resale_validity_hours" type="number" min="1" max="720" class="block mt-1.5 w-full" value="{{ old('return_resale_validity_hours', $setting->return_resale_validity_hours) }}" />
+                <p class="mt-1.5 text-xs text-[#2B1113]/50">Cuando un admin libera el regreso no usado de un boleto redondo, este es el tiempo (en horas) que ese asiento queda disponible para venderse a otro cliente antes de expirar.</p>
+                <x-input-error :messages="$errors->get('return_resale_validity_hours')" class="mt-2" />
+            </div>
+
             <div class="flex justify-end pt-2">
                 <x-primary-button type="submit">
                     Guardar

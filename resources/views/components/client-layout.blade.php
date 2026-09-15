@@ -40,11 +40,6 @@
                         Mis paquetes
                     </a>
 
-                    <a href="{{ route('cliente.carrito') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'carrito' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
-                        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M1 1.75A.75.75 0 011.75 1h1.628a1.75 1.75 0 011.734 1.51L5.18 3h12.07a.75.75 0 01.728.92l-1.15 4.816a1.75 1.75 0 01-1.702 1.334H6.98a1.75 1.75 0 01-1.734-1.51L4.32 2.6a.25.25 0 00-.247-.216H1.75A.75.75 0 011 1.75zM6 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM14.5 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
-                        Carrito
-                    </a>
-
                     <a href="{{ route('cliente.compras') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'compras' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                         <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.914a2 2 0 00-.586-1.414l-3.914-3.914A2 2 0 0011.086 2H4zm2 10a1 1 0 100 2h4a1 1 0 100-2H6zm0-4a1 1 0 100 2h4a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
                         Mis compras
@@ -104,7 +99,6 @@
                         ['key' => 'dashboard', 'label' => 'Resumen', 'route' => 'dashboard'],
                         ['key' => 'boletos', 'label' => 'Mis boletos', 'route' => 'cliente.boletos'],
                         ['key' => 'paquetes', 'label' => 'Mis paquetes', 'route' => 'cliente.paquetes'],
-                        ['key' => 'carrito', 'label' => 'Carrito', 'route' => 'cliente.carrito'],
                         ['key' => 'compras', 'label' => 'Mis compras', 'route' => 'cliente.compras'],
                     ] as $link)
                         <a href="{{ route($link['route']) }}" class="shrink-0 rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $active === $link['key'] ? 'bg-[#8C1D2B] text-white' : 'bg-[#FFFBF6] text-[#2B1113]/60' }}">

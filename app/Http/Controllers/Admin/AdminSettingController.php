@@ -23,6 +23,7 @@ class AdminSettingController extends Controller
             'whatsapp_number' => ['nullable', 'string', 'max:20'],
             'facebook_url' => ['nullable', 'url', 'max:255'],
             'instagram_url' => ['nullable', 'url', 'max:255'],
+            'return_resale_validity_hours' => ['required', 'integer', 'min:1', 'max:720'],
         ]);
 
         Setting::current()->update($validated);

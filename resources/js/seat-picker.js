@@ -19,8 +19,16 @@ const HOLD_MINUTES = 10;
 const PRICE_BY_TYPE = {
     one_way: Number(config.priceOneWay ?? 0),
     round_trip: Number(config.priceRoundTrip ?? 0),
+    // Resold return legs are priced like a one-way ticket.
+    return_resale: Number(config.priceOneWay ?? 0),
 };
-let currentTripType = config.defaultTripType === 'round_trip' ? 'round_trip' : 'one_way';
+const VALID_TRIP_TYPES = new Set(['one_way', 'round_trip', 'return_resale']);
+let currentTripType = VALID_TRIP_TYPES.has(config.defaultTripType) ? config.defaultTripType : 'one_way';
+
+// Seats whose round-trip return leg an admin released for resale and
+// whose window is still open — the ONLY seats selectable in
+// "return_resale" mode, regardless of the seat's normal allowed_trip_type.
+const resaleSeatIds = new Set(config.resaleSeatIds ?? []);
 
 const AVAILABLE_COLORS = { fill: '#22C55E', stroke: '#15803D' };
 // "Other-type" seat: this seat is bookable in general, but NOT for
@@ -214,6 +222,10 @@ function isSelectable(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (purchasedIds.has(seat.id)) return false;
     if (heldByOther.has(seat.id)) return false;
+    // "Regreso disponible" sells a completely different, much smaller
+    // pool of inventory: only seats an admin explicitly released for
+    // resale, regardless of the seat's normal allowed_trip_type.
+    if (currentTripType === 'return_resale') return resaleSeatIds.has(seat.id);
     // Per-trip-type restriction set by the admin on the seat editor.
     // A seat flagged 'one_way' is not bookable when the customer is on
     // the round-trip toggle (and vice versa). 'both' is unrestricted.
@@ -230,6 +242,7 @@ function isOtherType(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (purchasedIds.has(seat.id)) return false;
     if (heldByOther.has(seat.id)) return false;
+    if (currentTripType === 'return_resale') return !resaleSeatIds.has(seat.id);
     const allowed = seat.allowed_trip_type ?? 'both';
     return allowed !== 'both' && allowed !== currentTripType;
 }
@@ -291,7 +304,7 @@ function updateSummary() {
 // the dimmed "other-type" color, and re-evaluates which seats are
 // clickable.
 function setTripType(type) {
-    if (type !== 'one_way' && type !== 'round_trip') return;
+    if (!VALID_TRIP_TYPES.has(type)) return;
     currentTripType = type;
 
     const input = document.getElementById('trip-type-input');
@@ -362,7 +375,7 @@ async function selectSeat(seat) {
     updateSummary();
 
     try {
-        const { data } = await axios.post(holdUrl(seat.id));
+        const { data } = await axios.post(holdUrl(seat.id), { trip_type: currentTripType });
         heldByMe.set(seat.id, Date.parse(data.expiresAt));
     } catch (error) {
         heldByMe.delete(seat.id);

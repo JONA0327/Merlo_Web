@@ -16,7 +16,7 @@
         <section class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <h3 class="font-[Poppins] text-xl font-bold text-[#2B1113]">Agregar viaje</h3>
 
-            <form method="POST" action="{{ route('admin.viajes.store') }}" class="mt-6 space-y-4">
+            <form method="POST" action="{{ route('admin.viajes.store') }}" enctype="multipart/form-data" class="mt-6 space-y-4">
                 @csrf
 
                 <div>
@@ -100,6 +100,15 @@
                     </div>
                 </div>
 
+                <div>
+                    <label for="image" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Imagen del viaje</label>
+                    <input id="image" name="image" type="file" accept="image/*" class="block w-full text-sm text-[#2B1113] file:mr-3 file:rounded-lg file:border-0 file:bg-[#8C1D2B] file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-[#6F1622]">
+                    <p class="mt-1.5 text-xs text-[#2B1113]/50">Se muestra como fondo de la tarjeta de esta ruta en la landing. Opcional — sin imagen se usa el diseño genérico.</p>
+                    @error('image')
+                        <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
                 <div class="rounded-xl border border-[#8C1D2B]/20 bg-[#8C1D2B]/5 p-3 text-xs text-[#2B1113]/70">
                     <p>El <strong>costo del boleto</strong> (ida y redondo) se configura en una sección aparte, después de guardar el viaje.</p>
                     <p class="mt-1">
@@ -128,7 +137,13 @@
                     @foreach ($routes as $route)
                         <div class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
                             <div class="flex items-start justify-between gap-4">
-                                <div class="flex-1">
+                                <div class="flex flex-1 gap-3">
+                                    @if ($route->image_url)
+                                        <img src="{{ $route->image_url }}" alt="" class="h-14 w-14 shrink-0 rounded-xl object-cover ring-1 ring-black/10">
+                                    @else
+                                        <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-black/5 text-[10px] font-semibold text-[#2B1113]/30">Sin foto</span>
+                                    @endif
+                                    <div>
                                     <p class="font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->from }} → {{ $route->to }}</p>
                                     <p class="mt-1 text-sm text-[#2B1113]/60">{{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }} · {{ $route->departure_time_formatted ?? 'Horario no definido' }} · {{ $route->duration }}</p>
                                     <p class="mt-0.5 text-sm text-[#2B1113]/60">Regreso: {{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
@@ -140,6 +155,7 @@
                                         <span class="font-bold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP) ?? '—' }}</span>
                                     </div>
                                     <p class="mt-0.5 text-xs text-[#2B1113]/50">Asientos: {{ $route->available_seats ?? 0 }} · <a href="{{ route('admin.precios.index') }}" class="text-[#8C1D2B] hover:underline font-semibold">Editar precios</a></p>
+                                    </div>
                                 </div>
                                 <div class="flex flex-col items-end gap-2">
                                     <span class="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $route->is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600' }}">

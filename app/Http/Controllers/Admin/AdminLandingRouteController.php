@@ -7,6 +7,7 @@ use App\Models\BusUnit;
 use App\Models\LandingRoute;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class AdminLandingRouteController extends Controller
@@ -37,6 +38,7 @@ class AdminLandingRouteController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'featured' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:4096'],
         ]);
 
         // A trip with a seat map doesn't get to have a made-up seat count —
@@ -59,6 +61,7 @@ class AdminLandingRouteController extends Controller
             'is_active' => $validated['is_active'] ?? true,
             'featured' => $validated['featured'] ?? false,
             'sort_order' => $validated['sort_order'] ?? 0,
+            'image' => $request->hasFile('image') ? $request->file('image')->store('landing-routes', 'public') : null,
         ]);
 
         return redirect()->route('admin.viajes')->with('success', 'Ruta agregada correctamente. Ahora configura el precio desde la sección "Precios de boleto".');
@@ -89,6 +92,8 @@ class AdminLandingRouteController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'featured' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:4096'],
+            'remove_image' => ['nullable', 'boolean'],
         ]);
 
         // Same rule as store(): a seat-mapped trip's available count is
@@ -99,6 +104,19 @@ class AdminLandingRouteController extends Controller
             $bookable = BusUnit::find($validated['bus_unit_id'])->bookableSeatsCount();
             $alreadyReserved = $landingRoute->seatReservations()->count();
             $validated['available_seats'] = max(0, $bookable - $alreadyReserved);
+        }
+
+        $image = $landingRoute->image;
+        if ($request->hasFile('image')) {
+            if ($image) {
+                Storage::disk('public')->delete($image);
+            }
+            $image = $request->file('image')->store('landing-routes', 'public');
+        } elseif (! empty($validated['remove_image'])) {
+            if ($image) {
+                Storage::disk('public')->delete($image);
+            }
+            $image = null;
         }
 
         $landingRoute->update([
@@ -113,6 +131,7 @@ class AdminLandingRouteController extends Controller
             'is_active' => $validated['is_active'] ?? $landingRoute->is_active,
             'featured' => $validated['featured'] ?? $landingRoute->featured,
             'sort_order' => $validated['sort_order'] ?? $landingRoute->sort_order,
+            'image' => $image,
         ]);
 
         return redirect()->route('admin.viajes')->with('success', 'Viaje actualizado correctamente.');
@@ -129,6 +148,10 @@ class AdminLandingRouteController extends Controller
 
     public function destroy(LandingRoute $landingRoute): RedirectResponse
     {
+        if ($landingRoute->image) {
+            Storage::disk('public')->delete($landingRoute->image);
+        }
+
         $landingRoute->delete();
 
         return redirect()->route('admin.viajes')->with('success', 'Viaje eliminado correctamente.');

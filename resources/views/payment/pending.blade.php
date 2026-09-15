@@ -2,9 +2,10 @@
     $trip = $reservation->landingRoute;
     $isOxxo = $reservation->payment_method === \App\Models\SeatReservation::PAYMENT_METHOD_OXXO;
     $isSpei = $reservation->payment_method === \App\Models\SeatReservation::PAYMENT_METHOD_SPEI;
+    $isTransfer = $reservation->isTransfer();
     $isCash = $isOxxo || $isSpei;
 
-    $expiresAt = $reservation->openpay_expires_at;
+    $expiresAt = $isTransfer ? $reservation->transfer_expires_at : $reservation->openpay_expires_at;
     $expiresIn = $expiresAt ? max(0, now()->diffInHours($expiresAt, false)) : null;
 @endphp
 <!DOCTYPE html>
@@ -31,6 +32,13 @@
 
     <main class="mx-auto max-w-3xl px-6 py-12">
 
+        @if (session('success'))
+            <div class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{{ session('success') }}</div>
+        @endif
+        @if (session('error'))
+            <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{{ session('error') }}</div>
+        @endif
+
         {{-- Hero --}}
         <div class="rounded-3xl bg-white p-8 text-center ring-1 ring-black/5 shadow-sm">
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#F5B301]/25 ring-4 ring-[#F5B301]/40">
@@ -38,7 +46,9 @@
             </div>
             <p class="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-[#A16207]">Pago pendiente</p>
             <h1 class="mt-2 font-[Poppins] text-3xl font-extrabold text-[#2B1113]">
-                @if ($isOxxo)
+                @if ($isTransfer)
+                    Haz tu transferencia para confirmar tu boleto
+                @elseif ($isOxxo)
                     Paga en OXXO para confirmar tu boleto
                 @elseif ($isSpei)
                     Realiza una transferencia SPEI para confirmar tu boleto
@@ -47,7 +57,9 @@
                 @endif
             </h1>
             <p class="mx-auto mt-3 max-w-md text-sm text-[#2B1113]/60">
-                @if ($isOxxo)
+                @if ($isTransfer)
+                    Tus asientos están apartados. Transfiere el monto exacto usando la referencia de abajo y sube tu comprobante para que lo validemos.
+                @elseif ($isOxxo)
                     Lleva el código de barras a cualquier tienda OXXO. El cargo se reflejará en cuanto se acredite el pago.
                 @elseif ($isSpei)
                     Haz una transferencia por el monto exacto a la CLABE indicada. Te confirmaremos en cuanto se reciba.
@@ -98,6 +110,68 @@
             </div>
         @endif
 
+        @if ($isTransfer)
+            <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+                <h2 class="font-[Poppins] text-base font-bold text-[#2B1113]">Número de referencia — úsalo como concepto</h2>
+                <div class="mt-3 rounded-2xl bg-[#FFFBF6] p-4 text-center ring-1 ring-black/10">
+                    <p id="transfer-reference" class="select-all break-all font-mono text-2xl font-extrabold tracking-wider text-[#8C1D2B]">{{ $reservation->transfer_reference }}</p>
+                </div>
+                <p class="mt-2 text-center text-[11px] text-[#2B1113]/50">
+                    Escribe exactamente este texto en el campo "concepto" o "referencia" de tu transferencia. Sin este dato no podremos identificar tu pago.
+                </p>
+
+                <div class="mt-5 space-y-3">
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Cuenta(s) para transferir</p>
+                    @forelse ($paymentMethods as $method)
+                        <div class="rounded-2xl border border-black/10 bg-[#FFFBF6] p-3">
+                            <p class="text-xs font-bold text-[#2B1113]">{{ $method->label }}@if ($method->bank_name) · {{ $method->bank_name }}@endif</p>
+                            <p class="mt-1 text-[11px] text-[#2B1113]/70">Beneficiario: {{ $method->beneficiary_name }}</p>
+                            @if ($method->clabe)
+                                <p class="mt-1 select-all break-all font-mono text-xs font-bold text-[#2B1113]">CLABE: {{ $method->clabe }}</p>
+                            @endif
+                            @if ($method->card_number)
+                                <p class="mt-1 select-all break-all font-mono text-xs font-bold text-[#2B1113]">Tarjeta: {{ $method->card_number }}</p>
+                            @endif
+                        </div>
+                    @empty
+                        <p class="text-xs text-[#2B1113]/60">Contáctanos para obtener los datos de la cuenta.</p>
+                    @endforelse
+                </div>
+
+                <dl class="mt-4 space-y-2 border-t border-black/5 pt-4 text-sm">
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/60">Monto exacto</dt><dd class="font-bold text-[#2B1113]">${{ number_format($reservation->total, 2) }} MXN</dd></div>
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/60">Tus asientos están apartados hasta</dt><dd>{{ $expiresAt?->format('d/m/Y H:i') ?? '—' }}</dd></div>
+                </dl>
+
+                <div class="mt-5 border-t border-black/5 pt-5">
+                    @if ($reservation->transfer_proof_path)
+                        <div class="flex items-center gap-2.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+                            Comprobante recibido — en revisión.
+                        </div>
+                        <form method="POST" action="{{ route('travel.payment.transfer.proof', $reservation) }}" enctype="multipart/form-data" class="mt-3">
+                            @csrf
+                            <label class="block text-xs font-semibold text-[#2B1113]/60">¿Subiste el archivo equivocado? Sube uno nuevo para reemplazarlo.</label>
+                            <div class="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                                <input type="file" name="proof" accept="image/png,image/jpeg,application/pdf" required class="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-xs text-[#2B1113] file:mr-3 file:rounded-lg file:border-0 file:bg-[#8C1D2B] file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-[#6F1622]">
+                                <button type="submit" class="shrink-0 rounded-xl bg-[#2B1113]/5 px-4 py-2.5 text-xs font-bold text-[#2B1113] hover:bg-[#2B1113]/10">Reemplazar</button>
+                            </div>
+                        </form>
+                    @else
+                        <p class="text-xs font-bold uppercase tracking-wider text-[#2B1113]/60">Sube tu comprobante de transferencia</p>
+                        <form method="POST" action="{{ route('travel.payment.transfer.proof', $reservation) }}" enctype="multipart/form-data" class="mt-2 flex flex-col gap-2 sm:flex-row">
+                            @csrf
+                            <input type="file" name="proof" accept="image/png,image/jpeg,application/pdf" required class="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-xs text-[#2B1113] file:mr-3 file:rounded-lg file:border-0 file:bg-[#8C1D2B] file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-[#6F1622]">
+                            <button type="submit" class="shrink-0 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#6F1622]">Subir comprobante</button>
+                        </form>
+                        @error('proof')
+                            <p class="mt-2 text-xs font-semibold text-red-600">{{ $message }}</p>
+                        @enderror
+                    @endif
+                </div>
+            </div>
+        @endif
+
         {{-- Reservation summary --}}
         <div class="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
             <div class="bg-[#2B1113] px-6 py-4 text-white">
@@ -134,7 +208,12 @@
         <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <h2 class="font-[Poppins] text-base font-bold text-[#2B1113]">¿Qué sigue?</h2>
             <ol class="mt-3 space-y-2 text-sm text-[#2B1113]/70">
-                @if ($isOxxo)
+                @if ($isTransfer)
+                    <li>1. Transfiere <strong>${{ number_format($reservation->total, 2) }} MXN</strong> usando el concepto/referencia de arriba, exactamente como aparece.</li>
+                    <li>2. Sube tu comprobante desde esta misma página.</li>
+                    <li>3. Un administrador validará tu pago contra su cuenta bancaria — tienes hasta el <strong>{{ $expiresAt?->format('d/m/Y H:i') ?? 'plazo' }}</strong> antes de que se liberen tus asientos.</li>
+                    <li>4. Te enviaremos tu boleto con QR por correo en cuanto se confirme.</li>
+                @elseif ($isOxxo)
                     <li>1. Lleva el código de barras a cualquier tienda OXXO antes del <strong>{{ $expiresAt?->format('d/m/Y') ?? 'plazo' }}</strong>.</li>
                     <li>2. Paga <strong>${{ number_format($reservation->total, 2) }} MXN</strong> en efectivo.</li>
                     <li>3. Te enviaremos un correo con tu boleto y QR en cuanto OXXO confirme el pago.</li>

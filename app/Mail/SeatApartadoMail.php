@@ -38,10 +38,17 @@ class SeatApartadoMail extends Mailable
         $checkinUrl = URL::route('admin.checkin.scan', ['code' => $reservation->ticket_code], true);
         $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data='.urlencode($checkinUrl);
 
-        $tripDate = $trip->day?->format('d/m/Y') ?? '—';
         $returnDate = $trip->return_date?->format('d/m/Y') ?? '—';
         $departure = $trip->departure_time_formatted ?? '—';
-        $tripType = $reservation->isRoundTrip() ? 'Viaje redondo' : 'Solo ida';
+        // A resold return-leg ticket boards on the RETURN date, not
+        // the trip's outbound day — the "Salida" row on the ticket
+        // must reflect that or the passenger shows up on the wrong day.
+        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->format('d/m/Y') ?? '—');
+        $tripType = match (true) {
+            $reservation->isReturnLeg() => 'Solo regreso',
+            $reservation->isRoundTrip() => 'Viaje redondo',
+            default => 'Solo ida',
+        };
         $tripTypeBadge = $reservation->isRoundTrip() ? '#F5B301' : '#8C1D2B';
         $seats = $reservation->seats ?? collect([$seat]);
         // Fallback when the reservation has no aggregated seats set yet
@@ -192,6 +199,10 @@ HTML;
 
     private function legLabel(SeatReservation $reservation): string
     {
+        if ($reservation->isReturnLeg()) {
+            return 'regreso';
+        }
+
         return $reservation->isRoundTrip() ? 'salida y tu regreso' : 'subida al autobus';
     }
 }

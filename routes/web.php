@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
 use App\Http\Controllers\Admin\AdminPaymentController;
+use App\Http\Controllers\Admin\AdminPaymentMethodController;
 use App\Http\Controllers\Admin\AdminSeatReservationController;
 use App\Http\Controllers\Admin\AdminSettingController;
 use App\Http\Controllers\Admin\AdminTripCheckinController;
@@ -22,8 +23,21 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
+    // Only real, admin-configured origin/destination pairs are offered in
+    // the search box — the company doesn't cover "all of Mexico", so
+    // free-text city entry would let visitors search for routes that
+    // don't exist.
+    $routePairs = LandingRoute::query()
+        ->where('is_active', true)
+        ->select('from', 'to')
+        ->distinct()
+        ->orderBy('from')
+        ->orderBy('to')
+        ->get();
+
     return view('welcome', [
         'setting' => Setting::current(),
+        'routePairs' => $routePairs,
     ]);
 });
 
@@ -72,12 +86,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/pago/{reservation}/exitoso', [SeatPickerController::class, 'success'])->name('travel.payment.success');
     Route::get('/pago/{reservation}/pendiente', [SeatPickerController::class, 'pending'])->name('travel.payment.pending');
     Route::get('/pago/{reservation}/error', [SeatPickerController::class, 'error'])->name('travel.payment.error');
+    Route::post('/pago/{reservation}/comprobante', [SeatPickerController::class, 'uploadTransferProof'])->name('travel.payment.transfer.proof');
 
     Route::prefix('dashboard')->name('cliente.')->group(function () {
-        Route::get('/carrito', [ClientDashboardController::class, 'carrito'])->name('carrito');
         Route::get('/compras', [ClientDashboardController::class, 'compras'])->name('compras');
         Route::get('/paquetes', [ClientDashboardController::class, 'paquetes'])->name('paquetes');
         Route::get('/boletos', [ClientDashboardController::class, 'boletos'])->name('boletos');
+        Route::get('/boletos/{reservation}', [ClientDashboardController::class, 'verBoleto'])->name('boletos.ver');
+        Route::post('/boletos/{reservation}/regreso/solicitar', [ClientDashboardController::class, 'requestReturnChange'])->name('boletos.return-change.request');
+        Route::get('/boletos/{reservation}/regreso/elegir', [ClientDashboardController::class, 'chooseReturnDate'])->name('boletos.return-change.choose');
+        Route::post('/boletos/{reservation}/regreso/confirmar', [ClientDashboardController::class, 'confirmReturnChange'])->name('boletos.return-change.confirm');
     });
 });
 
@@ -105,6 +123,10 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/pagos', [AdminPaymentController::class, 'index'])->name('pagos.index');
     Route::get('/pagos/{reservation}', [AdminPaymentController::class, 'show'])->name('pagos.show');
     Route::post('/pagos/{reservation}/reembolsar', [AdminPaymentController::class, 'refund'])->name('pagos.refund');
+    Route::post('/pagos/{reservation}/liberar-regreso', [AdminPaymentController::class, 'releaseReturn'])->name('pagos.release-return');
+    Route::get('/pagos/{reservation}/comprobante', [AdminPaymentController::class, 'transferProof'])->name('pagos.transfer-proof');
+    Route::post('/pagos/{reservation}/validar-transferencia', [AdminPaymentController::class, 'validateTransfer'])->name('pagos.validate-transfer');
+    Route::post('/pagos/{reservation}/rechazar-transferencia', [AdminPaymentController::class, 'rejectTransfer'])->name('pagos.reject-transfer');
     Route::get('/asientos', [AdminSeatReservationController::class, 'index'])->name('asientos.index');
     Route::get('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'show'])->name('asientos.show');
     Route::post('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'store'])->name('asientos.store');
@@ -127,6 +149,13 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('usuarios.store');
     Route::get('/configuraciones', [AdminSettingController::class, 'edit'])->name('configuraciones');
     Route::put('/configuraciones', [AdminSettingController::class, 'update'])->name('configuraciones.update');
+
+    Route::prefix('metodos-pago')->name('payment-methods.')->group(function () {
+        Route::get('/', [AdminPaymentMethodController::class, 'index'])->name('index');
+        Route::post('/', [AdminPaymentMethodController::class, 'store'])->name('store');
+        Route::put('/{paymentMethod}', [AdminPaymentMethodController::class, 'update'])->name('update');
+        Route::delete('/{paymentMethod}', [AdminPaymentMethodController::class, 'destroy'])->name('destroy');
+    });
 });
 
 Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->name('admin.')->group(function () {

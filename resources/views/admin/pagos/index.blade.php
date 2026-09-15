@@ -2,7 +2,7 @@
     <div class="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
             <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Pagos</h2>
-            <p class="mt-1 text-sm text-[#2B1113]/60">Cargos procesados por OpenPay. Tarjeta, OXXO y SPEI.</p>
+            <p class="mt-1 text-sm text-[#2B1113]/60">Tarjeta, OXXO, SPEI y transferencia bancaria. Pega aquí el concepto de una transferencia recibida para encontrar la reservación.</p>
         </div>
     </div>
 
@@ -33,7 +33,7 @@
     <form method="GET" action="{{ route('admin.pagos.index') }}" class="mb-4 flex flex-wrap items-end gap-2">
         <label class="block">
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Buscar</span>
-            <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Charge ID, ticket code, nombre o email" class="mt-1 w-72 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+            <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Charge ID, ticket code, referencia de transferencia, nombre o email" class="mt-1 w-72 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
         </label>
         <label class="block">
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Estado</span>
@@ -48,7 +48,7 @@
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método</span>
             <select name="method" class="mt-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                 <option value="">Todos</option>
-                @foreach (['card' => 'Tarjeta', 'oxxo' => 'OXXO', 'spei' => 'SPEI'] as $key => $label)
+                @foreach (['card' => 'Tarjeta', 'oxxo' => 'OXXO', 'spei' => 'SPEI', 'transfer' => 'Transferencia'] as $key => $label)
                     <option value="{{ $key }}" @selected($filters['method'] === $key)>{{ $label }}</option>
                 @endforeach
             </select>
@@ -88,6 +88,10 @@
                         <td class="px-4 py-3 text-sm">
                             <p class="text-[#2B1113]">{{ $payment->landingRoute?->from }} → {{ $payment->landingRoute?->to }}</p>
                             <p class="text-xs text-[#2B1113]/50">{{ $payment->landingRoute?->day?->format('d/m/Y') ?? '—' }} · {{ $payment->trip_type_label }}</p>
+                            @php $allSeats = collect([$payment->seat?->label])->merge($payment->groupSeats->pluck('seat.label'))->filter(); @endphp
+                            <p class="mt-0.5 text-xs text-[#2B1113]/50">
+                                {{ $allSeats->count() }} asiento{{ $allSeats->count() === 1 ? '' : 's' }}: {{ $allSeats->implode(', ') }}
+                            </p>
                         </td>
                         <td class="px-4 py-3 text-sm">
                             <span class="inline-flex items-center rounded-lg bg-[#FFFBF6] px-2 py-1 text-xs font-bold text-[#2B1113] ring-1 ring-black/10">

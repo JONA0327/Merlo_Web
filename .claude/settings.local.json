@@ -6,7 +6,11 @@
       "WebSearch",
       "Bash(./vendor/bin/pint app/Http/Controllers/Admin/AdminPackageController.php app/Http/Controllers/Admin/AdminUserController.php)",
       "Bash(node drive-paqueteria-check.mjs)",
-      "Bash(node drive-qr-shot.mjs)"
+      "Bash(node drive-qr-shot.mjs)",
+      "Bash(node test-return-reverse.js)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\goku0\\AppData\\Local\\npm-cache\\_npx\\e41f203b7505f1fb"
     ]
   }
 }

@@ -11,7 +11,7 @@
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
         <section class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-            <form method="POST" action="{{ route('admin.viajes.update', $route) }}" class="space-y-4">
+            <form method="POST" action="{{ route('admin.viajes.update', $route) }}" enctype="multipart/form-data" class="space-y-4">
                 @csrf
                 @method('PUT')
 
@@ -112,6 +112,24 @@
                         <label for="sort_order" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Orden</label>
                         <input id="sort_order" name="sort_order" type="number" min="0" value="{{ old('sort_order', $route->sort_order) }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                     </div>
+                </div>
+
+                <div>
+                    <label for="image" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Imagen del viaje</label>
+                    @if ($route->image_url)
+                        <div class="mb-2 flex items-center gap-3">
+                            <img src="{{ $route->image_url }}" alt="" class="h-16 w-16 rounded-xl object-cover ring-1 ring-black/10">
+                            <label class="flex items-center gap-2 text-xs font-semibold text-[#2B1113]/70">
+                                <input type="checkbox" name="remove_image" value="1" class="h-4 w-4 rounded border-black/20 text-[#8C1D2B] focus:ring-[#8C1D2B]">
+                                Quitar imagen actual
+                            </label>
+                        </div>
+                    @endif
+                    <input id="image" name="image" type="file" accept="image/*" class="block w-full text-sm text-[#2B1113] file:mr-3 file:rounded-lg file:border-0 file:bg-[#8C1D2B] file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-[#6F1622]">
+                    <p class="mt-1.5 text-xs text-[#2B1113]/50">Se muestra como fondo de la tarjeta de esta ruta en la landing. Sube una nueva para reemplazar la actual.</p>
+                    @error('image')
+                        <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -87,6 +87,7 @@ class OpenPayWebhookController extends Controller
         $reservation->update($updates);
 
         if ($normalized === SeatReservation::PAYMENT_COMPLETED) {
+            $reservation->markGroupPaid();
             $reservation->sendGroupTickets();
         }
 

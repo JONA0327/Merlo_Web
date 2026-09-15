@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class LandingRoute extends Model
@@ -28,6 +29,7 @@ class LandingRoute extends Model
         'is_active',
         'featured',
         'sort_order',
+        'image',
     ];
 
     protected $casts = [
@@ -71,6 +73,11 @@ class LandingRoute extends Model
     public function hasSeatMap(): bool
     {
         return $this->bus_unit_id !== null;
+    }
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->image ? Storage::disk('public')->url($this->image) : null;
     }
 
     /**

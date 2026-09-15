@@ -116,35 +116,13 @@
 
             <div class="relative mx-auto max-w-7xl px-6 pt-20 pb-44 lg:px-8 lg:pt-28 lg:pb-56">
                 <div class="max-w-2xl">
-                    <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#F5C948] ring-1 ring-white/20">
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 01.894.553l1.382 2.764 3.05.443a1 1 0 01.554 1.706l-2.207 2.152.521 3.037a1 1 0 01-1.451 1.054L10 12.347l-2.723 1.432a1 1 0 01-1.451-1.054l.52-3.037L4.14 7.466a1 1 0 01.554-1.706l3.05-.443L9.106 2.553A1 1 0 0110 2z"/></svg>
-                        Más de 20 años en carretera
-                    </span>
-                    <h1 class="mt-6 font-[Poppins] text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] text-white [text-shadow:0_2px_20px_rgba(0,0,0,0.35)]">
+                    <h1 class="font-[Poppins] text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] text-white [text-shadow:0_2px_20px_rgba(0,0,0,0.35)]">
                         Viaja seguro,<br>
                         viaja con <span class="text-[#F5C948]">Merlo Transportes</span>
                     </h1>
                     <p class="mt-6 max-w-lg text-lg text-white/85">
                         Compra tus boletos de autobús en minutos. Rutas puntuales, unidades cómodas y la mejor atención en cada tramo de tu viaje.
                     </p>
-
-                    <dl class="mt-10 grid grid-cols-3 gap-6 max-w-md">
-                        <div>
-                            <dt class="sr-only">Rutas</dt>
-                            <dd class="font-[Poppins] text-3xl font-extrabold text-white">40+</dd>
-                            <dd class="text-sm text-white/60">Rutas activas</dd>
-                        </div>
-                        <div>
-                            <dt class="sr-only">Ciudades</dt>
-                            <dd class="font-[Poppins] text-3xl font-extrabold text-white">25</dd>
-                            <dd class="text-sm text-white/60">Ciudades</dd>
-                        </div>
-                        <div>
-                            <dt class="sr-only">Pasajeros</dt>
-                            <dd class="font-[Poppins] text-3xl font-extrabold text-white">1M+</dd>
-                            <dd class="text-sm text-white/60">Pasajeros felices</dd>
-                        </div>
-                    </dl>
 
                     {{-- carousel controls --}}
                     <div class="mt-10 flex items-center gap-4">
@@ -173,13 +151,20 @@
         <section id="buscar" class="relative -mt-28 lg:-mt-32 px-6 lg:px-8">
             <div class="mx-auto max-w-5xl rounded-3xl bg-white shadow-2xl shadow-black/10 ring-1 ring-black/5 p-6 sm:p-8">
                 <h2 class="font-[Poppins] text-lg font-bold text-[#2B1113] mb-5">Encuentra tu boleto</h2>
-                <form method="GET" action="{{ route('travel.search') }}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-4">
+                <form method="GET" action="{{ route('travel.search') }}" id="trip-search-form" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-4">
                     <label class="block">
                         <span class="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#8C1D2B]">
                             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.69 18.933a.75.75 0 00.62 0c.058-.026 3.32-1.5 6.09-4.005A9.75 9.75 0 0010 1.5a9.75 9.75 0 00-6.4 13.428c2.77 2.505 6.032 3.979 6.09 4.005zM10 10a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" clip-rule="evenodd"/></svg>
                             Origen
                         </span>
-                        <input type="text" name="from" value="{{ request('from') }}" placeholder="Ciudad de origen" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
+                        <div data-city-select data-role="from" data-placeholder="Selecciona una ciudad" data-initial="{{ request('from') }}" class="relative">
+                            <button type="button" data-city-trigger aria-haspopup="listbox" aria-expanded="false" class="flex w-full items-center justify-between gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-left text-sm font-medium text-[#2B1113] transition focus:border-[#8C1D2B] focus:outline-none focus:ring-2 focus:ring-[#8C1D2B]/20 disabled:cursor-not-allowed disabled:opacity-50">
+                                <span data-city-label class="truncate text-[#2B1113]/40">Selecciona una ciudad</span>
+                                <svg data-city-chevron class="h-4 w-4 shrink-0 text-[#8C1D2B] transition-transform duration-200" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+                            </button>
+                            <input type="hidden" name="from" data-city-input>
+                            <ul data-city-menu class="invisible absolute z-30 mt-2 max-h-60 w-full origin-top scale-95 overflow-auto rounded-xl border border-black/10 bg-white p-1.5 opacity-0 shadow-xl ring-1 ring-black/5 transition duration-150 ease-out"></ul>
+                        </div>
                     </label>
 
                     <label class="block">
@@ -187,7 +172,14 @@
                             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.69 18.933a.75.75 0 00.62 0c.058-.026 3.32-1.5 6.09-4.005A9.75 9.75 0 0010 1.5a9.75 9.75 0 00-6.4 13.428c2.77 2.505 6.032 3.979 6.09 4.005zM10 10a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" clip-rule="evenodd"/></svg>
                             Destino
                         </span>
-                        <input type="text" name="to" value="{{ request('to') }}" placeholder="Ciudad de destino" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
+                        <div data-city-select data-role="to" data-placeholder="Elige primero el origen" data-initial="{{ request('to') }}" class="relative">
+                            <button type="button" data-city-trigger disabled aria-haspopup="listbox" aria-expanded="false" class="flex w-full items-center justify-between gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-left text-sm font-medium text-[#2B1113] transition focus:border-[#8C1D2B] focus:outline-none focus:ring-2 focus:ring-[#8C1D2B]/20 disabled:cursor-not-allowed disabled:opacity-50">
+                                <span data-city-label class="truncate text-[#2B1113]/40">Elige primero el origen</span>
+                                <svg data-city-chevron class="h-4 w-4 shrink-0 text-[#8C1D2B] transition-transform duration-200" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+                            </button>
+                            <input type="hidden" name="to" data-city-input>
+                            <ul data-city-menu class="invisible absolute z-30 mt-2 max-h-60 w-full origin-top scale-95 overflow-auto rounded-xl border border-black/10 bg-white p-1.5 opacity-0 shadow-xl ring-1 ring-black/5 transition duration-150 ease-out"></ul>
+                        </div>
                     </label>
 
                     <label class="block">
@@ -195,7 +187,7 @@
                             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zM3.5 8.5v6.75c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V8.5h-13z" clip-rule="evenodd"/></svg>
                             Fecha de viaje
                         </span>
-                        <input type="date" name="date" value="{{ request('date') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
+                        <input type="date" name="date" id="trip-search-date" value="{{ request('date') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
                     </label>
 
                     <label class="block">
@@ -203,7 +195,7 @@
                             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zM3.5 8.5v6.75c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V8.5h-13z" clip-rule="evenodd"/></svg>
                             Fecha de regreso
                         </span>
-                        <input type="date" name="return_date" value="{{ request('return_date') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
+                        <input type="date" name="return_date" id="trip-search-return-date" value="{{ request('return_date') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-medium text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none transition">
                     </label>
 
                     <div class="flex items-end">
@@ -212,72 +204,196 @@
                             Buscar
                         </button>
                     </div>
+                    <p id="trip-search-error" class="hidden sm:col-span-2 lg:col-span-5 text-xs font-semibold text-red-600">Indica al menos una fecha (de viaje o de regreso) para buscar.</p>
                 </form>
             </div>
         </section>
 
+        <script>
+            window.__TRIP_SEARCH__ = {
+                pairs: {!! json_encode($routePairs->map(fn ($p) => ['from' => $p->from, 'to' => $p->to])) !!},
+            };
+        </script>
+
+        {{-- ===================== CÓMO FUNCIONA ===================== --}}
+        <section class="relative mx-auto max-w-7xl px-6 pt-20 pb-4 lg:px-8">
+            <div class="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-6">
+                @foreach ([
+                    ['n' => '01', 'title' => 'Busca tu ruta', 'text' => 'Elige tu origen, destino y fecha de viaje en segundos.', 'icon' => 'search'],
+                    ['n' => '02', 'title' => 'Elige tu asiento', 'text' => 'Selecciona el lugar perfecto en el mapa interactivo del autobús.', 'icon' => 'seat'],
+                    ['n' => '03', 'title' => 'Viaja tranquilo', 'text' => 'Recibe tu boleto digital con código QR al instante por correo.', 'icon' => 'ticket'],
+                ] as $step)
+                    <div class="relative rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+                        <span class="font-[Poppins] text-5xl font-extrabold text-[#8C1D2B]/[0.06] absolute top-3 right-4 select-none">{{ $step['n'] }}</span>
+                        <span class="relative inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#8C1D2B] to-[#6F1622] text-[#F5C948] shadow-md shadow-[#8C1D2B]/20">
+                            @switch($step['icon'])
+                                @case('search')
+                                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+                                    @break
+                                @case('seat')
+                                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a1 1 0 00-1 1v6a3 3 0 003 3h.5v3a1 1 0 102 0v-3h3v3a1 1 0 102 0v-3.09A3 3 0 0016 10V6a1 1 0 10-2 0v4a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 00-1-1H4z"/></svg>
+                                    @break
+                                @case('ticket')
+                                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v2.5a1.5 1.5 0 010 3V14a2 2 0 002 2h12a2 2 0 002-2v-2.5a1.5 1.5 0 010-3V6a2 2 0 00-2-2H4zm5 2.5a.75.75 0 01.75.75v.5a.75.75 0 01-1.5 0v-.5A.75.75 0 019 6.5zm.75 3.25v.5a.75.75 0 01-1.5 0v-.5a.75.75 0 011.5 0zM9 12.75a.75.75 0 01.75.75v.5a.75.75 0 01-1.5 0v-.5a.75.75 0 01.75-.75z"/></svg>
+                                    @break
+                            @endswitch
+                        </span>
+                        <h3 class="relative mt-4 font-[Poppins] text-base font-bold text-[#2B1113]">{{ $step['title'] }}</h3>
+                        <p class="relative mt-1.5 text-sm text-[#2B1113]/60 leading-relaxed">{{ $step['text'] }}</p>
+                    </div>
+                @endforeach
+            </div>
+        </section>
+
         {{-- ===================== RUTAS POPULARES ===================== --}}
-        <section id="rutas" class="mx-auto max-w-7xl px-6 lg:px-8 pt-24 pb-20">
+        <section id="rutas" class="mx-auto max-w-7xl px-6 lg:px-8 pt-16 pb-20">
             <div class="text-center max-w-2xl mx-auto">
                 <span class="text-xs font-bold uppercase tracking-widest text-[#8C1D2B]">Destinos frecuentes</span>
                 <h2 class="mt-3 font-[Poppins] text-3xl sm:text-4xl font-extrabold text-[#2B1113]">Rutas populares</h2>
                 <p class="mt-3 text-[#2B1113]/60">Estas son algunas de las rutas más solicitadas por nuestros pasajeros cada semana.</p>
             </div>
 
-            <div class="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                @php
-                    $landingRoutes = \App\Models\LandingRoute::query()
-                        ->where('is_active', true)
-                        ->where('featured', true)
-                        ->orderBy('sort_order')
-                        ->orderBy('id')
-                        ->limit(4)
-                        ->get();
-                @endphp
+            @php
+                $landingRoutes = \App\Models\LandingRoute::query()
+                    ->where('is_active', true)
+                    ->where('featured', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->limit(4)
+                    ->get();
+                $routeCount = $landingRoutes->count();
+            @endphp
 
-                @forelse ($landingRoutes as $route)
-                    {{-- The whole card is always a link so the customer can
-                         move forward regardless of how complete the admin's
-                         setup is on the back end:
-                           * Has a bus unit attached → go straight to the
-                             seat picker (the "elegir asientos" page that
-                             already has a Konva map for this trip).
-                           * No bus unit yet → fall back to the search
-                             results with from/to prefilled, where the user
-                             can pick the same trip again and (in the future)
-                             get routed to whichever flow is appropriate. --}}
-                    <a href="{{ $route->hasSeatMap() ? route('travel.seats', $route) : route('travel.search', ['from' => $route->from, 'to' => $route->to, 'date' => optional($route->day)->format('Y-m-d'), 'passengers' => 1]) }}" class="group block rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:ring-[#8C1D2B]/30 transition-all duration-300 cursor-pointer">
-                        @include('partials.landing-route-card', ['route' => $route])
-                        <div class="mt-4 flex items-center justify-end gap-1.5 text-xs font-bold text-[#8C1D2B] opacity-70 group-hover:opacity-100 transition-opacity">
-                            {{ $route->hasSeatMap() ? 'Elegir asientos' : 'Ver disponibilidad' }}
-                            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
-                        </div>
-                    </a>
-                @empty
-                    <div class="col-span-full text-center py-12">
-                        <p class="text-[#2B1113]/60 font-medium">Viajes destacados próximamente</p>
+            @if ($routeCount === 1)
+                {{-- A single featured route in a 4-column grid leaves three
+                     big empty gaps on desktop — give it a wide "spotlight"
+                     treatment instead so the section still reads as full. --}}
+                @php $route = $landingRoutes->first(); @endphp
+                <a href="{{ $route->hasSeatMap() ? route('travel.seats', $route) : route('travel.search', ['from' => $route->from, 'to' => $route->to, 'date' => optional($route->day)->format('Y-m-d'), 'passengers' => 1]) }}"
+                   class="group mt-14 mx-auto flex max-w-4xl flex-col overflow-hidden rounded-3xl bg-white ring-1 ring-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:ring-[#8C1D2B]/30 transition-all duration-300 sm:flex-row">
+                    <div class="relative isolate flex w-full shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-[#8C1D2B] to-[#4B0C14] p-10 sm:w-2/5">
+                        @if ($route->image_url)
+                            <img src="{{ $route->image_url }}" alt="" aria-hidden="true" class="absolute inset-0 -z-20 h-full w-full object-cover">
+                            <div class="absolute inset-0 -z-10 bg-gradient-to-t from-[#4B0C14]/80 via-[#4B0C14]/10 to-transparent sm:bg-gradient-to-r sm:from-[#4B0C14]/10 sm:via-transparent sm:to-transparent"></div>
+                        @else
+                            <div class="absolute -top-10 -left-10 h-40 w-40 rounded-full bg-[#F5B301]/20 blur-2xl"></div>
+                            <div class="absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
+                        @endif
+                        <span class="relative inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-[#F5C948] ring-1 ring-white/20 backdrop-blur-sm sm:hidden">Ruta destacada</span>
+                        @unless ($route->image_url)
+                            <svg viewBox="0 0 64 64" class="relative hidden h-28 w-28 text-[#F5C948] sm:block" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="7" y="14" width="50" height="30" rx="7" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="2.5"/>
+                                <rect x="13" y="20" width="14" height="10" rx="2" fill="currentColor"/>
+                                <rect x="31" y="20" width="14" height="10" rx="2" fill="currentColor" fill-opacity="0.55"/>
+                                <circle cx="19" cy="48" r="5" fill="currentColor"/>
+                                <circle cx="45" cy="48" r="5" fill="currentColor"/>
+                            </svg>
+                        @endunless
                     </div>
-                @endforelse
-            </div>
+                    <div class="flex-1 p-8 sm:p-10">
+                        <div class="hidden items-center justify-between sm:flex">
+                            <span class="text-xs font-bold uppercase tracking-wider text-[#8C1D2B]">Ruta destacada</span>
+                            <span class="text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">Directo</span>
+                        </div>
+                        <div class="mt-3 flex items-center gap-3 font-[Poppins] text-2xl sm:text-3xl font-extrabold text-[#2B1113]">
+                            <span>{{ $route->from }}</span>
+                            <svg class="h-6 w-6 shrink-0 text-[#8C1D2B]" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
+                            <span>{{ $route->to }}</span>
+                        </div>
+
+                        <div class="mt-6 flex flex-wrap items-end justify-between gap-6 border-t border-black/5 pt-6">
+                            <div class="flex gap-8">
+                                <div>
+                                    <p class="text-xs text-[#2B1113]/50">Duración</p>
+                                    <p class="text-sm font-semibold">{{ $route->duration }}</p>
+                                </div>
+                                @if ($route->day)
+                                    <div>
+                                        <p class="text-xs text-[#2B1113]/50">Salida</p>
+                                        <p class="text-sm font-semibold">{{ $route->day->format('d/m/Y') }}@if ($route->departure_time_formatted) &middot; {{ $route->departure_time_formatted }}@endif</p>
+                                    </div>
+                                @endif
+                            </div>
+                            <div class="text-right space-y-0.5">
+                                <p class="text-xs text-[#2B1113]/50">Desde</p>
+                                <p class="font-[Poppins] text-2xl font-extrabold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }} <span class="text-xs font-semibold text-[#2B1113]/40">ida</span></p>
+                                @if ($route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP))
+                                    <p class="font-[Poppins] text-sm font-bold text-[#8C1D2B]/80">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP) }} <span class="text-[10px] font-semibold text-[#2B1113]/40">redondo</span></p>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="mt-6 flex items-center justify-end gap-1.5 text-sm font-bold text-[#8C1D2B] opacity-80 group-hover:opacity-100 transition-opacity">
+                            {{ $route->hasSeatMap() ? 'Elegir asientos' : 'Ver disponibilidad' }}
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
+                        </div>
+                    </div>
+                </a>
+
+                <p class="mt-6 text-center text-sm text-[#2B1113]/50">
+                    ¿Buscas otro destino? <button type="button" class="js-modal-trigger font-bold text-[#8C1D2B] hover:underline" data-auth-modal="cotizar">Cotiza tu ruta por WhatsApp</button>.
+                </p>
+            @else
+                @php
+                    $gridClass = match (true) {
+                        $routeCount === 2 => 'sm:grid-cols-2 max-w-2xl',
+                        $routeCount === 3 => 'sm:grid-cols-2 lg:grid-cols-3 max-w-4xl',
+                        default => 'sm:grid-cols-2 lg:grid-cols-4 max-w-none',
+                    };
+                @endphp
+                <div class="mt-14 mx-auto grid grid-cols-1 {{ $gridClass }} gap-6">
+                    @forelse ($landingRoutes as $route)
+                        {{-- The whole card is always a link so the customer can
+                             move forward regardless of how complete the admin's
+                             setup is on the back end:
+                               * Has a bus unit attached → go straight to the
+                                 seat picker (the "elegir asientos" page that
+                                 already has a Konva map for this trip).
+                               * No bus unit yet → fall back to the search
+                                 results with from/to prefilled, where the user
+                                 can pick the same trip again and (in the future)
+                                 get routed to whichever flow is appropriate. --}}
+                        <a href="{{ $route->hasSeatMap() ? route('travel.seats', $route) : route('travel.search', ['from' => $route->from, 'to' => $route->to, 'date' => optional($route->day)->format('Y-m-d'), 'passengers' => 1]) }}" class="group block rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:ring-[#8C1D2B]/30 transition-all duration-300 cursor-pointer">
+                            @include('partials.landing-route-card', ['route' => $route])
+                            <div class="mt-4 flex items-center justify-end gap-1.5 text-xs font-bold text-[#8C1D2B] opacity-70 group-hover:opacity-100 transition-opacity">
+                                {{ $route->hasSeatMap() ? 'Elegir asientos' : 'Ver disponibilidad' }}
+                                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.5 10a.75.75 0 01.75-.75h11.19l-3.22-3.22a.75.75 0 111.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 11-1.06-1.06l3.22-3.22H3.25A.75.75 0 012.5 10z" clip-rule="evenodd"/></svg>
+                            </div>
+                        </a>
+                    @empty
+                        <div class="col-span-full flex flex-col items-center gap-4 rounded-3xl bg-white/60 px-6 py-16 ring-1 ring-black/5">
+                            <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8C1D2B] to-[#6F1622] text-[#F5C948] shadow-lg shadow-[#8C1D2B]/20">
+                                <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 00-2 2v6a2 2 0 002 2h1.05a2.5 2.5 0 014.9 0H12a1 1 0 001-1v-2h2.05a1 1 0 00.923-.617l1.027-2.47A1 1 0 0016.028 6H14V5a1 1 0 00-1-1H3z"/><path d="M6 15.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+                            </span>
+                            <p class="text-[#2B1113]/60 font-medium">Viajes destacados próximamente</p>
+                            <button type="button" class="js-modal-trigger inline-flex items-center gap-2 rounded-full bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors" data-auth-modal="cotizar">
+                                Cotiza tu ruta por WhatsApp
+                            </button>
+                        </div>
+                    @endforelse
+                </div>
+            @endif
         </section>
 
         {{-- ===================== BENEFICIOS ===================== --}}
-        <section id="beneficios" class="bg-white border-y border-black/5">
-            <div class="mx-auto max-w-7xl px-6 lg:px-8 py-24">
+        <section id="beneficios" class="relative overflow-hidden bg-white border-y border-black/5">
+            <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-[#F5B301]/[0.07] blur-3xl"></div>
+            <div class="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#8C1D2B]/[0.05] blur-3xl"></div>
+            <div class="relative mx-auto max-w-7xl px-6 lg:px-8 py-24">
                 <div class="text-center max-w-2xl mx-auto">
                     <span class="text-xs font-bold uppercase tracking-widest text-[#8C1D2B]">¿Por qué Merlo?</span>
                     <h2 class="mt-3 font-[Poppins] text-3xl sm:text-4xl font-extrabold text-[#2B1113]">Viajar nunca fue tan fácil</h2>
                 </div>
 
-                <div class="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                <div class="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     @foreach ([
                         ['icon' => 'shield', 'title' => 'Viaje seguro', 'text' => 'Unidades revisadas y conductores certificados en cada salida.'],
                         ['icon' => 'clock', 'title' => 'Puntualidad', 'text' => 'Salidas y llegadas a tiempo, todos los días del año.'],
                         ['icon' => 'seat', 'title' => 'Comodidad', 'text' => 'Asientos reclinables, aire acondicionado y espacio amplio.'],
                         ['icon' => 'card', 'title' => 'Compra fácil', 'text' => 'Paga en línea y recibe tu boleto al instante, sin filas.'],
                     ] as $benefit)
-                        <div class="text-center sm:text-left">
-                            <span class="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8C1D2B] to-[#6F1622] text-[#F5C948] shadow-lg shadow-[#8C1D2B]/20">
+                        <div class="group rounded-2xl bg-[#FFFBF6] p-6 text-center ring-1 ring-black/5 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:ring-[#8C1D2B]/20 sm:text-left">
+                            <span class="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8C1D2B] to-[#6F1622] text-[#F5C948] shadow-lg shadow-[#8C1D2B]/20 transition-transform duration-300 group-hover:scale-105">
                                 @switch($benefit['icon'])
                                     @case('shield')
                                         <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.664 1.319a.75.75 0 01.672 0 41.059 41.059 0 008.198 3.222.75.75 0 01.556.712 26.65 26.65 0 01-2.005 11.245 6.716 6.716 0 01-4.14 3.997A41.058 41.058 0 0110 21.13a41.058 41.058 0 01-2.945-1.635 6.716 6.716 0 01-4.14-3.997A26.65 26.65 0 011 4.253a.75.75 0 01.556-.712 41.059 41.059 0 008.108-3.222z" clip-rule="evenodd"/></svg>
@@ -309,13 +425,17 @@
                     <h2 class="mt-3 font-[Poppins] text-3xl sm:text-4xl font-extrabold text-[#2B1113]">
                         Servicio de paquetería
                     </h2>
+                    <p class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#F5B301]/15 px-3 py-1 text-xs font-bold text-[#8C1D2B]">
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.69 18.933a.75.75 0 00.62 0c.058-.026 3.32-1.5 6.09-4.005A9.75 9.75 0 0010 1.5a9.75 9.75 0 00-6.4 13.428c2.77 2.505 6.032 3.979 6.09 4.005zM10 10a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" clip-rule="evenodd"/></svg>
+                        Ciudad de México &harr; San Luis Potosí
+                    </p>
                     <p class="mt-4 text-[#2B1113]/60 max-w-lg">
-                        Envía documentos y paquetes entre ciudades con la misma seguridad y puntualidad de nuestras rutas de pasajeros. Rápido, confiable y a un gran precio.
+                        Envía documentos y paquetes entre Ciudad de México y San Luis Potosí con la misma seguridad y puntualidad de nuestras rutas de pasajeros. Rápido, confiable y a un gran precio.
                     </p>
 
                     <ul class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
                         @foreach ([
-                            'Entrega el mismo día entre ciudades conectadas',
+                            'Entrega el mismo día entre CDMX y SLP',
                             'Rastreo de tu envío en tiempo real',
                             'Empaque y manejo seguro garantizado',
                             'Tarifas accesibles por kilo o volumen',
@@ -355,8 +475,10 @@
 
         {{-- ===================== NOSOTROS / CTA ===================== --}}
         <section id="nosotros" class="mx-auto max-w-7xl px-6 lg:px-8 py-24">
-            <div class="relative overflow-hidden rounded-3xl bg-[#7A1120]">
-                <div class="absolute inset-0 bg-gradient-to-br from-[#8C1D2B] via-[#7A1120] to-[#4B0C14]"></div>
+            <div class="relative isolate overflow-hidden rounded-3xl bg-[#7A1120]">
+                <img src="{{ asset('images/bus-doble-piso.jpeg') }}" alt="" aria-hidden="true" class="absolute inset-0 -z-20 h-full w-full object-cover">
+                <div class="absolute inset-0 -z-10 bg-gradient-to-r from-[#7A1120] via-[#7A1120]/85 to-[#7A1120]/25"></div>
+                <div class="absolute inset-0 -z-10 bg-gradient-to-t from-[#4B0C14]/70 via-transparent to-transparent"></div>
                 <div class="absolute -top-16 -right-10 h-64 w-64 rounded-full bg-[#F5B301]/20 blur-3xl"></div>
                 <div class="relative grid grid-cols-1 lg:grid-cols-2 gap-10 items-center px-8 py-16 sm:px-14 sm:py-20">
                     <div>
@@ -391,7 +513,10 @@
             $whatsappDigits = $setting->whatsappDigits();
         @endphp
         <section id="cotizar" class="mx-auto max-w-7xl px-6 lg:px-8 pb-24">
-            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#8C1D2B] via-[#7A1120] to-[#4B0C14]">
+            <div class="relative isolate overflow-hidden rounded-3xl bg-[#7A1120]">
+                <img src="{{ asset('images/Mexico.jpg') }}" alt="" aria-hidden="true" class="absolute inset-0 -z-20 h-full w-full object-cover">
+                <div class="absolute inset-0 -z-10 bg-gradient-to-r from-[#7A1120] via-[#7A1120]/85 to-[#7A1120]/25"></div>
+                <div class="absolute inset-0 -z-10 bg-gradient-to-t from-[#4B0C14]/70 via-transparent to-transparent"></div>
                 <div class="absolute -top-16 -left-10 h-64 w-64 rounded-full bg-[#F5B301]/20 blur-3xl"></div>
                 <div class="absolute -bottom-16 -right-10 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
                 <div class="relative flex flex-col sm:flex-row items-center justify-between gap-8 px-8 py-12 sm:px-14 sm:py-14 text-center sm:text-left">

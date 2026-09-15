@@ -233,7 +233,11 @@ class OpenPayService
     private function buildDescription(SeatReservation $r): string
     {
         $trip = $r->landingRoute;
-        $legs = $r->isRoundTrip() ? 'Viaje redondo' : 'Solo ida';
+        $legs = match (true) {
+            $r->isReturnLeg() => 'Solo regreso',
+            $r->isRoundTrip() => 'Viaje redondo',
+            default => 'Solo ida',
+        };
         return sprintf('Merlo %s · %s → %s · %s',
             $legs,
             $trip->from ?? '',

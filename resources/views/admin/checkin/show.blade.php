@@ -64,33 +64,41 @@
                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         @php
                             $outboundDone = $reservation->isOutboundVerified();
-                            $returnVisible = $reservation->isRoundTrip();
+                            $outboundVisible = ! $reservation->isReturnLeg();
+                            $returnVisible = $reservation->isRoundTrip() || $reservation->isReturnLeg();
                             $returnDone = $reservation->isReturnVerified();
                         @endphp
-                        <div class="rounded-xl border-2 {{ $outboundDone ? 'border-emerald-300 bg-emerald-50' : 'border-dashed border-amber-300 bg-amber-50' }} p-4">
-                            <div class="flex items-center gap-2">
+                        @if ($outboundVisible)
+                            <div class="rounded-xl border-2 {{ $outboundDone ? 'border-emerald-300 bg-emerald-50' : 'border-dashed border-amber-300 bg-amber-50' }} p-4">
+                                <div class="flex items-center gap-2">
+                                    @if ($outboundDone)
+                                        <svg class="h-5 w-5 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-8 8a1 1 0 01-1.42 0l-4-4a1 1 0 011.42-1.42L8 12.585l7.296-7.295a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
+                                        <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Salida registrada</span>
+                                    @else
+                                        <svg class="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clip-rule="evenodd"/></svg>
+                                        <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Pendiente</span>
+                                    @endif
+                                </div>
                                 @if ($outboundDone)
-                                    <svg class="h-5 w-5 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-8 8a1 1 0 01-1.42 0l-4-4a1 1 0 011.42-1.42L8 12.585l7.296-7.295a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Salida registrada</span>
-                                @else
-                                    <svg class="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clip-rule="evenodd"/></svg>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Pendiente</span>
+                                    <p class="mt-2 text-[11px] text-emerald-700">{{ $reservation->outbound_verified_at->format('d/m/Y H:i') }} hrs</p>
+                                    <p class="text-[10px] text-emerald-700/80">por {{ $reservation->outboundVerifiedBy?->name ?? 'operador' }}</p>
+                                @endif
+                                @if (! $outboundDone)
+                                    <form method="POST" action="{{ route('admin.checkin.outbound', $reservation) }}" class="mt-3">
+                                        @csrf
+                                        <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#F5B301] px-3 py-2 text-xs font-bold text-[#2B1113] shadow-sm hover:bg-[#E0A400] transition-colors">
+                                            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-8 8a1 1 0 01-1.42 0l-4-4a1 1 0 011.42-1.42L8 12.585l7.296-7.295a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
+                                            Registrar salida
+                                        </button>
+                                    </form>
                                 @endif
                             </div>
-                            @if ($outboundDone)
-                                <p class="mt-2 text-[11px] text-emerald-700">{{ $reservation->outbound_verified_at->format('d/m/Y H:i') }} hrs</p>
-                                <p class="text-[10px] text-emerald-700/80">por {{ $reservation->outboundVerifiedBy?->name ?? 'operador' }}</p>
-                            @endif
-                            @if (! $outboundDone)
-                                <form method="POST" action="{{ route('admin.checkin.outbound', $reservation) }}" class="mt-3">
-                                    @csrf
-                                    <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#F5B301] px-3 py-2 text-xs font-bold text-[#2B1113] shadow-sm hover:bg-[#E0A400] transition-colors">
-                                        <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-8 8a1 1 0 01-1.42 0l-4-4a1 1 0 011.42-1.42L8 12.585l7.296-7.295a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
-                                        Registrar salida
-                                    </button>
-                                </form>
-                            @endif
-                        </div>
+                        @else
+                            <div class="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-4">
+                                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Sin ida</p>
+                                <p class="mt-1 text-[11px] text-slate-500">Este boleto es solo de regreso (reventa).</p>
+                            </div>
+                        @endif
 
                         @if ($returnVisible)
                             <div class="rounded-xl border-2 {{ $returnDone ? 'border-emerald-300 bg-emerald-50' : 'border-dashed border-amber-300 bg-amber-50' }} p-4">
@@ -109,12 +117,12 @@
                                 @else
                                     <form method="POST" action="{{ route('admin.checkin.return', $reservation) }}" class="mt-3">
                                         @csrf
-                                        <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#F5B301] px-3 py-2 text-xs font-bold text-[#2B1113] shadow-sm hover:bg-[#E0A400] transition-colors disabled:opacity-40" {{ $outboundDone ? '' : 'disabled' }}>
+                                        <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#F5B301] px-3 py-2 text-xs font-bold text-[#2B1113] shadow-sm hover:bg-[#E0A400] transition-colors disabled:opacity-40" {{ ($outboundDone || ! $outboundVisible) ? '' : 'disabled' }}>
                                             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-8 8a1 1 0 01-1.42 0l-4-4a1 1 0 011.42-1.42L8 12.585l7.296-7.295a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
                                             Registrar regreso
                                         </button>
                                     </form>
-                                    @if (! $outboundDone)
+                                    @if (! $outboundDone && $outboundVisible)
                                         <p class="mt-1 text-[10px] text-amber-700">Registra primero la salida</p>
                                     @endif
                                 @endif

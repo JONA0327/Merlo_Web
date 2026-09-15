@@ -39,6 +39,7 @@ return [
     // when you sign up; production keys are issued after OpenPay's
     // manual compliance review (see their docs).
     'openpay' => [
+        'enabled' => env('OPENPAY_ENABLED', false),
         'id' => env('OPENPAY_ID'),
         'private_key' => env('OPENPAY_PRIVATE_KEY'),
         'public_key' => env('OPENPAY_PUBLIC_KEY'),

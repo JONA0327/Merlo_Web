@@ -64,6 +64,10 @@ class AdminTripCheckinController extends Controller
      */
     public function verifyOutbound(Request $request, SeatReservation $reservation): RedirectResponse
     {
+        if ($reservation->isReturnLeg()) {
+            return $this->backWithError($reservation, 'Este boleto es solo de regreso — no tiene ida que registrar.');
+        }
+
         if ($reservation->isOutboundVerified()) {
             return $this->backWithError($reservation, 'Esta salida ya estaba registrada.');
         }
@@ -86,11 +90,11 @@ class AdminTripCheckinController extends Controller
      */
     public function verifyReturn(Request $request, SeatReservation $reservation): RedirectResponse
     {
-        if ($reservation->isOneWay()) {
+        if ($reservation->isOneWay() && ! $reservation->isReturnLeg()) {
             return $this->backWithError($reservation, 'Este boleto es solo de ida — no tiene vuelta que registrar.');
         }
 
-        if (! $reservation->isOutboundVerified()) {
+        if (! $reservation->isReturnLeg() && ! $reservation->isOutboundVerified()) {
             return $this->backWithError($reservation, 'Primero registra la salida antes de marcar el regreso.');
         }
 

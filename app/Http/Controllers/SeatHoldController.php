@@ -7,15 +7,18 @@ use App\Models\BusUnitSeat;
 use App\Models\LandingRoute;
 use App\Models\SeatHold;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class SeatHoldController extends Controller
 {
-    public function store(LandingRoute $landingRoute, BusUnitSeat $busUnitSeat): JsonResponse
+    public function store(Request $request, LandingRoute $landingRoute, BusUnitSeat $busUnitSeat): JsonResponse
     {
         abort_unless($landingRoute->hasSeatMap(), 404);
 
-        $hold = DB::transaction(function () use ($landingRoute, $busUnitSeat) {
+        $isReturnResale = $request->input('trip_type') === 'return_resale';
+
+        $hold = DB::transaction(function () use ($landingRoute, $busUnitSeat, $isReturnResale) {
             $trip = LandingRoute::query()->lockForUpdate()->findOrFail($landingRoute->id);
 
             abort_unless(
@@ -24,11 +27,19 @@ class SeatHoldController extends Controller
                 'Ese asiento no está disponible para reservar.'
             );
 
-            abort_if(
-                $trip->seatReservations()->where('bus_unit_seat_id', $busUnitSeat->id)->exists(),
-                409,
-                'Ese asiento ya fue comprado.'
-            );
+            $existingReservations = $trip->seatReservations()->where('bus_unit_seat_id', $busUnitSeat->id)->get();
+
+            if ($isReturnResale) {
+                // A resale hold only makes sense on a seat whose
+                // round-trip reservation has its return leg released
+                // and still within the resale window — everything
+                // else (no reservation at all, already resold, window
+                // closed) means there's nothing to hold here.
+                $resaleOpen = $existingReservations->contains(fn ($r) => $r->isRoundTrip() && $r->isResaleWindowOpen());
+                abort_unless($resaleOpen, 409, 'Ese asiento de regreso ya no está disponible.');
+            } else {
+                abort_if($existingReservations->isNotEmpty(), 409, 'Ese asiento ya fue comprado.');
+            }
 
             $existingHold = SeatHold::where('landing_route_id', $trip->id)
                 ->where('bus_unit_seat_id', $busUnitSeat->id)

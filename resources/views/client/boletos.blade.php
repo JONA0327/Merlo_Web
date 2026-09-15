@@ -27,9 +27,10 @@
 
                 <div class="flex flex-wrap items-center gap-2">
                     @foreach ($group as $reservation)
-                        <span class="rounded-full bg-[#8C1D2B]/10 px-3 py-1.5 text-xs font-bold text-[#8C1D2B]">
+                        <a href="{{ route('cliente.boletos.ver', $reservation) }}" class="group inline-flex items-center gap-1.5 rounded-full bg-[#8C1D2B]/10 px-3 py-1.5 text-xs font-bold text-[#8C1D2B] transition-colors hover:bg-[#8C1D2B] hover:text-white">
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6 2a2 2 0 00-2 2v1a1 1 0 001 1 1 1 0 010 2 1 1 0 00-1 1v1a2 2 0 002 2h1a1 1 0 100-2h6a1 1 0 100 2h1a2 2 0 002-2v-1a1 1 0 00-1-1 1 1 0 110-2 1 1 0 001-1V4a2 2 0 00-2-2h-1a1 1 0 100 2H7a1 1 0 100-2H6z"/></svg>
                             Asiento {{ $reservation->seat->label }}
-                        </span>
+                        </a>
                     @endforeach
                 </div>
             </div>
