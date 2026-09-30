@@ -114,7 +114,15 @@ class User extends Authenticatable implements MustVerifyEmail
             'verification_code_expires_at' => now()->addMinutes(15),
         ])->save();
 
-        Mail::to($this->email)->send(new VerificationCodeMail($this, $code));
+        try {
+            Mail::to($this->email)->send(new VerificationCodeMail($this, $code));
+        } catch (\Throwable $e) {
+            \Log::warning('Email verification code failed to send', [
+                'user_id' => $this->id,
+                'email' => $this->email,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -151,7 +159,15 @@ class User extends Authenticatable implements MustVerifyEmail
             'password_reset_code_expires_at' => now()->addMinutes(15),
         ])->save();
 
-        Mail::to($this->email)->send(new PasswordResetCodeMail($this, $code));
+        try {
+            Mail::to($this->email)->send(new PasswordResetCodeMail($this, $code));
+        } catch (\Throwable $e) {
+            \Log::warning('Password reset code failed to send', [
+                'user_id' => $this->id,
+                'email' => $this->email,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

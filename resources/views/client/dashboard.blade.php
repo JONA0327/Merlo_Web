@@ -4,18 +4,14 @@
         <p class="mt-1 text-sm text-[#2B1113]/60">Este es el resumen de tu cuenta en Merlo Transportes.</p>
     </div>
 
-    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
         @foreach ([
-            ['label' => 'En tu carrito', 'value' => '0', 'icon' => 'cart'],
             ['label' => 'Boletos activos', 'value' => '0', 'icon' => 'ticket'],
             ['label' => 'Paquetes en camino', 'value' => '0', 'icon' => 'box'],
         ] as $stat)
             <div class="rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm">
                 <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-[#8C1D2B]/10 text-[#8C1D2B]">
                     @switch($stat['icon'])
-                        @case('cart')
-                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M1 1.75A.75.75 0 011.75 1h1.628a1.75 1.75 0 011.734 1.51L5.18 3h12.07a.75.75 0 01.728.92l-1.15 4.816a1.75 1.75 0 01-1.702 1.334H6.98a1.75 1.75 0 01-1.734-1.51L4.32 2.6a.25.25 0 00-.247-.216H1.75A.75.75 0 011 1.75zM6 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM14.5 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
-                            @break
                         @case('ticket')
                             <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.5 3.75a3 3 0 00-3 3v.75a.75.75 0 00.75.75 1.5 1.5 0 010 3 .75.75 0 00-.75.75v.75a3 3 0 003 3h11a3 3 0 003-3v-.75a.75.75 0 00-.75-.75 1.5 1.5 0 010-3 .75.75 0 00.75-.75v-.75a3 3 0 00-3-3h-11zM8 6a.75.75 0 01.75.75v.5a.75.75 0 01-1.5 0v-.5A.75.75 0 018 6zm.75 3.25a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zM8 12a.75.75 0 01.75.75v.5a.75.75 0 01-1.5 0v-.5A.75.75 0 018 12z" clip-rule="evenodd"/></svg>
                             @break
@@ -34,7 +30,6 @@
         @foreach ([
             ['label' => 'Mis boletos', 'route' => 'cliente.boletos', 'description' => 'Consulta tus boletos comprados y próximos viajes.'],
             ['label' => 'Mis paquetes', 'route' => 'cliente.paquetes', 'description' => 'Da seguimiento a tus envíos de paquetería.'],
-            ['label' => 'Carrito', 'route' => 'cliente.carrito', 'description' => 'Boletos y envíos que aún no has pagado.'],
             ['label' => 'Mis compras', 'route' => 'cliente.compras', 'description' => 'Historial completo de tus compras.'],
         ] as $card)
             <a href="{{ route($card['route']) }}" class="group rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">

@@ -13,9 +13,15 @@ return new class extends Migration
     {
         Schema::table('bus_unit_seats', function (Blueprint $table) {
             $table->string('deck')->default('lower')->after('bus_unit_id');
+        });
+
+        // MariaDB no permite soltar el índice mientras una FK lo referencia
+        Schema::disableForeignKeyConstraints();
+        Schema::table('bus_unit_seats', function (Blueprint $table) {
             $table->dropUnique(['bus_unit_id', 'label']);
             $table->unique(['bus_unit_id', 'deck', 'label']);
         });
+        Schema::enableForeignKeyConstraints();
     }
 
     /**
