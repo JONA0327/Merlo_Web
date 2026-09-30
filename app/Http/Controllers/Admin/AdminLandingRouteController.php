@@ -32,8 +32,13 @@ class AdminLandingRouteController extends Controller
             'duration' => ['nullable', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'departure_time_hour' => ['nullable', 'integer', 'between:0,23'],
-            'departure_time_minute' => ['nullable', 'integer', 'between:0,59'],
+            // 'numeric', not 'integer': the hour/minute <select>s always
+            // submit zero-padded strings ("00".."23" / "00".."55"), and
+            // PHP's FILTER_VALIDATE_INT (what the integer rule uses)
+            // rejects leading-zero strings like "09" as invalid — every
+            // hour 00-09 failed validation with 'integer'.
+            'departure_time_hour' => ['nullable', 'numeric', 'between:0,23'],
+            'departure_time_minute' => ['nullable', 'numeric', 'between:0,59'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
             'is_active' => ['nullable', 'boolean'],
@@ -87,8 +92,8 @@ class AdminLandingRouteController extends Controller
             'duration' => ['nullable', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'departure_time_hour' => ['nullable', 'integer', 'between:0,23'],
-            'departure_time_minute' => ['nullable', 'integer', 'between:0,59'],
+            'departure_time_hour' => ['nullable', 'numeric', 'between:0,23'],
+            'departure_time_minute' => ['nullable', 'numeric', 'between:0,59'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
             'is_active' => ['nullable', 'boolean'],

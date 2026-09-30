@@ -117,6 +117,28 @@ test('a trip can be saved without a duration', function () {
     $this->assertDatabaseHas('landing_routes', ['from' => 'Ciudad de México', 'duration' => null]);
 });
 
+test('zero-padded hour and minute strings from the real <select> markup are accepted', function () {
+    // The time-select component always renders zero-padded option values
+    // ("00".."23" / "00".."55"), and a real browser submits <select>
+    // values as plain strings — unlike $this->post()'s raw-PHP-int test
+    // data above, which never exercises this path. "09"/"05" used to
+    // fail validation because PHP's FILTER_VALIDATE_INT (what the
+    // 'integer' rule uses) rejects leading-zero strings.
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+
+    $response = $this->actingAs($admin)->post(route('admin.viajes.store'), [
+        'from' => 'Ciudad de México',
+        'to' => 'Guadalajara',
+        'duration' => '6h 30m',
+        'departure_time_hour' => '09',
+        'departure_time_minute' => '05',
+    ]);
+
+    $response->assertRedirect(route('admin.viajes'));
+    $response->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('landing_routes', ['departure_time' => '09:05']);
+});
+
 test('an out of range hour is rejected', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
 
