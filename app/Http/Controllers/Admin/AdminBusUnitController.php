@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -38,7 +39,17 @@ class AdminBusUnitController extends Controller
         ]);
     }
 
-    public function update(Request $request, BusUnit $busUnit): RedirectResponse
+    /**
+     * Also called via AJAX from the seat editor's main "Guardar
+     * distribución" button — that one save action now persists both
+     * the unit's own data (this) and the seat layout in one go, so an
+     * admin editing the name/description no longer has to notice the
+     * separate, easy-to-miss "Guardar datos" button inside the
+     * collapsed "Datos de la unidad" sidebar section to avoid losing
+     * the edit. Returns JSON for that AJAX path, a redirect for the
+     * classic full-page form submission (still works standalone).
+     */
+    public function update(Request $request, BusUnit $busUnit): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -57,6 +68,10 @@ class AdminBusUnitController extends Controller
             'canvas_height' => $validated['canvas_height'],
             'is_active' => $validated['is_active'] ?? false,
         ]);
+
+        if ($request->wantsJson()) {
+            return response()->json(['busUnit' => $busUnit->fresh()]);
+        }
 
         return redirect()->route('admin.unidades.edit', $busUnit)->with('success', 'Unidad actualizada.');
     }

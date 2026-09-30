@@ -113,7 +113,7 @@
                                 </svg>
                             </summary>
                             <div class="border-t border-black/5 bg-[#FFFBF6] p-3">
-                                <form method="POST" action="{{ route('admin.unidades.update', $busUnit) }}" class="space-y-3" enctype="multipart/form-data">
+                                <form id="unit-data-form" method="POST" action="{{ route('admin.unidades.update', $busUnit) }}" class="space-y-3" enctype="multipart/form-data">
                                     @csrf
                                     @method('PUT')
 

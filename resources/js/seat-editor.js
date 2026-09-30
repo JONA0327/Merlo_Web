@@ -224,6 +224,7 @@ const addButton = document.getElementById('seat-add');
 const objectAddButton = document.getElementById('object-add');
 const objectKindSelect = document.getElementById('object-kind');
 const saveButton = document.getElementById('seat-save');
+const unitDataForm = document.getElementById('unit-data-form');
 const statusEl = document.getElementById('seat-status');
 const gridRowsInput = document.getElementById('grid-rows');
 const gridColsInput = document.getElementById('grid-cols');
@@ -1193,6 +1194,28 @@ gridGenerateButton.addEventListener('click', () => {
 
 /* ---------- Save ---------- */
 
+// "Guardar distribución" is the one prominent, always-visible save
+// action on this page, so it has to save EVERYTHING — not just seat
+// positions. Before this, the name/description/canvas fields at the
+// top of the sidebar only saved via their own separate "Guardar
+// datos" button buried inside a collapsed accordion section; an admin
+// who edited the name and then hit the big save button up top (the
+// obvious thing to click) would have that edit silently discarded.
+async function saveUnitData() {
+    if (!unitDataForm) return;
+
+    const response = await axios.post(unitDataForm.getAttribute('action'), new FormData(unitDataForm), {
+        headers: { Accept: 'application/json' },
+    });
+    const updated = response.data?.busUnit;
+    if (updated) {
+        config.unitName = updated.name;
+        config.canvasWidth = updated.canvas_width;
+        config.canvasHeight = updated.canvas_height;
+        config.hasUpperDeck = updated.has_upper_deck;
+    }
+}
+
 saveButton.addEventListener('click', async () => {
     const seats = allSeatGroups().map((group) => ({
         id: typeof group.getAttr('seatId') === 'number' ? group.getAttr('seatId') : null,
@@ -1214,6 +1237,8 @@ saveButton.addEventListener('click', async () => {
     setStatus('Guardando...');
 
     try {
+        await saveUnitData();
+
         const response = await axios.put(config.syncUrl, { seats });
         const groups = allSeatGroups();
         const savedByKey = new Map(
@@ -1228,9 +1253,11 @@ saveButton.addEventListener('click', async () => {
             }
         });
 
-        setStatus('Distribución guardada correctamente.', 'text-emerald-600');
+        setStatus('Distribución y datos de la unidad guardados correctamente.', 'text-emerald-600');
     } catch (error) {
-        setStatus(error.response?.data?.message ?? 'No se pudo guardar la distribución.', 'text-red-600');
+        const errors = error.response?.data?.errors;
+        const firstError = errors ? Object.values(errors)[0]?.[0] : null;
+        setStatus(firstError ?? error.response?.data?.message ?? 'No se pudo guardar. Revisa los datos de la unidad e intenta de nuevo.', 'text-red-600');
     }
 });
 
