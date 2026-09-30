@@ -47,7 +47,7 @@ class LandingRoute extends Model
             return null;
         }
 
-        return Carbon::parse($this->departure_time)->format('h:i A');
+        return Carbon::parse($this->departure_time)->format('H:i');
     }
 
     public function busUnit(): BelongsTo
