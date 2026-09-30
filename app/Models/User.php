@@ -74,9 +74,20 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->role === self::ROLE_SUPERADMIN;
     }
 
+    /**
+     * Full admin-panel access: superadmin and Administración see the
+     * exact same thing (viajes, asientos, precios, check-in, ventas,
+     * pagos, usuarios, configuraciones, métodos de pago). Paquetería
+     * is the only role with a narrower, single-section view.
+     */
+    public function isAdminStaff(): bool
+    {
+        return in_array($this->role, [self::ROLE_SUPERADMIN, self::ROLE_ADMINISTRACION], true);
+    }
+
     public function canAccessPaqueteria(): bool
     {
-        return in_array($this->role, [self::ROLE_SUPERADMIN, self::ROLE_PAQUETERIA], true);
+        return in_array($this->role, [self::ROLE_SUPERADMIN, self::ROLE_ADMINISTRACION, self::ROLE_PAQUETERIA], true);
     }
 
     public function seatReservations(): HasMany

@@ -41,7 +41,7 @@
                         <input type="radio" name="role" value="administracion" class="mt-1 h-4 w-4 shrink-0 text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ old('role', 'administracion') === 'administracion' ? 'checked' : '' }}>
                         <span class="ml-3">
                             <span class="block text-sm font-bold text-[#2B1113]">Administración</span>
-                            <span class="block text-xs text-[#2B1113]/60 mt-0.5">Acceso a viajes, asientos y ventas.</span>
+                            <span class="block text-xs text-[#2B1113]/60 mt-0.5">Acceso completo al panel, igual que Superadmin.</span>
                         </span>
                     </label>
 

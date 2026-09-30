@@ -15,7 +15,10 @@ class EnsureUserIsSuperAdmin
      */
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless($request->user()?->isSuperAdmin(), 403);
+        // Despite the class name (kept for the "superadmin" route-middleware
+        // alias), this gates the whole admin.* panel — which Administración
+        // now sees identically to superadmin. See User::isAdminStaff().
+        abort_unless($request->user()?->isAdminStaff(), 403);
 
         return $next($request);
     }

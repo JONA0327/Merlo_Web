@@ -17,7 +17,7 @@ class ClientDashboardController extends Controller
 {
     public function index(): View|RedirectResponse
     {
-        if (auth()->user()->isSuperAdmin()) {
+        if (auth()->user()->isAdminStaff()) {
             return redirect()->route('admin.dashboard');
         }
 

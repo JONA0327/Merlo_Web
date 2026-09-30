@@ -20,12 +20,12 @@
         <div class="flex min-h-screen bg-[#FFFBF6]">
             {{-- ===================== SIDEBAR ===================== --}}
             <aside class="hidden lg:flex w-72 shrink-0 flex-col bg-[#2B1113] text-white">
-                <a href="{{ auth()->user()->isSuperAdmin() ? route('admin.dashboard') : route('admin.paqueteria') }}" class="flex h-20 items-center px-6 border-b border-white/10">
+                <a href="{{ auth()->user()->isAdminStaff() ? route('admin.dashboard') : route('admin.paqueteria') }}" class="flex h-20 items-center px-6 border-b border-white/10">
                     <img src="{{ asset('Logo.png') }}" alt="Merlo Transportes" class="h-9 w-auto brightness-0 invert">
                 </a>
 
                 <nav class="flex-1 space-y-1 px-4 py-6">
-                    @if (auth()->user()->isSuperAdmin())
+                    @if (auth()->user()->isAdminStaff())
                         <a href="{{ route('admin.dashboard') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'dashboard' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
                             Resumen
@@ -43,7 +43,7 @@
                         Paquetería
                     </a>
 
-                    @if (auth()->user()->isSuperAdmin())
+                    @if (auth()->user()->isAdminStaff())
                         <a href="{{ route('admin.unidades') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'unidades' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v3.5A2.25 2.25 0 0115.75 10H4.25A2.25 2.25 0 012 7.75v-3.5zm14.5 8.5a.75.75 0 00-1.5 0v.5c0 .69-.56 1.25-1.25 1.25h-7.5C5.56 14.5 5 13.94 5 13.25v-.5a.75.75 0 00-1.5 0v.5A2.75 2.75 0 006.25 16h7.5a2.75 2.75 0 002.75-2.75v-.5z" clip-rule="evenodd"/></svg>
                             Distribución de Asientos
@@ -138,7 +138,7 @@
                 {{-- ===================== NAV MÓVIL ===================== --}}
                 <nav class="lg:hidden flex items-center gap-2 overflow-x-auto border-b border-black/5 bg-white px-4 py-3">
                     @php
-                        $mobileLinks = auth()->user()->isSuperAdmin()
+                        $mobileLinks = auth()->user()->isAdminStaff()
                             ? [
                                 ['key' => 'dashboard', 'label' => 'Resumen', 'route' => 'admin.dashboard'],
                                 ['key' => 'viajes', 'label' => 'Viajes', 'route' => 'admin.viajes'],
