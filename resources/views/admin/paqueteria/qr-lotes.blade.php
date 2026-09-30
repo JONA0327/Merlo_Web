@@ -19,7 +19,7 @@
             @foreach ($batchesByDate as $date => $batches)
                 <div>
                     <h3 class="mb-3 text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">{{ $date }}</h3>
-                    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+                    <div class="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
                         <table class="min-w-full divide-y divide-black/5 text-sm">
                             <tbody class="divide-y divide-black/5">
                                 @foreach ($batches as $batch)

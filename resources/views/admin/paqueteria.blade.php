@@ -78,7 +78,7 @@
             </x-slot>
         </x-empty-state>
     @else
-        <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+        <div class="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
             <table class="min-w-full divide-y divide-black/5 text-sm">
                 <thead class="bg-black/[0.02]">
                     <tr>

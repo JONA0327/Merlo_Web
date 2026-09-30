@@ -21,7 +21,7 @@
                     Aún no hay viajes registrados. Crea uno primero desde <a href="{{ route('admin.viajes') }}" class="font-semibold text-[#8C1D2B] hover:underline">Viajes</a>.
                 </p>
             @else
-                <div class="overflow-hidden rounded-2xl ring-1 ring-black/5">
+                <div class="overflow-x-auto rounded-2xl ring-1 ring-black/5">
                     <table class="min-w-full divide-y divide-black/5 text-sm">
                         <thead class="bg-[#FFFBF6] text-left text-xs font-bold uppercase tracking-wider text-[#2B1113]/60">
                             <tr>

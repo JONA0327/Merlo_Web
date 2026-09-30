@@ -94,7 +94,7 @@
                         <p class="font-[Poppins] text-lg font-bold">Detalle del cargo</p>
                         <p class="text-xs opacity-80">OpenPay · {{ $r->payment_method_label }} @if($r->payment_method_detail)· {{ $r->payment_method_detail }}@endif</p>
                     </div>
-                    <dl class="grid grid-cols-2 gap-4 p-6 text-sm">
+                    <dl class="grid grid-cols-1 gap-4 p-6 text-sm sm:grid-cols-2">
                         <div>
                             <dt class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">OpenPay charge</dt>
                             <dd class="mt-1 break-all font-mono text-xs text-[#2B1113]">{{ $r->openpay_charge_id ?? '—' }}</dd>

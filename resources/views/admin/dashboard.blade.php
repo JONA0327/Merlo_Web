@@ -36,7 +36,7 @@
             ['label' => 'Paquetería', 'route' => 'admin.paqueteria', 'description' => 'Envíos y seguimiento.'],
             ['label' => 'Distribución de Asientos', 'route' => 'admin.unidades', 'description' => 'Mapas de asientos por unidad.'],
             ['label' => 'Ventas', 'route' => 'admin.ventas', 'description' => 'Boletos y envíos vendidos.'],
-            ['label' => 'Usuarios', 'route' => 'admin.usuarios.create', 'description' => 'Crear cuentas de administración o paquetería.'],
+            ['label' => 'Usuarios', 'route' => 'admin.usuarios.index', 'description' => 'Clientes registrados y cuentas internas.'],
         ] as $card)
             <a href="{{ route($card['route']) }}" class="group rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
                 <p class="font-[Poppins] font-bold text-[#2B1113]">{{ $card['label'] }}</p>

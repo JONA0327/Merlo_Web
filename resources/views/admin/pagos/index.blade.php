@@ -60,7 +60,7 @@
     </form>
 
     {{-- Table --}}
-    <div class="overflow-hidden rounded-3xl bg-white ring-1 ring-black/5 shadow-sm">
+    <div class="overflow-x-auto rounded-3xl bg-white ring-1 ring-black/5 shadow-sm">
         <table class="min-w-full divide-y divide-black/5">
             <thead class="bg-[#FFFBF6]">
                 <tr>

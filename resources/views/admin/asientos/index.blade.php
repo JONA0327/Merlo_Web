@@ -26,7 +26,7 @@
                 No hay viajes activos con mapa de asientos configurado todavía.
             </div>
         @else
-            <div class="mt-6 overflow-hidden rounded-2xl ring-1 ring-black/5">
+            <div class="mt-6 overflow-x-auto rounded-2xl ring-1 ring-black/5">
                 <table class="min-w-full divide-y divide-black/5 text-sm">
                     <thead class="bg-[#FFFBF6] text-left text-xs font-bold uppercase tracking-wider text-[#2B1113]/60">
                         <tr>
