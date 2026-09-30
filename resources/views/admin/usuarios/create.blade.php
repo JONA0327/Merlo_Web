@@ -1,9 +1,13 @@
 <x-admin-layout active="usuarios" title="Usuarios">
     <div class="mb-6">
-        <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Crear usuario</h2>
+        <a href="{{ route('admin.usuarios.index') }}" class="inline-flex items-center gap-1.5 text-xs font-bold text-[#8C1D2B] hover:underline">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clip-rule="evenodd"/></svg>
+            Volver a usuarios
+        </a>
+        <h2 class="mt-2 font-[Poppins] text-2xl font-bold text-[#2B1113]">Crear cuenta interna</h2>
         <p class="mt-1 text-sm text-[#2B1113]/60">
-            Este panel es solo para crear cuentas internas de <strong>Administración</strong> o <strong>Paquetería</strong>.
-            Los clientes se registran ellos mismos desde el sitio, así que aquí no se muestra su listado.
+            Este formulario es solo para cuentas internas de <strong>Administración</strong> o <strong>Paquetería</strong>.
+            Los clientes se registran ellos mismos desde el sitio y aparecen automáticamente en el listado de usuarios.
         </p>
     </div>
 
@@ -58,7 +62,7 @@
             </div>
 
             <div class="flex justify-end gap-3 pt-2">
-                <a href="{{ route('admin.dashboard') }}" class="rounded-xl px-5 py-2.5 text-sm font-semibold text-[#2B1113]/60 hover:bg-black/5 transition-colors">
+                <a href="{{ route('admin.usuarios.index') }}" class="rounded-xl px-5 py-2.5 text-sm font-semibold text-[#2B1113]/60 hover:bg-black/5 transition-colors">
                     Cancelar
                 </a>
                 <x-primary-button type="submit">

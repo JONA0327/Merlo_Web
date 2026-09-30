@@ -145,6 +145,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/checkin/{code}', [AdminTripCheckinController::class, 'lookup'])->name('checkin.scan');
     Route::post('/checkin/{reservation}/outbound', [AdminTripCheckinController::class, 'verifyOutbound'])->name('checkin.outbound');
     Route::post('/checkin/{reservation}/return', [AdminTripCheckinController::class, 'verifyReturn'])->name('checkin.return');
+    Route::get('/usuarios', [AdminUserController::class, 'index'])->name('usuarios.index');
     Route::get('/usuarios/crear', [AdminUserController::class, 'create'])->name('usuarios.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('usuarios.store');
     Route::get('/configuraciones', [AdminSettingController::class, 'edit'])->name('configuraciones');

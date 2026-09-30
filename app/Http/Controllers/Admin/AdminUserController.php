@@ -15,9 +15,40 @@ use Throwable;
 class AdminUserController extends Controller
 {
     /**
+     * Every registered account — self-registered clients as well as
+     * internal Administración/Paquetería accounts created below. Client
+     * signups never went through any admin action, so this listing is
+     * the only place a superadmin can see who has registered.
+     */
+    public function index(Request $request): View
+    {
+        $query = User::query()->withCount('seatReservations');
+
+        if ($role = $request->query('role')) {
+            $query->where('role', $role);
+        }
+        if ($search = $request->query('q')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $users = $query->orderByDesc('id')->paginate(25)->withQueryString();
+
+        return view('admin.usuarios.index', [
+            'users' => $users,
+            'filters' => [
+                'role' => $role,
+                'q' => $search,
+            ],
+        ]);
+    }
+
+    /**
      * Show the form to create an internal (Administración / Paquetería)
-     * user account. Client accounts are self-registered and are not
-     * listed or managed from here.
+     * user account. Client accounts are self-registered and appear
+     * automatically in the listing above — they're never created here.
      */
     public function create(): View
     {
@@ -58,6 +89,6 @@ class AdminUserController extends Controller
             $message = 'Cuenta creada, pero no pudimos enviarle el correo de bienvenida. Usa "Olvidé mi contraseña" para que la configure.';
         }
 
-        return redirect()->route('admin.usuarios.create')->with('success', $message);
+        return redirect()->route('admin.usuarios.index')->with('success', $message);
     }
 }
