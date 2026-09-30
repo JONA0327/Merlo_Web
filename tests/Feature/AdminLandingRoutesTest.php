@@ -42,6 +42,95 @@ test('super admin can create travel routes and they show on the public landing p
         ->assertSee('$650');
 });
 
+test('the hour and minute selects are stored as a 24h time', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+
+    $response = $this->actingAs($admin)->post(route('admin.viajes.store'), [
+        'from' => 'Ciudad de México',
+        'to' => 'Guadalajara',
+        'duration' => '6h 30m',
+        'departure_time_hour' => 14,
+        'departure_time_minute' => 5,
+    ]);
+
+    $response->assertRedirect(route('admin.viajes'));
+    $this->assertDatabaseHas('landing_routes', ['departure_time' => '14:05']);
+});
+
+test('updating a trip rewrites its 24h time from the selects', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+    $trip = LandingRoute::create([
+        'from' => 'Ciudad de México', 'to' => 'Guadalajara', 'duration' => '6h 30m',
+        'departure_time' => '09:00', 'available_seats' => 2, 'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($admin)->put(route('admin.viajes.update', $trip), [
+        'from' => 'Ciudad de México',
+        'to' => 'Guadalajara',
+        'duration' => '6h 30m',
+        'departure_time_hour' => 23,
+        'departure_time_minute' => 45,
+    ]);
+
+    $response->assertRedirect(route('admin.viajes'));
+    $this->assertDatabaseHas('landing_routes', ['id' => $trip->id, 'departure_time' => '23:45']);
+});
+
+test('every admin travel form label points at a real field id', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+    $trip = LandingRoute::create([
+        'from' => 'Ciudad de México', 'to' => 'Guadalajara', 'duration' => '6h 30m',
+        'available_seats' => 2, 'departure_time' => '14:07', 'is_active' => true,
+    ]);
+
+    foreach (['admin.viajes', 'admin.viajes-edit'] as $view) {
+        $this->actingAs($admin);
+
+        $html = view($view, [
+            'route' => $trip,
+            'routes' => LandingRoute::all(),
+            'busUnits' => BusUnit::where('is_active', true)->withCount(['seats as bookable_seats_count' => fn ($query) => $query->bookable()])->get(),
+        ])->with('errors', new \Illuminate\Support\ViewErrorBag)->render();
+
+        preg_match_all('/<label for="([^"]+)"/', $html, $labels);
+        preg_match_all('/<(?:input|select)[^>]*\bid="([^"]+)"/', $html, $ids);
+
+        expect($labels[1])->not->toBeEmpty();
+
+        foreach (array_diff($labels[1], $ids[1]) as $orphan) {
+            expect($orphan)->toBeString();
+            $this->fail("{$view}: el label for=\"{$orphan}\" no apunta a ningun id del formulario");
+        }
+    }
+});
+
+test('a trip can be saved without a duration', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+
+    $response = $this->actingAs($admin)->post(route('admin.viajes.store'), [
+        'from' => 'Ciudad de México',
+        'to' => 'Guadalajara',
+    ]);
+
+    $response->assertRedirect(route('admin.viajes'));
+    $response->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('landing_routes', ['from' => 'Ciudad de México', 'duration' => null]);
+});
+
+test('an out of range hour is rejected', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+
+    $response = $this->actingAs($admin)->post(route('admin.viajes.store'), [
+        'from' => 'Ciudad de México',
+        'to' => 'Guadalajara',
+        'duration' => '6h 30m',
+        'departure_time_hour' => 25,
+        'departure_time_minute' => 0,
+    ]);
+
+    $response->assertSessionHasErrors('departure_time_hour');
+});
+
 test('a trip with a bus unit gets its available seats from the seat map, not the typed number', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
     $busUnit = BusUnit::create(['name' => 'Autobús 1']);

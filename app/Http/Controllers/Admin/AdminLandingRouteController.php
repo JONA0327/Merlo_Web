@@ -29,10 +29,11 @@ class AdminLandingRouteController extends Controller
         $validated = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
-            'duration' => ['required', 'string', 'max:50'],
+            'duration' => ['nullable', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'departure_time' => ['nullable', 'string', 'max:20'],
+            'departure_time_hour' => ['nullable', 'integer', 'between:0,23'],
+            'departure_time_minute' => ['nullable', 'integer', 'between:0,59'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
             'is_active' => ['nullable', 'boolean'],
@@ -52,10 +53,10 @@ class AdminLandingRouteController extends Controller
         LandingRoute::create([
             'from' => $validated['from'],
             'to' => $validated['to'],
-            'duration' => $validated['duration'],
+            'duration' => $validated['duration'] ?? null,
             'day' => $validated['day'] ?? now()->toDateString(),
             'return_date' => $validated['return_date'] ?? null,
-            'departure_time' => $validated['departure_time'] ?? '00:00',
+            'departure_time' => $this->departureTimeFrom($validated),
             'available_seats' => $validated['available_seats'] ?? 1,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
@@ -83,10 +84,11 @@ class AdminLandingRouteController extends Controller
         $validated = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
-            'duration' => ['required', 'string', 'max:50'],
+            'duration' => ['nullable', 'string', 'max:50'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
-            'departure_time' => ['nullable', 'string', 'max:20'],
+            'departure_time_hour' => ['nullable', 'integer', 'between:0,23'],
+            'departure_time_minute' => ['nullable', 'integer', 'between:0,59'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
             'bus_unit_id' => ['nullable', 'exists:bus_units,id'],
             'is_active' => ['nullable', 'boolean'],
@@ -122,10 +124,10 @@ class AdminLandingRouteController extends Controller
         $landingRoute->update([
             'from' => $validated['from'],
             'to' => $validated['to'],
-            'duration' => $validated['duration'],
+            'duration' => $validated['duration'] ?? $landingRoute->duration,
             'day' => $validated['day'] ?? $landingRoute->day,
             'return_date' => $validated['return_date'] ?? null,
-            'departure_time' => $validated['departure_time'] ?? $landingRoute->departure_time,
+            'departure_time' => $this->departureTimeFrom($validated, $landingRoute->departure_time),
             'available_seats' => $validated['available_seats'] ?? $landingRoute->available_seats,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
             'is_active' => $validated['is_active'] ?? $landingRoute->is_active,
@@ -135,6 +137,25 @@ class AdminLandingRouteController extends Controller
         ]);
 
         return redirect()->route('admin.viajes')->with('success', 'Viaje actualizado correctamente.');
+    }
+
+    /**
+     * Rebuilds the 24h "HH:MM" string from the two selects in the form.
+     * Both selects always submit, so a missing hour/minute means the field
+     * was left untouched — keep the existing value in that case.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function departureTimeFrom(array $validated, ?string $fallback = '00:00'): string
+    {
+        $hour = $validated['departure_time_hour'] ?? null;
+        $minute = $validated['departure_time_minute'] ?? null;
+
+        if ($hour === null || $minute === null) {
+            return $fallback ?? '00:00';
+        }
+
+        return sprintf('%02d:%02d', $hour, $minute);
     }
 
     public function toggleFeatured(LandingRoute $landingRoute): RedirectResponse

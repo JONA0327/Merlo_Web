@@ -55,7 +55,7 @@
 
                 <div>
                     <label for="duration" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Duración</label>
-                    <input id="duration" name="duration" type="text" value="{{ old('duration') }}" placeholder="6h 30m" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                    <input id="duration" name="duration" type="text" value="{{ old('duration') }}" placeholder="6h 30m" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                     @error('duration')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
@@ -63,9 +63,12 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label for="departure_time" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Horario</label>
-                        <input id="departure_time" name="departure_time" type="time" value="{{ old('departure_time') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        @error('departure_time')
+                        <label for="departure_time_hour" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Horario</label>
+                        <x-time-select name="departure_time" />
+                        @error('departure_time_hour')
+                            <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                        @enderror
+                        @error('departure_time_minute')
                             <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
