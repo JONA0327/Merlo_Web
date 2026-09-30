@@ -91,4 +91,27 @@ class AdminUserController extends Controller
 
         return redirect()->route('admin.usuarios.index')->with('success', $message);
     }
+
+    /**
+     * Delete a registered account — client or internal. Their seat
+     * reservations aren't touched: the FK is nullOnDelete() precisely
+     * so historical purchase/financial records survive the account
+     * being removed (see the nullable-user_id migration). Never lets
+     * an admin delete themselves or another superadmin, so the panel
+     * can't be locked out from inside itself.
+     */
+    public function destroy(Request $request, User $user): RedirectResponse
+    {
+        if ($user->id === $request->user()->id) {
+            return back()->with('error', 'No puedes eliminar tu propia cuenta.');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return back()->with('error', 'No se puede eliminar una cuenta de superadmin.');
+        }
+
+        $user->delete();
+
+        return back()->with('success', 'Usuario eliminado correctamente.');
+    }
 }

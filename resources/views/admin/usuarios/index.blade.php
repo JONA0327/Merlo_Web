@@ -15,6 +15,11 @@
             {{ session('success') }}
         </div>
     @endif
+    @if (session('error'))
+        <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {{ session('error') }}
+        </div>
+    @endif
 
     {{-- Filters --}}
     <form method="GET" action="{{ route('admin.usuarios.index') }}" class="mb-4 flex flex-wrap items-end gap-2">
@@ -48,6 +53,7 @@
                     <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/50">Verificado</th>
                     <th class="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/50">Boletos</th>
                     <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/50">Registrado</th>
+                    <th class="px-4 py-3"></th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-black/5">
@@ -99,10 +105,21 @@
                         <td class="px-4 py-3 text-xs text-[#2B1113]/60">
                             {{ $user->created_at->format('d/m/Y H:i') }}
                         </td>
+                        <td class="px-4 py-3 text-right">
+                            @if ($user->id !== auth()->id() && ! $user->isSuperAdmin())
+                                <form method="POST" action="{{ route('admin.usuarios.destroy', $user) }}" class="inline" onsubmit="return confirm('¿Eliminar la cuenta de {{ addslashes($user->name) }}? Sus boletos comprados se conservan, pero esta acción no se puede deshacer.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600 ring-1 ring-red-200 hover:bg-red-100 transition-colors">
+                                        Eliminar
+                                    </button>
+                                </form>
+                            @endif
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-4 py-10 text-center text-sm text-[#2B1113]/50">No hay usuarios que coincidan con los filtros.</td>
+                        <td colspan="7" class="px-4 py-10 text-center text-sm text-[#2B1113]/50">No hay usuarios que coincidan con los filtros.</td>
                     </tr>
                 @endforelse
             </tbody>

@@ -148,6 +148,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/usuarios', [AdminUserController::class, 'index'])->name('usuarios.index');
     Route::get('/usuarios/crear', [AdminUserController::class, 'create'])->name('usuarios.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('usuarios.store');
+    Route::delete('/usuarios/{user}', [AdminUserController::class, 'destroy'])->name('usuarios.destroy');
     Route::get('/configuraciones', [AdminSettingController::class, 'edit'])->name('configuraciones');
     Route::put('/configuraciones', [AdminSettingController::class, 'update'])->name('configuraciones.update');
 
