@@ -248,8 +248,8 @@
                                         <input type="number" id="grid-cols" min="1" max="10" value="4" class="mt-0.5 w-full rounded-md border border-black/10 bg-white px-2 py-1 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                                     </label>
                                     <label class="block">
-                                        <span class="block text-[10px] font-semibold text-[#2B1113]/70">Prefijo</span>
-                                        <input type="text" id="grid-prefix" maxlength="4" placeholder="V" class="mt-0.5 w-full rounded-md border border-black/10 bg-white px-2 py-1 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                        <span class="block text-[10px] font-semibold text-[#2B1113]/70">Prefijo (opcional)</span>
+                                        <input type="text" id="grid-prefix" maxlength="4" placeholder="Ej. V — vacío = solo número" class="mt-0.5 w-full rounded-md border border-black/10 bg-white px-2 py-1 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                                     </label>
                                 </div>
                                 <button type="button" id="grid-generate" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2B1113] px-3 py-1.5 text-xs font-bold text-white hover:bg-black/80 transition-colors">

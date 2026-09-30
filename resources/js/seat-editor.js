@@ -334,6 +334,50 @@ function colorsFor(kind, type, color) {
     return SEAT_COLORS[type] ?? SEAT_COLORS.normal;
 }
 
+/**
+ * Next number to use for a "Generar grilla" batch with this prefix —
+ * scans every seat already on this deck (loaded from the server, or
+ * added earlier in this same editing session) for labels shaped like
+ * "{prefix}{digits}" and picks up right after the highest one found,
+ * so a second "Generar" click continues the sequence (9, 10, 11…)
+ * instead of restarting at 1 and colliding into "-2" suffixes.
+ */
+function nextSequentialNumber(prefix) {
+    const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`^${escapedPrefix}(\\d+)$`);
+    let max = 0;
+
+    allSeatGroups()
+        .filter((group) => group.getAttr('seatDeck') === currentDeck)
+        .forEach((group) => {
+            const match = (group.getAttr('seatLabel') ?? '').match(pattern);
+            if (match) max = Math.max(max, parseInt(match[1], 10));
+        });
+
+    return max + 1;
+}
+
+/**
+ * Where the next "Generar grilla" batch should start vertically — just
+ * below whatever's already placed on this deck, so a second click adds
+ * a new block of rows underneath the first instead of stacking new
+ * seats directly on top of the existing ones. Ignores the full-span
+ * "Contorno" outline and dividers (same exclusion as isSweepSelectable)
+ * since those would otherwise push every new batch to the bottom of
+ * the whole bus silhouette.
+ */
+function nextGridOriginY() {
+    const placed = allSeatGroups().filter((group) =>
+        group.getAttr('seatDeck') === currentDeck
+        && group.getAttr('seatType') !== 'outline'
+        && group.getAttr('seatType') !== 'divider'
+    );
+    if (placed.length === 0) return GRID_ORIGIN.y;
+
+    const maxBottom = Math.max(...placed.map((group) => group.y() + (group.getAttr('seatHeight') ?? SEAT_SIZE)));
+    return maxBottom + GRID_GAP;
+}
+
 function uniqueLabel(baseLabel, excludeGroup = null) {
     const existing = new Set(
         allSeatGroups()
@@ -1107,10 +1151,19 @@ gridGenerateButton.addEventListener('click', () => {
         const cols = Math.min(10, Math.max(1, parseInt(gridColsInput.value, 10) || 1));
         const prefix = gridPrefixInput.value.trim();
 
+        // Numbered left-to-right, top-to-bottom (row-major) so a 4-column
+        // grid reads 1 2 3 4 / 5 6 7 8 / 9 10 11 12 … rather than per-row
+        // letters. Starts after the highest existing number for this
+        // prefix (see nextSequentialNumber) so generating a second batch
+        // in the same session continues the run instead of repeating it.
+        let nextNumber = nextSequentialNumber(prefix);
+        const firstNumber = nextNumber;
+        const originY = nextGridOriginY();
+
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
-                const columnLetter = String.fromCharCode(65 + (col % 26));
-                const label = uniqueLabel(`${prefix}${row + 1}${columnLetter}`);
+                const label = uniqueLabel(`${prefix}${nextNumber}`);
+                nextNumber += 1;
 
                 const seat = {
                     id: null,
@@ -1124,7 +1177,7 @@ gridGenerateButton.addEventListener('click', () => {
                     corner_radius: 8,
                     border_width: 2,
                     pos_x: GRID_ORIGIN.x + col * (SEAT_SIZE + GRID_GAP),
-                    pos_y: GRID_ORIGIN.y + row * (SEAT_SIZE + GRID_GAP),
+                    pos_y: originY + row * (SEAT_SIZE + GRID_GAP),
                 };
 
                 layer.add(buildSeatGroup(seat));
@@ -1132,7 +1185,7 @@ gridGenerateButton.addEventListener('click', () => {
         }
 
         layer.draw();
-        setStatus(`Se generaron ${rows * cols} asientos. Ajusta su posición y guarda cuando termines.`);
+        setStatus(`Se generaron ${rows * cols} asientos (${prefix}${firstNumber} a ${prefix}${nextNumber - 1}). Ajusta su posición y guarda cuando termines.`);
     } catch (error) {
         reportError('No se pudo generar la grilla', error);
     }
