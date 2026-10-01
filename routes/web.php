@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\AdminSettingController;
 use App\Http\Controllers\Admin\AdminTripCheckinController;
 use App\Http\Controllers\Admin\AdminTripTicketPriceController;
 use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AdminWhatsAppController;
 use App\Http\Controllers\Admin\OpenPayWebhookController;
 use App\Http\Controllers\ClientDashboardController;
 use App\Http\Controllers\PackageTrackingController;
@@ -157,6 +158,14 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
         Route::post('/', [AdminPaymentMethodController::class, 'store'])->name('store');
         Route::put('/{paymentMethod}', [AdminPaymentMethodController::class, 'update'])->name('update');
         Route::delete('/{paymentMethod}', [AdminPaymentMethodController::class, 'destroy'])->name('destroy');
+    });
+
+    Route::prefix('whatsapp')->name('whatsapp.')->group(function () {
+        Route::get('/', [AdminWhatsAppController::class, 'edit'])->name('edit');
+        Route::put('/', [AdminWhatsAppController::class, 'update'])->name('update');
+        Route::get('/qr', [AdminWhatsAppController::class, 'qrCode'])->name('qr');
+        Route::get('/status', [AdminWhatsAppController::class, 'status'])->name('status');
+        Route::post('/desconectar', [AdminWhatsAppController::class, 'disconnect'])->name('disconnect');
     });
 });
 

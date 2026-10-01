@@ -47,6 +47,13 @@
             @endif
         </div>
 
+        <div>
+            <x-input-label for="phone" :value="__('Teléfono (opcional)')" />
+            <x-text-input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 block w-full" :value="old('phone', $user->phone)" />
+            <p class="mt-1 text-sm text-gray-600">{{ __('Si lo registras, podemos enviarte tus boletos por WhatsApp además de por correo.') }}</p>
+            <x-input-error class="mt-2" :messages="$errors->get('phone')" />
+        </div>
+
         <div class="flex items-center gap-4">
             <x-primary-button>{{ __('Save') }}</x-primary-button>
 

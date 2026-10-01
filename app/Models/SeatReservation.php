@@ -461,6 +461,26 @@ class SeatReservation extends Model
      * = pending forever even though they were genuinely paid and even
      * get emailed a ticket by sendGroupTickets().
      */
+    /**
+     * Every reservation in this purchase/apartado group — resolves the
+     * root first if called on a child row (notes = "group:{root_id}"),
+     * so it's safe to call from either side instead of assuming the
+     * caller already has the root (unlike markGroupPaid() below, which
+     * is only ever called on a root by its existing callers).
+     */
+    public function groupMembers(): \Illuminate\Support\Collection
+    {
+        $rootId = str_starts_with((string) $this->notes, 'group:')
+            ? (int) substr($this->notes, strlen('group:'))
+            : $this->id;
+
+        return static::query()
+            ->where('id', $rootId)
+            ->orWhere('notes', 'group:'.$rootId)
+            ->orderBy('id')
+            ->get();
+    }
+
     public function markGroupPaid(): void
     {
         $group = static::query()

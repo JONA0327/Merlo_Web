@@ -16,11 +16,11 @@
         <div class="flex items-center gap-2 text-xs font-semibold text-[#2B1113]/60">
             <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">
                 <span class="h-1.5 w-1.5 rounded-full bg-amber-600"></span>
-                {{ $reservations->where('status', \App\Models\SeatReservation::STATUS_PENDING)->count() }} pendiente{{ $reservations->where('status', \App\Models\SeatReservation::STATUS_PENDING)->count() === 1 ? '' : 's' }}
+                {{ $pendingCount }} pendiente{{ $pendingCount === 1 ? '' : 's' }}
             </span>
             <span class="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-blue-800">
                 <span class="h-1.5 w-1.5 rounded-full bg-blue-600"></span>
-                {{ $reservations->where('status', \App\Models\SeatReservation::STATUS_SENT)->count() }} enviado{{ $reservations->where('status', \App\Models\SeatReservation::STATUS_SENT)->count() === 1 ? '' : 's' }}
+                {{ $sentCount }} enviado{{ $sentCount === 1 ? '' : 's' }}
             </span>
         </div>
     </div>
@@ -90,6 +90,13 @@
                     </label>
 
                     <label class="block">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">WhatsApp del cliente</span>
+                        <input type="tel" inputmode="numeric" name="customer_phone" value="{{ old('customer_phone') }}" required maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <p class="mt-1 text-[10px] text-[#2B1113]/40">A 10 dígitos se le agrega automáticamente el 52 de México. El boleto se manda por correo y por WhatsApp.</p>
+                        @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                    </label>
+
+                    <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
                         <textarea name="notes" rows="2" maxlength="1000" placeholder="Ej. Pagará en efectivo al abordar" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">{{ old('notes') }}</textarea>
                     </label>
@@ -105,59 +112,67 @@
                     Apartar selección
                 </button>
             </form>
-
-            {{-- Lista de apartados --}}
-            <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-                <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados</h3>
-
-                @if ($reservations->isEmpty())
-                    <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados para este viaje.</p>
-                @else
-                    <ul class="mt-4 space-y-3">
-                        @foreach ($reservations as $reservation)
-                            <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
-                                <div class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0 flex-1">
-                                        <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $reservation->customer_display_name }}</p>
-                                        <p class="mt-0.5 text-[11px] text-[#2B1113]/60 break-all">{{ $reservation->customer_display_email ?: '—' }}</p>
-                                        <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                                            <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $reservation->seat?->label ?? '—' }}</span>
-                                            <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
-                                            <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isPending() ? 'bg-amber-200 text-amber-900' : ($reservation->isSent() ? 'bg-blue-200 text-blue-900' : 'bg-slate-200 text-slate-700') }}">
-                                                {{ $reservation->status }}
-                                            </span>
-                                        </div>
-                                        @if ($reservation->ticket_sent_at)
-                                            <p class="mt-1.5 text-[10px] font-semibold text-[#2B1113]/50">Enviado {{ $reservation->ticket_sent_at->diffForHumans() }}</p>
-                                        @endif
-                                        @if ($reservation->notes)
-                                            <p class="mt-1.5 text-[11px] italic text-[#2B1113]/60">{{ $reservation->notes }}</p>
-                                        @endif
-                                    </div>
-
-                                    <div class="flex shrink-0 flex-col items-end gap-1.5">
-                                        @if ($reservation->isPending())
-                                            <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline">
-                                                @csrf
-                                                <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
-                                                    <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
-                                                    Enviar boleto
-                                                </button>
-                                            </form>
-                                        @endif
-                                        <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirm('¿Cancelar este apartado? El asiento volverá a estar disponible.')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
         </div>
+    </div>
+
+    {{-- ===================== Lista de apartados (abajo del mapa, ancho completo) ===================== --}}
+    <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados</h3>
+
+        @if ($reservations->isEmpty())
+            <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados para este viaje.</p>
+        @else
+            <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                @foreach ($reservations as $reservation)
+                    @php $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter(); @endphp
+                    <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $reservation->customer_display_name }}</p>
+                                <p class="mt-0.5 text-[11px] text-[#2B1113]/60 break-all">{{ $reservation->customer_display_email ?: '—' }}</p>
+                                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                    @foreach ($allSeats as $seatLabel)
+                                        <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
+                                    @endforeach
+                                    <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
+                                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isPending() ? 'bg-amber-200 text-amber-900' : ($reservation->isSent() ? 'bg-blue-200 text-blue-900' : 'bg-slate-200 text-slate-700') }}">
+                                        {{ $reservation->status }}
+                                    </span>
+                                </div>
+                                @if ($allSeats->count() > 1)
+                                    <p class="mt-1.5 text-[10px] font-semibold text-[#2B1113]/50">{{ $allSeats->count() }} asientos · se envían juntos en una sola imagen</p>
+                                @endif
+                                @if ($reservation->ticket_sent_at)
+                                    <p class="mt-1.5 text-[10px] font-semibold text-[#2B1113]/50">Enviado {{ $reservation->ticket_sent_at->diffForHumans() }}</p>
+                                @endif
+                                @if ($reservation->notes)
+                                    <p class="mt-1.5 text-[11px] italic text-[#2B1113]/60">{{ $reservation->notes }}</p>
+                                @endif
+                            </div>
+
+                            <div class="flex shrink-0 flex-col items-end gap-1.5">
+                                @if ($reservation->isPending())
+                                    <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline">
+                                        @csrf
+                                        <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
+                                            <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+                                            Enviar boleto{{ $allSeats->count() > 1 ? 's' : '' }}
+                                        </button>
+                                    </form>
+                                @endif
+                                <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirm('¿Cancelar este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}? {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
+                                </form>
+                            </div>
+                        </div>
+                    </li>
+                @endforeach
+            </ul>
+
+            <div class="mt-4">{{ $reservations->links() }}</div>
+        @endif
     </div>
 
     <script>

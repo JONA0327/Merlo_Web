@@ -6,6 +6,19 @@ window.Alpine = Alpine;
 
 Alpine.start();
 
+// Mexican 10-digit phone input: formats live as "444 123 4567" while
+// typing (digits only, max 10) so it's readable both at signup/profile
+// and in the admin's apartado form — the raw value (spaces included) is
+// still what gets submitted/stored; EvolutionWhatsAppService.normalizePhone()
+// already strips non-digits when it actually sends a WhatsApp message.
+document.querySelectorAll('.phone-mx-input').forEach((input) => {
+    input.addEventListener('input', () => {
+        const digits = input.value.replace(/\D/g, '').slice(0, 10);
+        const groups = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 10)].filter(Boolean);
+        input.value = groups.join(' ');
+    });
+});
+
 document.querySelectorAll('.js-carousel').forEach((carousel) => {
     const slides = Array.from(carousel.querySelectorAll('.js-carousel-slide'));
     const dots = Array.from(carousel.querySelectorAll('.js-carousel-dot'));

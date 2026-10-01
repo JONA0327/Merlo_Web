@@ -11,6 +11,9 @@ class Setting extends Model
         'facebook_url',
         'instagram_url',
         'return_resale_validity_hours',
+        'evolution_api_url',
+        'evolution_api_key',
+        'evolution_instance',
     ];
 
     /**
@@ -46,5 +49,17 @@ class Setting extends Model
     public function returnResaleValidityHours(): int
     {
         return (int) ($this->return_resale_validity_hours ?? 24);
+    }
+
+    /**
+     * Whether enough is filled in to talk to Evolution API at all — the
+     * instance itself might still be unconnected (no phone scanned yet),
+     * that's a separate, live check against the API.
+     */
+    public function evolutionConfigured(): bool
+    {
+        return filled($this->evolution_api_url)
+            && filled($this->evolution_api_key)
+            && filled($this->evolution_instance);
     }
 }

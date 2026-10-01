@@ -88,6 +88,10 @@
                                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M4.5 3.75a3 3 0 00-3 3v.75h17.25v-.75a3 3 0 00-3-3h-11.25z"/><path fill-rule="evenodd" d="M21.75 9.75h-19.5v7.5a3 3 0 003 3h13.5a3 3 0 003-3v-7.5zm-18 3.75a.75.75 0 01.75-.75h6a.75.75 0 010 1.5h-6a.75.75 0 01-.75-.75zm.75 2.25a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z" clip-rule="evenodd"/></svg>
                                 Métodos de pago
                             </a>
+                            <a href="{{ route('admin.whatsapp.edit') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'whatsapp' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2zm0 1.67c2.13 0 4.13.83 5.64 2.34a7.93 7.93 0 012.33 5.63c0 4.39-3.58 7.97-7.97 7.97a7.94 7.94 0 01-4.05-1.11l-.29-.17-3.02.79.81-2.94-.19-.3a7.9 7.9 0 01-1.22-4.24c0-4.4 3.58-7.97 7.96-7.97zm-4.38 4.57c-.15 0-.4.06-.61.3-.21.24-.8.78-.8 1.9s.82 2.2.93 2.36c.12.15 1.6 2.52 3.95 3.43 1.95.76 2.35.61 2.77.57.42-.04 1.37-.56 1.56-1.1.19-.54.19-1 .13-1.1-.06-.1-.21-.15-.43-.27-.22-.11-1.37-.68-1.59-.75-.21-.08-.37-.11-.52.11-.15.22-.59.75-.73.9-.13.15-.26.17-.49.06-.22-.11-.95-.35-1.81-1.12-.67-.6-1.12-1.33-1.25-1.56-.13-.22-.01-.34.1-.46.1-.1.22-.26.33-.39.11-.13.14-.22.22-.37.07-.15.04-.28-.02-.39-.06-.11-.52-1.26-.72-1.73-.19-.45-.38-.39-.52-.4-.13-.01-.28-.01-.43-.01z"/></svg>
+                                WhatsApp
+                            </a>
                         </div>
                     @endif
                 </nav>
@@ -152,6 +156,7 @@
                                 ['key' => 'usuarios', 'label' => 'Usuarios', 'route' => 'admin.usuarios.index'],
                                 ['key' => 'configuraciones', 'label' => 'Config.', 'route' => 'admin.configuraciones'],
                                 ['key' => 'payment-methods', 'label' => 'Pago', 'route' => 'admin.payment-methods.index'],
+                                ['key' => 'whatsapp', 'label' => 'WhatsApp', 'route' => 'admin.whatsapp.edit'],
                             ]
                             : [
                                 ['key' => 'paqueteria', 'label' => 'Paquetería', 'route' => 'admin.paqueteria'],

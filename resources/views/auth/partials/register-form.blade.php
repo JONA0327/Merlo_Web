@@ -17,6 +17,13 @@
     </div>
 
     <div>
+        <x-input-label :for="$idPrefix.'phone'" value="Teléfono (opcional)" />
+        <x-text-input :id="$idPrefix.'phone'" class="phone-mx-input block mt-1.5 w-full" type="tel" inputmode="numeric" autocomplete="tel" maxlength="12" placeholder="444 123 4567" name="phone" :value="old('phone')" />
+        <p class="mt-1 text-xs text-[#2B1113]/50">Si lo registras, podemos enviarte tu boleto por WhatsApp. Si no, puedes agregarlo después en tu perfil.</p>
+        <x-input-error :messages="$errors->get('phone')" class="mt-2" />
+    </div>
+
+    <div>
         <x-input-label :for="$idPrefix.'password'" value="Contraseña" />
         <x-text-input :id="$idPrefix.'password'" class="block mt-1.5 w-full" type="password" name="password" required autocomplete="new-password" />
         <x-input-error :messages="$errors->get('password')" class="mt-2" />
