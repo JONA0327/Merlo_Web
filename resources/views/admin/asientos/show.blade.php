@@ -132,7 +132,6 @@
                             <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método de pago</span>
                             <select name="payment_method" id="admin-payment-method-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                                 <option value="transfer" {{ old('payment_method') === 'transfer' ? 'selected' : '' }}>Transferencia</option>
-                                <option value="card" {{ old('payment_method', 'card') === 'card' ? 'selected' : '' }}>Tarjeta</option>
                                 <option value="cash" {{ old('payment_method') === 'cash' ? 'selected' : '' }}>Efectivo</option>
                             </select>
                             @error('payment_method') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
@@ -196,7 +195,7 @@
                             </div>
 
                             <div class="flex shrink-0 flex-col items-end gap-1.5">
-                                @if ($reservation->isPending() && ! $trip->hasEnded())
+                                @if (! $reservation->ticket_sent_at && ! $trip->hasEnded())
                                     <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
@@ -220,15 +219,36 @@
 
                         @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
                             <div id="edit-category-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
-                                <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $reservation]) }}" class="flex items-center gap-2">
+                                <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $reservation]) }}" class="space-y-2">
                                     @csrf
                                     @method('PUT')
-                                    <select name="trip_type" class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                        @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
-                                            <option value="{{ $type }}" {{ $reservation->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
-                                        @endforeach
-                                    </select>
-                                    <button type="submit" class="shrink-0 rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-[11px] font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar</button>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <label class="block">
+                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
+                                            <select name="trip_type" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
+                                                    <option value="{{ $type }}" {{ $reservation->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
+                                                @endforeach
+                                            </select>
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Pago</span>
+                                            <select name="payment_method" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                <option value="transfer" {{ $reservation->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
+                                                <option value="cash" {{ $reservation->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
+                                                <option value="" {{ ! in_array($reservation->payment_method, ['transfer','cash']) ? 'selected' : '' }}>(sin método)</option>
+                                            </select>
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Estado</span>
+                                            <select name="payment_status" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                <option value="pending" {{ $reservation->payment_status !== 'completed' ? 'selected' : '' }}>Pendiente</option>
+                                                <option value="completed" {{ $reservation->payment_status === 'completed' ? 'selected' : '' }}>Pagado</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <p class="text-[10px] text-[#2B1113]/40">Cambiar estado a "Pagado" rellena automáticamente <code class="font-mono">paid_at</code>. El envío por WhatsApp sigue siendo manual — toca "Enviar boleto(s)" cuando quieras mandarlo.</p>
+                                    <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
                                 </form>
                             </div>
                         @endif

@@ -485,24 +485,40 @@ class AdminSeatReservationController extends Controller
     }
 
     /**
-     * Corrects a mis-chosen category (ida/redondo/especial/regreso) on an
-     * existing apartado without touching its ticket_code/QR. Blocked once
-     * the ticket has been fully checked in — at that point the trip
-     * already happened under the old category and changing it would be
-     * meaningless (or actively wrong for reporting).
+     * Edits a previously-saved apartado's category + payment state. The
+     * route name stayed "update-category" for backward compatibility,
+     * but the payload now covers more than the original use case —
+     * the admin can correct trip_type, mark the cash as already
+     * received in-window, switch a transfer to "paid" once they
+     * match the bank record, etc.
+     *
+     * Deliberately does NOT auto-send anything via WhatsApp — the
+     * "Enviar boleto(s)" button stays a separate, manual action so
+     * the operator can decide when (and to whom) the ticket image
+     * actually goes out.
+     *
+     * Blocked once the trip is over or fully checked-in, for the same
+     * reporting/audit reasons as before.
      */
     public function updateCategory(Request $request, LandingRoute $landingRoute, SeatReservation $reservation): RedirectResponse
     {
         if ($landingRoute->hasEnded()) {
-            return back()->with('error', 'Este viaje ya pasó — ya no se puede editar la categoría.');
+            return back()->with('error', 'Este viaje ya pasó — ya no se puede editar el apartado.');
         }
 
         if ($reservation->isFullyCheckedIn()) {
-            return back()->with('error', 'No se puede editar la categoría de un apartado ya verificado.');
+            return back()->with('error', 'No se puede editar un apartado ya verificado.');
         }
 
         $data = $request->validate([
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            // OpenPay was removed (card/oxxo/spei are no longer offered),
+            // so the only practical methods are transfer (customer paid
+            // via bank transfer) and cash (ventanilla). "card" is
+            // preserved as a value for legacy rows but never offered
+            // on the form.
+            'payment_method' => ['required', 'string', 'in:transfer,cash,card'],
+            'payment_status' => ['required', 'string', 'in:pending,completed'],
         ]);
 
         $tripType = $data['trip_type'];
@@ -510,13 +526,45 @@ class AdminSeatReservationController extends Controller
         $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
 
         $group = $reservation->groupMembers();
-        SeatReservation::whereIn('id', $group->pluck('id'))->update([
+        $groupIds = $group->pluck('id');
+
+        // Build the update payload for the whole group — every
+        // propiedad a paid customer also pays the siblings, since
+        // they share the same receipt.
+        $update = [
             'trip_type' => $tripType,
             'leg' => $leg,
             'unit_price' => $unitPrice,
-        ]);
+            'payment_method' => $data['payment_method'],
+            'payment_status' => $data['payment_status'],
+        ];
 
-        return back()->with('success', 'Categoría actualizada a '.(TripTicketPrice::tripTypes()[$tripType] ?? $tripType).'.');
+        // Setting payment_status=completed without a paid_at would
+        // leave the column NULL and trip the "Ya está pagado?" check
+        // in AdminPaymentController. Fill it the first time the
+        // admin flips the toggle on; leave it alone otherwise so we
+        // preserve the original timestamp.
+        if ($data['payment_status'] === 'completed') {
+            SeatReservation::whereIn('id', $groupIds)
+                ->whereNull('paid_at')
+                ->update(['paid_at' => now()]);
+        }
+        // Same symmetry on the "unpaid" flip: clear paid_at so
+        // AdminPaymentController::validateTransfer and friends see a
+        // pending reservation again.
+        if ($data['payment_status'] === 'pending') {
+            SeatReservation::whereIn('id', $groupIds)->update(['paid_at' => null]);
+        }
+
+        SeatReservation::whereIn('id', $groupIds)->update($update);
+
+        $summary = collect([
+            'Categoría → '.(TripTicketPrice::tripTypes()[$tripType] ?? $tripType),
+            'Método → '.ucfirst($data['payment_method']),
+            'Pago → '.($data['payment_status'] === 'completed' ? 'pagado' : 'pendiente'),
+        ])->implode(' · ');
+
+        return back()->with('success', 'Apartado actualizado. '.$summary.'.');
     }
 
     private function buildGroupCaption(Collection $reservations): string
