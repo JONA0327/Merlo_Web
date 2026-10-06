@@ -13,6 +13,8 @@ class TripTicketPrice extends Model
 
     public const TYPE_ONE_WAY = 'one_way';
     public const TYPE_ROUND_TRIP = 'round_trip';
+    public const TYPE_ESPECIAL = 'especial';
+    public const TYPE_REGRESO = 'regreso';
 
     protected $fillable = [
         'landing_route_id',
@@ -52,6 +54,8 @@ class TripTicketPrice extends Model
         return [
             self::TYPE_ONE_WAY => 'Solo ida',
             self::TYPE_ROUND_TRIP => 'Viaje redondo',
+            self::TYPE_ESPECIAL => 'Viaje especial',
+            self::TYPE_REGRESO => 'De regreso',
         ];
     }
 }

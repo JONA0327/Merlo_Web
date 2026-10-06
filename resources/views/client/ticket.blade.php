@@ -4,9 +4,9 @@
     $checkinUrl = \Illuminate\Support\Facades\URL::route('admin.checkin.scan', ['code' => $reservation->ticket_code], true);
     $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=10&data='.urlencode($checkinUrl);
 
-    $returnDate = $trip->return_date?->format('d/m/Y') ?? '—';
+    $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
     $departure = $trip->departure_time_formatted ?? '—';
-    $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->format('d/m/Y') ?? '—');
+    $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
     $isRescheduledReturn = $reservation->isOneWay() && ! $reservation->isReturnLeg() && $reservation->source_reservation_id !== null;
     $tripType = match (true) {
         $reservation->isReturnLeg() => 'Solo regreso',
@@ -77,12 +77,12 @@
                     </div>
                     <div class="flex justify-between">
                         <dt class="font-semibold text-[#8C1D2B]/70">Salida</dt>
-                        <dd class="font-semibold text-right">{{ $tripDate }} &middot; {{ $departure }}</dd>
+                        <dd class="text-base font-extrabold text-right">{{ $tripDate }} &middot; {{ $departure }}</dd>
                     </div>
-                    @if ($reservation->isRoundTrip())
+                    @if ($reservation->needsBothLegs())
                         <div class="flex justify-between">
                             <dt class="font-semibold text-[#8C1D2B]/70">Regreso</dt>
-                            <dd class="font-semibold text-right">{{ $returnDate }}</dd>
+                            <dd class="text-base font-extrabold text-right">{{ $returnDate }}</dd>
                         </div>
                     @endif
                     <div class="flex justify-between">
@@ -103,6 +103,14 @@
                 <p class="mb-2 text-[11px] font-bold uppercase tracking-wider text-[#8C1D2B]">Asiento</p>
                 <span class="inline-block rounded-lg border border-[#8C1D2B] bg-white px-3 py-1 font-bold text-[#8C1D2B]">{{ $seat?->label ?? '—' }}</span>
             </div>
+
+            @if (! empty($reservation->boardingLegendLines()))
+                <div class="mx-7 mt-3 rounded-2xl border border-[#F5B301]/40 bg-[#F5B301]/10 px-4 py-3">
+                    @foreach ($reservation->boardingLegendLines() as $line)
+                        <p class="text-sm font-bold text-[#2B1113]">{{ $line }}</p>
+                    @endforeach
+                </div>
+            @endif
 
             @if ($reservation->isRoundTrip() && ! $reservation->isReturnVerified())
                 {{-- Cambio de fecha de regreso --}}

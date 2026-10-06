@@ -29,23 +29,33 @@ let currentTripType = 'one_way';
 const seatNodesById = new Map();
 const selectedIds = new Set();
 
+// 'one_way' and 'especial' can pick ANY bookable seat — no
+// allowed_trip_type / zone restriction applies to them. The zone chips
+// are still there as a quick-select convenience for 'especial'
+// (mancuernas), they just no longer gate which seats can be clicked
+// directly. 'regreso' is eligibility-equivalent to 'one_way' before this
+// change, but now it still respects allowed_trip_type (only 'round_trip'
+// is actually restricted in practice).
+function matchesTripType(seat, type) {
+    if (type === 'one_way' || type === 'especial') return true;
+    const allowed = seat.allowed_trip_type ?? 'both';
+    const effectiveType = type === 'regreso' ? 'one_way' : type;
+    return allowed === 'both' || allowed === effectiveType;
+}
+
 function isSeatSelectable(seat) {
+    if (config.tripEnded) return false;
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id)) return false;
     if (seatStatuses[seat.id]) return false; // pending or sent
-    // Per-seat allowed-trip-type from the bus-unit editor: a seat flagged
-    // 'one_way' is greyed out when the admin is on the round-trip toggle.
-    const allowed = seat.allowed_trip_type ?? 'both';
-    if (allowed !== 'both' && allowed !== currentTripType) return false;
-    return true;
+    return matchesTripType(seat, currentTripType);
 }
 
 function isOtherType(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id)) return false;
     if (seatStatuses[seat.id]) return false;
-    const allowed = seat.allowed_trip_type ?? 'both';
-    return allowed !== 'both' && allowed !== currentTripType;
+    return ! matchesTripType(seat, currentTripType);
 }
 
 function hexToRgba(hex, alpha) {
@@ -218,6 +228,24 @@ stage.on('click tap', (e) => {
 });
 
 function toggleSeat(seat) {
+    // "Especial" is sold as a whole mancuerna, not seat-by-seat — clicking
+    // any one seat of a pair selects (or deselects) both together. A
+    // tagged zone (set in the bus editor) wins when present; otherwise
+    // fall back to whichever bookable seat sits right next to it in the
+    // same row, on the same side of the aisle — works out of the box
+    // without requiring the admin to tag every pair first.
+    if (currentTripType === 'especial') {
+        if (seat.zone) {
+            toggleZone(seat.zone);
+            return;
+        }
+        const partner = findAdjacentPartner(seat);
+        if (partner) {
+            togglePair(seat, partner);
+            return;
+        }
+    }
+
     if (selectedIds.has(seat.id)) {
         selectedIds.delete(seat.id);
     } else {
@@ -225,6 +253,70 @@ function toggleSeat(seat) {
     }
     repaintSeat(seat.id);
     updateForm();
+}
+
+// Toggles every selectable seat sharing this zone together: if the whole
+// group is already selected, clicking any of them clears all of them;
+// otherwise it selects whichever aren't already selected.
+function toggleZone(zoneName) {
+    const zoneSeats = config.seats.filter((s) => s.zone === zoneName && isSeatSelectable(s));
+    if (zoneSeats.length === 0) return;
+
+    const allSelected = zoneSeats.every((s) => selectedIds.has(s.id));
+    zoneSeats.forEach((s) => {
+        if (allSelected) {
+            selectedIds.delete(s.id);
+        } else {
+            selectedIds.add(s.id);
+        }
+        repaintSeat(s.id);
+    });
+    updateForm();
+}
+
+// Same toggle-together behavior as toggleZone, but for an ad-hoc pair of
+// seats (no shared zone tag) — only the ones still actually selectable
+// get toggled, so clicking a pair where the partner is already taken
+// still selects the one seat that's free.
+function togglePair(seatA, seatB) {
+    const pair = [seatA, seatB].filter((s) => isSeatSelectable(s));
+    if (pair.length === 0) return;
+
+    const allSelected = pair.every((s) => selectedIds.has(s.id));
+    pair.forEach((s) => {
+        if (allSelected) {
+            selectedIds.delete(s.id);
+        } else {
+            selectedIds.add(s.id);
+        }
+        repaintSeat(s.id);
+    });
+    updateForm();
+}
+
+// Finds the nearest OTHER bookable seat in the same row (same deck,
+// roughly the same pos_y) that sits immediately beside this one — the
+// gap has to be small enough that it isn't across the aisle, which is
+// always noticeably wider than the gap between two seats sharing a row.
+function findAdjacentPartner(seat) {
+    if (seat.kind !== 'seat') return null;
+
+    const rowTolerance = (seat.height ?? SEAT_SIZE) * 0.6;
+    const candidates = config.seats.filter((s) =>
+        s.id !== seat.id
+        && s.kind === 'seat'
+        && s.type !== 'disabled'
+        && s.deck === seat.deck
+        && Math.abs((s.pos_y ?? 0) - (seat.pos_y ?? 0)) < rowTolerance
+    );
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => Math.abs(a.pos_x - seat.pos_x) - Math.abs(b.pos_x - seat.pos_x));
+    const nearest = candidates[0];
+    const gap = Math.abs(nearest.pos_x - seat.pos_x);
+    const maxPairGap = (seat.width ?? SEAT_SIZE) * 1.8;
+
+    return gap <= maxPairGap ? nearest : null;
 }
 
 function clearSelection() {
@@ -282,24 +374,15 @@ function updateForm() {
     submitBtn.disabled = selectedIds.size === 0;
 }
 
-// Trip type toggle on the apartado form: updates the hidden input,
-// repaints every seat so non-matching ones fade to the dimmed color,
-// drops any selection that no longer matches the new type, and
+// Trip type select on the apartado form: repaints every seat so
+// non-matching ones fade to the dimmed color, drops any selection that no
+// longer matches the new type, toggles the zone picker panel, and
 // refreshes the submit-enabled state.
 function setAdminTripType(type) {
-    if (type !== 'one_way' && type !== 'round_trip') return;
     currentTripType = type;
 
-    const input = document.getElementById('admin-trip-type-input');
-    if (input) input.value = type;
-
-    const tabs = document.querySelectorAll('[data-trip-type]');
-    tabs.forEach((tab) => {
-        const isActive = tab.getAttribute('data-trip-type') === type;
-        tab.classList.toggle('bg-[#8C1D2B]', isActive);
-        tab.classList.toggle('text-white', isActive);
-        tab.classList.toggle('text-[#2B1113]/60', !isActive);
-    });
+    const zonePicker = document.getElementById('admin-zone-picker');
+    if (zonePicker) zonePicker.classList.toggle('hidden', type !== 'especial' && type !== 'regreso');
 
     // Drop any selection that's no longer valid for the new type so the
     // form never submits seats that the server would reject.
@@ -321,9 +404,27 @@ function setAdminTripType(type) {
     updateForm();
 }
 
-document.querySelectorAll('[data-trip-type]').forEach((tab) => {
-    tab.addEventListener('click', () => setAdminTripType(tab.getAttribute('data-trip-type')));
+// Adds every seat in the given zone to the current selection (without
+// clearing what's already picked) — lets the admin click a "Mancuerna 1"
+// chip instead of clicking each seat individually.
+function selectZone(zoneName) {
+    config.seats.forEach((seat) => {
+        if (seat.zone !== zoneName) return;
+        if (!isSeatSelectable(seat)) return;
+        selectedIds.add(seat.id);
+        repaintSeat(seat.id);
+    });
+    updateForm();
+}
+
+const tripTypeSelect = document.getElementById('admin-trip-type-select');
+if (tripTypeSelect) {
+    tripTypeSelect.addEventListener('change', () => setAdminTripType(tripTypeSelect.value));
+}
+
+document.querySelectorAll('.admin-zone-chip').forEach((chip) => {
+    chip.addEventListener('click', () => selectZone(chip.getAttribute('data-zone')));
 });
 
 fitStageToContainer();
-setAdminTripType('one_way');
+setAdminTripType(tripTypeSelect ? tripTypeSelect.value : 'one_way');

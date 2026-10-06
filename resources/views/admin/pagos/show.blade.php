@@ -45,46 +45,79 @@
         {{-- LEFT: charge detail --}}
         <div class="lg:col-span-2 space-y-6">
 
-            @if ($r->isTransfer())
+            @if ($r->isTransfer() || $r->needsVentanillaActivation())
                 <div class="overflow-hidden rounded-3xl bg-white ring-1 ring-black/5 shadow-sm">
                     <div class="bg-[#8C1D2B] px-6 py-4 text-white">
-                        <p class="font-[Poppins] text-lg font-bold">Transferencia bancaria</p>
+                        <p class="font-[Poppins] text-lg font-bold">
+                            {{ $r->isTransfer() ? 'Transferencia bancaria' : $r->payment_method_label }}
+                        </p>
                         <p class="text-xs opacity-80">Total: ${{ number_format($r->total ?? 0, 2) }} MXN</p>
                     </div>
                     <div class="space-y-4 p-6">
-                        <div>
-                            <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Referencia esperada</p>
-                            <p class="mt-1 select-all break-all font-mono text-xl font-extrabold text-[#8C1D2B]">{{ $r->transfer_reference ?? '—' }}</p>
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Comprobante subido por el cliente</p>
-                            @if ($r->transfer_proof_path)
-                                <a href="{{ route('admin.pagos.transfer-proof', $r) }}" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#FFFBF6] px-4 py-2 text-xs font-bold text-[#8C1D2B] ring-1 ring-black/10 hover:bg-[#8C1D2B]/5">
-                                    Ver comprobante
-                                    <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
-                                </a>
-                            @else
-                                <p class="mt-1 text-xs text-[#2B1113]/50">El cliente aún no ha subido un comprobante.</p>
-                            @endif
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Asientos apartados hasta</p>
-                            <p class="mt-1 text-sm text-[#2B1113]">{{ $r->transfer_expires_at?->format('d/m/Y H:i') ?? '—' }}</p>
-                        </div>
-
-                        @if ($r->isPaymentPending())
-                            <div class="border-t border-black/5 pt-4">
-                                <p class="text-xs text-[#2B1113]/60">Copia el concepto que ves en tu cuenta bancaria real (o el que subió el cliente) y pégalo aquí para confirmar que coincide con esta reservación antes de marcarla como pagada.</p>
-                                <form method="POST" action="{{ route('admin.pagos.validate-transfer', $r) }}" class="mt-3 flex flex-col gap-2 sm:flex-row">
-                                    @csrf
-                                    <input type="text" name="reference_confirm" placeholder="Pega aquí el concepto" class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                    <button type="submit" class="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">Marcar como pagada</button>
-                                </form>
-                                <form method="POST" action="{{ route('admin.pagos.reject-transfer', $r) }}" class="mt-2" onsubmit="return confirm('¿Rechazar esta transferencia? Los asientos volverán a estar disponibles.')">
-                                    @csrf
-                                    <button type="submit" class="text-xs font-semibold text-red-600 hover:text-red-700">Rechazar y liberar asientos</button>
-                                </form>
+                        @if ($r->isTransfer())
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Referencia esperada</p>
+                                <p class="mt-1 select-all break-all font-mono text-xl font-extrabold text-[#8C1D2B]">{{ $r->transfer_reference ?? '—' }}</p>
                             </div>
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Comprobante subido por el cliente</p>
+                                @if ($r->transfer_proof_path)
+                                    <a href="{{ route('admin.pagos.transfer-proof', $r) }}" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#FFFBF6] px-4 py-2 text-xs font-bold text-[#8C1D2B] ring-1 ring-black/10 hover:bg-[#8C1D2B]/5">
+                                        Ver comprobante
+                                        <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+                                    </a>
+                                @else
+                                    <p class="mt-1 text-xs text-[#2B1113]/50">El cliente aún no ha subido un comprobante.</p>
+                                @endif
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Asientos apartados hasta</p>
+                                <p class="mt-1 text-sm text-[#2B1113]">{{ $r->transfer_expires_at?->format('d/m/Y H:i') ?? '—' }}</p>
+                            </div>
+
+                            @if ($r->isPaymentPending())
+                                <div class="border-t border-black/5 pt-4">
+                                    <p class="text-xs text-[#2B1113]/60">Copia el concepto que ves en tu cuenta bancaria real (o el que subió el cliente) y pégalo aquí para confirmar que coincide con esta reservación antes de marcarla como pagada.</p>
+                                    <form method="POST" action="{{ route('admin.pagos.validate-transfer', $r) }}" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                        @csrf
+                                        <input type="text" name="reference_confirm" placeholder="Pega aquí el concepto" class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                        <button type="submit" class="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">Marcar como pagada</button>
+                                    </form>
+                                    <form method="POST" action="{{ route('admin.pagos.reject-transfer', $r) }}" class="mt-2" onsubmit="return confirm('¿Rechazar esta transferencia? Los asientos volverán a estar disponibles.')">
+                                        @csrf
+                                        <button type="submit" class="text-xs font-semibold text-red-600 hover:text-red-700">Rechazar y liberar asientos</button>
+                                    </form>
+                                </div>
+                            @endif
+                        @elseif ($r->needsVentanillaActivation())
+                            <div class="rounded-2xl bg-[#F5B301]/10 p-4 ring-1 ring-[#F5B301]/30">
+                                <p class="text-sm font-bold text-[#2B1113]">RESERVADO — pago pendiente ({{ $r->payment_method_label }})</p>
+                                <p class="mt-1 text-xs text-[#2B1113]/70">Cuando el cliente pague en ventanilla, presiona el botón de abajo para activar el boleto y abrir la pantalla de impresión.</p>
+                            </div>
+
+                            @if ($r->customer_phone)
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Teléfono del cliente</p>
+                                    <p class="mt-1 select-all text-sm font-bold text-[#2B1113]">{{ $r->customer_phone }}</p>
+                                </div>
+                            @endif
+
+                            @if ($r->isPaymentPending())
+                                <div class="border-t border-black/5 pt-4">
+                                    <form method="POST" action="{{ route('admin.pagos.confirm-cash', $r) }}" onsubmit="return confirm('¿Confirmar que se recibió el pago? Se generará el boleto con QR y se abrirá la pantalla para imprimirlo.')">
+                                        @csrf
+                                        <button type="submit" class="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">
+                                            Confirmar pago
+                                        </button>
+                                    </form>
+                                </div>
+                            @elseif ($r->isPaymentCompleted())
+                                <div class="border-t border-black/5 pt-4">
+                                    <a href="{{ route('admin.pagos.cash-ticket', $r) }}" target="_blank" class="inline-flex items-center gap-2 rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:bg-[#6F1622]">
+                                        Volver a imprimir boleto
+                                    </a>
+                                </div>
+                            @endif
                         @endif
                     </div>
                 </div>
@@ -132,7 +165,7 @@
             @endif
 
             {{-- Refund --}}
-            @if ($r->isPaymentCompleted())
+            @if ($r->isPaymentCompleted() && ! $r->needsVentanillaActivation() && ! $r->isTransfer())
                 <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
                     <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Reembolsar</h3>
                     <p class="mt-1 text-sm text-[#2B1113]/60">Procesa un reembolso total o parcial con OpenPay. Se notificará al cliente por correo.</p>

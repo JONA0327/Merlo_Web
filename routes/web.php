@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AdminBusUnitController;
 use App\Http\Controllers\Admin\AdminBusUnitSeatController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\AdminDestinationController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
 use App\Http\Controllers\Admin\AdminPaymentController;
@@ -10,12 +11,13 @@ use App\Http\Controllers\Admin\AdminPaymentMethodController;
 use App\Http\Controllers\Admin\AdminSeatReservationController;
 use App\Http\Controllers\Admin\AdminSettingController;
 use App\Http\Controllers\Admin\AdminTripCheckinController;
+use App\Http\Controllers\Admin\AdminTripGuideController;
 use App\Http\Controllers\Admin\AdminTripTicketPriceController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminWhatsAppController;
-use App\Http\Controllers\Admin\OpenPayWebhookController;
 use App\Http\Controllers\ClientDashboardController;
 use App\Http\Controllers\PackageTrackingController;
+use App\Http\Controllers\GuestTicketLookupController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SeatHoldController;
 use App\Http\Controllers\SeatPickerController;
@@ -73,21 +75,45 @@ Route::get('/viajes/buscar', function () {
 
 Route::get('/rastreo', [PackageTrackingController::class, 'show'])->name('paqueteria.rastreo');
 
+// Guest ticket lookup — the "I bought without an account, where are my
+// tickets?" flow. Public (gates by the customer_name + customer_phone
+// pair instead of auth, see GuestTicketLookupController for the
+// privacy/scope reasoning).
+Route::get('/mis-boletos', [GuestTicketLookupController::class, 'index'])->name('guest.tickets.lookup');
+Route::post('/mis-boletos', [GuestTicketLookupController::class, 'lookup'])->name('guest.tickets.lookup.search');
+
+// Online seat-picker flow: open to guests too. The form requires
+// customer_name + customer_phone when there's no logged-in user (see
+// SeatPickerController::store), but no auth middleware is needed for
+// browsing or buying — guests can complete the whole checkout with
+// just name + phone. Holds from this flow DO still require auth (the
+// 10-minute soft-lock while the form is being filled), so they're
+// kept in their own sub-group below.
+Route::get('/viajes/{landingRoute}/asientos', [SeatPickerController::class, 'show'])->name('travel.seats');
+Route::post('/viajes/{landingRoute}/asientos', [SeatPickerController::class, 'store'])->name('travel.seats.store');
+
+// Payment result pages. The store() redirect lands here after the
+// store() finishes, so the customer always sees a server-rendered
+// receipt / barcode / error. Intentionally public for the same
+// guest-buy reason as above.
+Route::get('/pago/{reservation}/exitoso', [SeatPickerController::class, 'success'])->name('travel.payment.success');
+Route::get('/pago/{reservation}/pendiente', [SeatPickerController::class, 'pending'])->name('travel.payment.pending');
+Route::get('/pago/{reservation}/error', [SeatPickerController::class, 'error'])->name('travel.payment.error');
+Route::post('/pago/{reservation}/comprobante', [SeatPickerController::class, 'uploadTransferProof'])->name('travel.payment.transfer.proof');
+
+// Per-seat "soft lock" while someone fills the form — now open to
+// guests too. Their hold is keyed by the Laravel session id (every
+// browser already has the cookie), so two guests on the same seat
+// still see a conflict and only one of them passes the transactional
+// check on submit. The transactional guard in
+// SeatPickerController::store() remains the real authority — the
+// hold is just a UX hint so the second buyer knows to pick something
+// else instead of waiting 10 min for nothing.
+Route::post('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'store'])->name('travel.seats.hold');
+Route::delete('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'destroy'])->name('travel.seats.hold.destroy');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [ClientDashboardController::class, 'index'])->name('dashboard');
-
-    Route::get('/viajes/{landingRoute}/asientos', [SeatPickerController::class, 'show'])->name('travel.seats');
-    Route::post('/viajes/{landingRoute}/asientos', [SeatPickerController::class, 'store'])->name('travel.seats.store');
-    Route::post('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'store'])->name('travel.seats.hold');
-    Route::delete('/viajes/{landingRoute}/asientos/{busUnitSeat}/hold', [SeatHoldController::class, 'destroy'])->name('travel.seats.hold.destroy');
-
-    // Payment result pages. The store() redirect lands here after
-    // the OpenPay charge call returns, so the customer always sees
-    // a server-rendered receipt / barcode / error.
-    Route::get('/pago/{reservation}/exitoso', [SeatPickerController::class, 'success'])->name('travel.payment.success');
-    Route::get('/pago/{reservation}/pendiente', [SeatPickerController::class, 'pending'])->name('travel.payment.pending');
-    Route::get('/pago/{reservation}/error', [SeatPickerController::class, 'error'])->name('travel.payment.error');
-    Route::post('/pago/{reservation}/comprobante', [SeatPickerController::class, 'uploadTransferProof'])->name('travel.payment.transfer.proof');
 
     Route::prefix('dashboard')->name('cliente.')->group(function () {
         Route::get('/compras', [ClientDashboardController::class, 'compras'])->name('compras');
@@ -128,15 +154,38 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/pagos/{reservation}/comprobante', [AdminPaymentController::class, 'transferProof'])->name('pagos.transfer-proof');
     Route::post('/pagos/{reservation}/validar-transferencia', [AdminPaymentController::class, 'validateTransfer'])->name('pagos.validate-transfer');
     Route::post('/pagos/{reservation}/rechazar-transferencia', [AdminPaymentController::class, 'rejectTransfer'])->name('pagos.reject-transfer');
+    // Cash-payment activation at the ticket window: the staff confirms
+    // they received the cash, the QR + ticket are generated, and the
+    // server redirects to a printable view so they can hand the customer
+    // the physical ticket on the spot.
+    Route::post('/pagos/{reservation}/confirmar-efectivo', [AdminPaymentController::class, 'confirmCash'])->name('pagos.confirm-cash');
+    Route::get('/pagos/{reservation}/boleto-efectivo', [AdminPaymentController::class, 'cashTicket'])->name('pagos.cash-ticket');
+    Route::get('/pagos/{reservation}/boleto-efectivo/imagen', [AdminPaymentController::class, 'cashTicketImage'])->name('pagos.cash-ticket-image');
     Route::get('/asientos', [AdminSeatReservationController::class, 'index'])->name('asientos.index');
     Route::get('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'show'])->name('asientos.show');
     Route::post('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'store'])->name('asientos.store');
     Route::post('/asientos/{landingRoute}/reservas/{reservation}/enviar', [AdminSeatReservationController::class, 'sendTicket'])->name('asientos.send');
+    Route::put('/asientos/{landingRoute}/reservas/{reservation}/categoria', [AdminSeatReservationController::class, 'updateCategory'])->name('asientos.update-category');
     Route::delete('/asientos/{landingRoute}/reservas/{reservation}', [AdminSeatReservationController::class, 'destroy'])->name('asientos.destroy');
+    Route::get('/asientos/{landingRoute}/lista', [AdminSeatReservationController::class, 'manifest'])->name('asientos.manifest');
     Route::get('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'availability'])->name('asientos.availability');
     Route::put('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'updateAvailability'])->name('asientos.availability.update');
     Route::get('/precios', [AdminTripTicketPriceController::class, 'index'])->name('precios.index');
     Route::post('/precios', [AdminTripTicketPriceController::class, 'update'])->name('precios.update');
+    Route::get('/guias', [AdminTripGuideController::class, 'index'])->name('guias.index');
+
+    // Master list of cities the company serves — powers the from/to
+    // <select> in the trip create/edit form so the operator doesn't
+    // re-type the same place name in three slightly different ways.
+    Route::resource('destinations', AdminDestinationController::class)->except(['show']);
+    Route::get('/guias/crear', [AdminTripGuideController::class, 'create'])->name('guias.create');
+    Route::post('/guias', [AdminTripGuideController::class, 'store'])->name('guias.store');
+    Route::get('/guias/{guide}', [AdminTripGuideController::class, 'show'])->name('guias.show');
+    Route::get('/guias/{guide}/editar', [AdminTripGuideController::class, 'edit'])->name('guias.edit');
+    Route::put('/guias/{guide}', [AdminTripGuideController::class, 'update'])->name('guias.update');
+    Route::delete('/guias/{guide}', [AdminTripGuideController::class, 'destroy'])->name('guias.destroy');
+    Route::post('/guias/{guide}/reservas', [AdminTripGuideController::class, 'storeReservation'])->name('guias.reservations.store');
+    Route::delete('/guias/{guide}/reservas/{reservation}', [AdminTripGuideController::class, 'destroyReservation'])->name('guias.reservations.destroy');
     // Operator-side QR check-in. The {code?} part is optional so
     // /admin/checkin (no code) lands on the search form, and
     // /admin/checkin/{code} (the QR target) lands straight on the
@@ -146,6 +195,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/checkin/{code}', [AdminTripCheckinController::class, 'lookup'])->name('checkin.scan');
     Route::post('/checkin/{reservation}/outbound', [AdminTripCheckinController::class, 'verifyOutbound'])->name('checkin.outbound');
     Route::post('/checkin/{reservation}/return', [AdminTripCheckinController::class, 'verifyReturn'])->name('checkin.return');
+    Route::post('/checkin/{reservation}/reprogramar-regreso', [AdminTripCheckinController::class, 'rescheduleReturn'])->name('checkin.reschedule-return');
     Route::get('/usuarios', [AdminUserController::class, 'index'])->name('usuarios.index');
     Route::get('/usuarios/crear', [AdminUserController::class, 'create'])->name('usuarios.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('usuarios.store');
@@ -183,12 +233,9 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
 });
 
-// OpenPay webhook — public, signature-verified inside the controller.
-// OpenPay only POSTs here for asynchronous payment-method events
-// (OXXO barcode paid, SPEI transfer received, chargebacks, refunds),
-// so it doesn't go through the auth middleware. The URL is excluded
-// from CSRF in bootstrap/app.php since OpenPay can't supply a token.
-Route::post('/webhooks/openpay', [OpenPayWebhookController::class, 'handle'])
-    ->name('webhooks.openpay');
+// OpenPay webhook route removed: OpenPay is disabled for now, so
+// there's no public endpoint OpenPay would POST to. Re-add
+// `webhooks/openpay` (pointing at OpenPayWebhookController::handle)
+// here if/when the gateway comes back.
 
 require __DIR__.'/auth.php';

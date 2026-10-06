@@ -75,6 +75,20 @@ class LandingRoute extends Model
         return $this->bus_unit_id !== null;
     }
 
+    /**
+     * Whether this trip's travel date is already in the past — the
+     * return date if there is one (the trip isn't "over" until the
+     * return leg happened), otherwise the departure date. A trip with
+     * no date at all ("Sin fecha") never closes on its own; an admin
+     * has to deactivate it manually via is_active.
+     */
+    public function hasEnded(): bool
+    {
+        $lastDate = $this->return_date ?? $this->day;
+
+        return $lastDate !== null && $lastDate->lt(today());
+    }
+
     public function getImageUrlAttribute(): ?string
     {
         return $this->image ? Storage::disk('public')->url($this->image) : null;
@@ -96,7 +110,32 @@ class LandingRoute extends Model
 
     public function priceFor(string $tripType): ?TripTicketPrice
     {
-        return $this->activePrices()->get($tripType);
+        // Per-trip override (active) wins; fall back to the global
+        // default when the admin never gave this trip its own row, or
+        // when the only existing row was turned off ("Visible=false").
+        $override = $this->activePrices()->get($tripType);
+        if ($override) {
+            return $override;
+        }
+
+        $default = Setting::current()->defaultPriceFor($tripType);
+        if ($default === null) {
+            return null;
+        }
+
+        // Synthesize a TripTicketPrice-like row so callers don't have to
+        // branch on "is this an override or the default?". Carries
+        // enough info for the accessors below; nothing else in the
+        // app calls methods beyond `->price` / `->trip_type` on it.
+        $synthetic = new TripTicketPrice();
+        $synthetic->setRawAttributes([
+            'landing_route_id' => $this->id,
+            'trip_type' => $tripType,
+            'price' => $default,
+            'is_active' => true,
+        ], true);
+
+        return $synthetic;
     }
 
     public function formattedPriceFor(string $tripType): ?string
@@ -126,5 +165,16 @@ class LandingRoute extends Model
     public function numericPriceFor(string $tripType): float
     {
         return (float) ($this->priceFor($tripType)?->price ?? 0);
+    }
+
+    /**
+     * Whether the given type currently has a per-trip OVERRIDE
+     * (distinct from inheriting the global default). Used by the
+     * admin "Precios de boleto" screen to render "(default)" hints
+     * next to cells that don't have their own row.
+     */
+    public function hasOverrideFor(string $tripType): bool
+    {
+        return $this->prices()->where('trip_type', $tripType)->exists();
     }
 }

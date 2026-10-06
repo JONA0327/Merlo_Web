@@ -4,7 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
+use App\Models\Destination;
 use App\Models\LandingRoute;
+use App\Models\Setting;
+use App\Models\TripGuide;
+use App\Models\TripTicketPrice;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -19,8 +23,13 @@ class AdminLandingRouteController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Passed to the create form's <select> so the operator doesn't
+        // re-type city names by hand.
+        $destinations = Destination::query()->active()->orderBy('name')->get();
+
         return view('admin.landing-routes', [
             'routes' => $routes,
+            'destinations' => $destinations,
         ]);
     }
 
@@ -55,7 +64,7 @@ class AdminLandingRouteController extends Controller
             $validated['available_seats'] = BusUnit::find($validated['bus_unit_id'])->bookableSeatsCount();
         }
 
-        LandingRoute::create([
+        $route = LandingRoute::create([
             'from' => $validated['from'],
             'to' => $validated['to'],
             'duration' => $validated['duration'] ?? null,
@@ -70,7 +79,24 @@ class AdminLandingRouteController extends Controller
             'image' => $request->hasFile('image') ? $request->file('image')->store('landing-routes', 'public') : null,
         ]);
 
-        return redirect()->route('admin.viajes')->with('success', 'Ruta agregada correctamente. Ahora configura el precio desde la sección "Precios de boleto".');
+        // Seed every type with the global default so the new trip shows up
+        // in /admin/precios with a row for each ticket type right away.
+        // If no defaults are configured yet, no rows are created — the
+        // LandingRoute::priceFor fallback will surface "—" in the UI
+        // until the admin sets a default in /admin/precios.
+        $this->seedDefaultPrices($route);
+
+        $linked = TripGuide::linkTrip($route);
+        $message = 'Ruta agregada correctamente.';
+        if ($linked > 0) {
+            $message .= " Se vincularon {$linked} asiento".($linked === 1 ? '' : 's').' que ya estaban apartados desde una guía.';
+        }
+        $defaults = Setting::current()->defaultPrices();
+        if (! empty($defaults)) {
+            $message .= ' Se copiaron los precios por defecto (modifícalos en "Precios de boleto" si este viaje necesita otros).';
+        }
+
+        return redirect()->route('admin.viajes')->with('success', $message);
     }
 
     public function edit(LandingRoute $landingRoute): View
@@ -81,6 +107,11 @@ class AdminLandingRouteController extends Controller
                 ->withCount(['seats as bookable_seats_count' => fn ($query) => $query->bookable()])
                 ->orderBy('name')
                 ->get(),
+            // Active destinations for the from/to <select>. If the trip
+            // already has a free-text from/to that no longer matches any
+            // destination, the blade shows it as a disabled legacy option
+            // so the value isn't lost on re-save.
+            'destinations' => Destination::query()->active()->orderBy('name')->get(),
         ]);
     }
 
@@ -141,7 +172,13 @@ class AdminLandingRouteController extends Controller
             'image' => $image,
         ]);
 
-        return redirect()->route('admin.viajes')->with('success', 'Viaje actualizado correctamente.');
+        $linked = TripGuide::linkTrip($landingRoute->fresh());
+        $message = 'Viaje actualizado correctamente.';
+        if ($linked > 0) {
+            $message .= " Se vincularon {$linked} asiento".($linked === 1 ? '' : 's').' que ya estaban apartados desde una guía.';
+        }
+
+        return redirect()->route('admin.viajes')->with('success', $message);
     }
 
     /**
@@ -161,6 +198,35 @@ class AdminLandingRouteController extends Controller
         }
 
         return sprintf('%02d:%02d', $hour, $minute);
+    }
+
+    /**
+     * Copy the global default prices onto this trip as active overrides —
+     * the admin can still edit any cell in /admin/precios if this trip
+     * needs a special price. Skipped types (no default set yet) just
+     * don't get a row, and priceFor() will surface the missing value
+     * consistently with the rest of the UI.
+     */
+    private function seedDefaultPrices(LandingRoute $route): void
+    {
+        $defaults = Setting::current()->defaultPrices();
+
+        foreach ($defaults as $type => $price) {
+            // Never overwrite an admin-set override on this trip
+            // (defensive — store() runs on a freshly created trip so
+            // there shouldn't be any rows, but this future-proofs the
+            // helper if we ever call it elsewhere).
+            $existing = $route->prices()->where('trip_type', $type)->first();
+            if ($existing) {
+                continue;
+            }
+
+            $route->prices()->create([
+                'trip_type' => $type,
+                'price' => $price,
+                'is_active' => true,
+            ]);
+        }
     }
 
     public function toggleFeatured(LandingRoute $landingRoute): RedirectResponse

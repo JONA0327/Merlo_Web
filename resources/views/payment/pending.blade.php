@@ -3,6 +3,7 @@
     $isOxxo = $reservation->payment_method === \App\Models\SeatReservation::PAYMENT_METHOD_OXXO;
     $isSpei = $reservation->payment_method === \App\Models\SeatReservation::PAYMENT_METHOD_SPEI;
     $isTransfer = $reservation->isTransfer();
+    $isCashAtWindow = $reservation->isCash();
     $isCash = $isOxxo || $isSpei;
 
     $expiresAt = $isTransfer ? $reservation->transfer_expires_at : $reservation->openpay_expires_at;
@@ -24,7 +25,7 @@
             <a href="{{ url('/') }}" class="flex items-center gap-3">
                 <img src="{{ asset('Logo.png') }}" alt="Merlo Transportes" class="h-10 w-auto">
             </a>
-            <a href="{{ route('cliente.boletos') }}" class="inline-flex items-center gap-2 rounded-full bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
+            <a href="{{ auth()->check() ? route('cliente.boletos') : route('guest.tickets.lookup') }}" class="inline-flex items-center gap-2 rounded-full bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
                 Mis boletos
             </a>
         </div>
@@ -52,6 +53,8 @@
                     Paga en OXXO para confirmar tu boleto
                 @elseif ($isSpei)
                     Realiza una transferencia SPEI para confirmar tu boleto
+                @elseif ($isCashAtWindow)
+                    Asiento RESERVADO — paga en ventanilla
                 @else
                     Tu pago está siendo procesado
                 @endif
@@ -63,6 +66,8 @@
                     Lleva el código de barras a cualquier tienda OXXO. El cargo se reflejará en cuanto se acredite el pago.
                 @elseif ($isSpei)
                     Haz una transferencia por el monto exacto a la CLABE indicada. Te confirmaremos en cuanto se reciba.
+                @elseif ($isCashAtWindow)
+                    Tu asiento queda apartado. Paga en efectivo en ventanilla antes de tu viaje — un operador confirmará el pago y te entregaremos tu boleto con código QR al momento.
                 @else
                     Te avisaremos por correo cuando se confirme.
                 @endif
@@ -172,36 +177,129 @@
             </div>
         @endif
 
-        {{-- Reservation summary --}}
+        @if ($isCashAtWindow)
+            @php
+                // $reservation->total is just the root row's total — for a
+                // multi-seat cash purchase we have to sum the whole group,
+                // otherwise the "A pagar" line and the per-row breakdown
+                // disagree (and the operator at the window would chase the
+                // missing cash).
+                $groupTotal = (float) $group->sum(fn ($r) => (float) $r->total);
+                $seatCount = max(1, $group->count());
+            @endphp
+            <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F5B301] text-base font-extrabold text-[#2B1113]">$</div>
+                    <div class="min-w-0 flex-1">
+                        <h2 class="font-[Poppins] text-base font-bold text-[#2B1113]">Pago en ventanilla</h2>
+                        <p class="mt-1 text-sm text-[#2B1113]/70">
+                            @if ($seatCount > 1)
+                                Tus {{ $seatCount }} asientos están apartados sin fecha de vencimiento. Cuando pagues en efectivo en ventanilla, un operador confirmará el pago y te entregaremos tus boletos con código QR al momento.
+                            @else
+                                Tu asiento está apartado sin fecha de vencimiento. Cuando pagues en efectivo en ventanilla, un operador confirmará el pago y te entregaremos tu boleto con código QR al momento.
+                            @endif
+                        </p>
+                    </div>
+                </div>
+
+                <dl class="mt-5 space-y-2 border-t border-black/5 pt-4 text-sm">
+                    <div class="flex justify-between">
+                        <dt class="text-[#2B1113]/60">A pagar{{ $seatCount > 1 ? ' ('.$seatCount.' asientos)' : '' }}</dt>
+                        <dd class="font-bold text-[#2B1113]">${{ number_format($groupTotal, 2) }} MXN</dd>
+                    </div>
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/60">Estado</dt><dd><span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800"><span class="h-1.5 w-1.5 rounded-full bg-amber-600"></span>RESERVADO</span></dd></div>
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/60">Vencimiento</dt><dd>Sin vencimiento — pagado en ventanilla o cancelado por un operador</dd></div>
+                </dl>
+
+                <p class="mt-5 text-[11px] text-[#2B1113]/50">
+                    Conserva este comprobante. Sin él, un operador no podrá identificar tu apartado en ventanilla.
+                </p>
+            </div>
+        @endif
+
+        {{-- Reservation summary. A multi-seat purchase links every
+             sibling SeatReservation via notes="group:{root_id}", so
+             this section iterates the whole group when there's more
+             than one ticket — paying for 4 seats then displays all
+             4 tickets, not just the first. --}}
         <div class="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
             <div class="bg-[#2B1113] px-6 py-4 text-white">
                 <div class="flex items-center justify-between">
-                    <p class="font-[Poppins] text-lg font-bold">Tu reservación</p>
+                    <p class="font-[Poppins] text-lg font-bold">
+                        Tu reservación
+                        @if ($group->count() > 1)
+                            <span class="ml-1 rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">{{ $group->count() }} boletos</span>
+                        @endif
+                    </p>
                     <p class="text-xs font-semibold opacity-80">Ticket #{{ $reservation->id }}</p>
                 </div>
             </div>
             <div class="bg-[#F5B301] px-6 py-3 text-[#2B1113]">
                 <p class="font-[Poppins] text-lg font-extrabold">{{ $trip->from ?? '' }} → {{ $trip->to ?? '' }}</p>
-                <p class="text-xs font-semibold opacity-80">{{ $trip->day?->format('d/m/Y') ?? '—' }} · {{ $trip->departure_time_formatted ?? '—' }} · {{ $reservation->trip_type_label }}</p>
+                <p class="text-xs font-semibold opacity-80">{{ $trip->day?->toSpanishLongDate() ?? '—' }} · {{ $trip->departure_time_formatted ?? '—' }} · {{ $reservation->trip_type_label }}</p>
             </div>
-            <div class="grid grid-cols-2 gap-4 p-6 text-sm sm:grid-cols-4">
-                <div>
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Pasajero</p>
-                    <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->customer_display_name }}</p>
+
+            @if ($group->count() === 1)
+                <div class="grid grid-cols-2 gap-4 p-6 text-sm sm:grid-cols-4">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Pasajero</p>
+                        <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->customer_display_name }}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Asiento</p>
+                        <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->seat?->label ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Método</p>
+                        <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->payment_method_label }}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Total</p>
+                        <p class="mt-1 font-[Poppins] font-extrabold text-[#8C1D2B]">${{ number_format($reservation->total, 2) }}</p>
+                    </div>
                 </div>
-                <div>
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Asiento</p>
-                    <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->seat?->label ?? '—' }}</p>
+            @else
+                <ul class="divide-y divide-black/5">
+                    @foreach ($group as $i => $member)
+                        <li class="grid grid-cols-1 gap-2 p-6 text-sm sm:grid-cols-12 sm:items-center">
+                            <div class="sm:col-span-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">
+                                    Boleto {{ $i + 1 }} de {{ $group->count() }}
+                                </p>
+                                <p class="mt-1 font-bold text-[#2B1113]">{{ $member->customer_display_name }}</p>
+                                @if ($member->customer_display_email)
+                                    <p class="text-[10px] text-[#2B1113]/50 break-all">{{ $member->customer_display_email }}</p>
+                                @endif
+                            </div>
+                            <div class="sm:col-span-2">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Asiento</p>
+                                <p class="mt-1 inline-flex items-center rounded-lg bg-[#FFFBF6] px-2.5 py-1 font-mono font-bold text-[#8C1D2B] ring-1 ring-black/10">
+                                    {{ $member->seat?->label ?? '—' }}
+                                </p>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Tipo</p>
+                                <p class="mt-1 text-xs text-[#2B1113]">{{ $member->trip_type_label }}</p>
+                            </div>
+                            <div class="sm:col-span-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Ticket</p>
+                                <p class="mt-1 font-mono text-[10px] text-[#2B1113]/60 break-all">{{ $member->ticket_code }}</p>
+                            </div>
+                            <div class="sm:col-span-2 text-right">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Precio</p>
+                                <p class="mt-1 font-bold text-[#2B1113]">${{ number_format((float) ($member->unit_price ?? 0), 2) }}</p>
+                            </div>
+                        </li>
+                    @endforeach
+                </ul>
+                <div class="flex items-center justify-between border-t border-black/5 px-6 py-4 text-sm">
+                    <span class="font-semibold text-[#2B1113]">Total de la compra</span>
+                    <span class="font-[Poppins] text-lg font-extrabold text-[#8C1D2B]">${{ number_format((float) $group->sum(fn ($r) => (float) $r->total), 2) }}</span>
                 </div>
-                <div>
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Método</p>
-                    <p class="mt-1 font-bold text-[#2B1113]">{{ $reservation->payment_method_label }}</p>
+                <div class="border-t border-black/5 px-6 py-3 text-xs text-[#2B1113]/60">
+                    <p><span class="font-semibold text-[#2B1113]">Método:</span> {{ $reservation->payment_method_label }}</p>
                 </div>
-                <div>
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Total</p>
-                    <p class="mt-1 font-[Poppins] font-extrabold text-[#8C1D2B]">${{ number_format($reservation->total, 2) }}</p>
-                </div>
-            </div>
+            @endif
         </div>
 
         {{-- What happens next --}}
@@ -221,6 +319,10 @@
                     <li>1. Desde tu banca en línea, transfiere <strong>${{ number_format($reservation->total, 2) }} MXN</strong> a la CLABE.</li>
                     <li>2. Usa la referencia <strong>{{ $reservation->ticket_code }}</strong> para identificar el pago.</li>
                     <li>3. Te avisaremos por correo en cuanto se reciba la transferencia.</li>
+                @elseif ($isCashAtWindow)
+                    <li>1. Acude a nuestra ventanilla antes de tu salida con este comprobante (o el folio de tu apartado).</li>
+                    <li>2. Paga <strong>${{ number_format($reservation->total, 2) }} MXN</strong> en efectivo.</li>
+                    <li>3. El operador confirmará el pago y te imprimirá tu boleto con código QR en el momento.</li>
                 @else
                     <li>Te avisaremos por correo cuando el pago se confirme.</li>
                 @endif

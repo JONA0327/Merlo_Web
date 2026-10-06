@@ -27,6 +27,7 @@ class AdminBusUnitSeatController extends Controller
             'seats.*.border_width' => ['required', 'integer', 'min:1', 'max:8'],
             'seats.*.color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'seats.*.allowed_trip_type' => ['nullable', 'string', 'in:both,one_way,round_trip'],
+            'seats.*.zone' => ['nullable', 'string', 'max:40'],
             'seats.*.pos_x' => ['required', 'numeric'],
             'seats.*.pos_y' => ['required', 'numeric'],
         ]);
@@ -60,6 +61,7 @@ class AdminBusUnitSeatController extends Controller
                     'border_width' => $seat['border_width'],
                     'color' => $seat['color'] ?? null,
                     'allowed_trip_type' => $seat['allowed_trip_type'] ?? 'both',
+                    'zone' => $seat['zone'] ?? null,
                     'pos_x' => $seat['pos_x'],
                     'pos_y' => $seat['pos_y'],
                 ];
@@ -73,7 +75,7 @@ class AdminBusUnitSeatController extends Controller
         });
 
         return response()->json([
-            'seats' => $busUnit->seats()->get(['id', 'label', 'kind', 'type', 'deck', 'shape', 'width', 'height', 'corner_radius', 'border_width', 'color', 'allowed_trip_type', 'pos_x', 'pos_y']),
+            'seats' => $busUnit->seats()->get(['id', 'label', 'kind', 'type', 'deck', 'shape', 'width', 'height', 'corner_radius', 'border_width', 'color', 'allowed_trip_type', 'zone', 'pos_x', 'pos_y']),
         ]);
     }
 }

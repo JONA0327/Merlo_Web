@@ -21,8 +21,11 @@ const PRICE_BY_TYPE = {
     round_trip: Number(config.priceRoundTrip ?? 0),
     // Resold return legs are priced like a one-way ticket.
     return_resale: Number(config.priceOneWay ?? 0),
+    // "De regreso" is a direct return-leg purchase with its own price —
+    // unlike return_resale, it does NOT reuse the one-way price.
+    regreso: Number(config.priceRegreso ?? 0),
 };
-const VALID_TRIP_TYPES = new Set(['one_way', 'round_trip', 'return_resale']);
+const VALID_TRIP_TYPES = new Set(['one_way', 'round_trip', 'return_resale', 'regreso']);
 let currentTripType = VALID_TRIP_TYPES.has(config.defaultTripType) ? config.defaultTripType : 'one_way';
 
 // Seats whose round-trip return leg an admin released for resale and
@@ -218,6 +221,15 @@ function showAlert(message) {
     alertTimeout = setTimeout(() => alertEl.classList.add('hidden'), 4000);
 }
 
+// "regreso" is a direct, standalone return-leg purchase — eligibility-wise
+// it's just a one-leg ticket like one_way, so it shares the same
+// allowed_trip_type bucket (mirrors BusUnitSeat::allowsTripType() server-side).
+function matchesTripType(seat, type) {
+    const allowed = seat.allowed_trip_type ?? 'both';
+    const effectiveType = type === 'regreso' ? 'one_way' : type;
+    return allowed === 'both' || allowed === effectiveType;
+}
+
 function isSelectable(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (purchasedIds.has(seat.id)) return false;
@@ -226,12 +238,7 @@ function isSelectable(seat) {
     // pool of inventory: only seats an admin explicitly released for
     // resale, regardless of the seat's normal allowed_trip_type.
     if (currentTripType === 'return_resale') return resaleSeatIds.has(seat.id);
-    // Per-trip-type restriction set by the admin on the seat editor.
-    // A seat flagged 'one_way' is not bookable when the customer is on
-    // the round-trip toggle (and vice versa). 'both' is unrestricted.
-    const allowed = seat.allowed_trip_type ?? 'both';
-    if (allowed !== 'both' && allowed !== currentTripType) return false;
-    return true;
+    return matchesTripType(seat, currentTripType);
 }
 
 // Like isSelectable but excluding the trip-type filter — used by
@@ -243,8 +250,7 @@ function isOtherType(seat) {
     if (purchasedIds.has(seat.id)) return false;
     if (heldByOther.has(seat.id)) return false;
     if (currentTripType === 'return_resale') return !resaleSeatIds.has(seat.id);
-    const allowed = seat.allowed_trip_type ?? 'both';
-    return allowed !== 'both' && allowed !== currentTripType;
+    return ! matchesTripType(seat, currentTripType);
 }
 
 function colorsFor(seat) {
@@ -367,10 +373,24 @@ function holdUrl(seatId) {
     return config.holdUrlBase.replace('__SEAT__', seatId);
 }
 
+// Both logged-in users and unauthenticated guests can apply the 10-min
+// soft lock now: the route is open to everyone and the server keys
+// each hold by user_id (logged-in) or session_id (guest). Without a
+// session the endpoint would still 401/422, but Laravel's session
+// middleware hands every browser a cookie on first response so the
+// "no session" path doesn't happen in practice.
+const canServerHold = Boolean(config.selfHolderId);
+
 async function selectSeat(seat) {
-    heldByMe.set(seat.id, Date.now() + HOLD_MINUTES * 60 * 1000);
     selectedIds.add(seat.id);
     toggleHiddenInput(seat.id, true);
+
+    // Pick the expiry up-front so the repaint below sees the right color:
+    // colorsFor() returns HELD_COLORS only when heldByMe.has(seat.id), so
+    // filling the map BEFORE repaintSeat is what makes the seat visibly
+    // turn yellow on the canvas in the optimistic-paint window before
+    // axios returns.
+    heldByMe.set(seat.id, Date.now() + HOLD_MINUTES * 60 * 1000);
     repaintSeat(seat.id);
     updateSummary();
 
@@ -393,6 +413,8 @@ async function releaseSeat(seat) {
     toggleHiddenInput(seat.id, false);
     repaintSeat(seat.id);
     updateSummary();
+
+    if (!canServerHold) return;
 
     try {
         await axios.delete(holdUrl(seat.id));
@@ -422,7 +444,11 @@ const dividerGroups = [];
 
 config.heldSeats.forEach((hold) => {
     const expiresAtMs = Date.parse(hold.expires_at);
-    if (hold.user_id === config.selfUserId) {
+    // `holder_id` carries the "u:{userId}" / "s:{session_id}" prefix
+    // from SeatHold::holder_idAccessor so a guest can never spoof a
+    // logged-in user's hold by guessing a number. The JS never sees
+    // the raw session id either, only the prefixed form.
+    if (hold.holder_id === config.selfHolderId) {
         heldByMe.set(hold.bus_unit_seat_id, expiresAtMs);
     } else {
         heldByOther.set(hold.bus_unit_seat_id, expiresAtMs);
@@ -599,7 +625,7 @@ function applyRemoteUpdate(update) {
             toggleHiddenInput(seatId, false);
         }
     } else if (update.status === 'held') {
-        if (update.heldBy === config.selfUserId) {
+        if (update.heldBy === config.selfHolderId) {
             heldByMe.set(seatId, Date.parse(update.expiresAt));
             heldByOther.delete(seatId);
         } else {
@@ -631,7 +657,9 @@ function applyRemoteUpdate(update) {
 function updateCountdownDisplay(expiresAt) {
     if (!countdownEl) return;
 
-    if (!expiresAt) {
+    // No server-side hold (canServerHold is false) means the seat
+    // can be lost without notice, so no countdown would be misleading.
+    if (!canServerHold || !expiresAt) {
         countdownEl.classList.add('hidden');
         countdownEl.textContent = '';
         return;
@@ -666,3 +694,18 @@ function tickCountdown() {
 
 tickCountdown();
 setInterval(tickCountdown, 1000);
+
+/* ---------- Manual payment-method panel toggle (OpenPay off) ----------
+ * When OpenPay is enabled, openpay-checkout.js handles the card/oxxo/spei
+ * tab UI. When OpenPay is OFF (the @else branch in the blade), the form
+ * exposes two [data-payment-panel] panels (transfer / cash) keyed by the
+ * payment_method radio's value — same pattern, just defined here instead.
+ */
+document.querySelectorAll('input[name="payment_method"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+        const panels = document.querySelectorAll('[data-payment-panel]');
+        panels.forEach((panel) => {
+            panel.classList.toggle('hidden', panel.getAttribute('data-payment-panel') !== radio.value);
+        });
+    });
+});

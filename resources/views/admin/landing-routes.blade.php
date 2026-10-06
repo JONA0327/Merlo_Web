@@ -16,12 +16,17 @@
         <section class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <h3 class="font-[Poppins] text-xl font-bold text-[#2B1113]">Agregar ruta</h3>
 
-            <form method="POST" action="{{ route('admin.landing-routes.store') }}" class="mt-6 space-y-4">
+            <form method="POST" action="{{ route('admin.viajes.store') }}" class="mt-6 space-y-4">
                 @csrf
 
                 <div>
                     <label for="from" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Origen</label>
-                    <input id="from" name="from" type="text" value="{{ old('from') }}" placeholder="Ciudad de México" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                    <select id="from" name="from" required class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <option value="" disabled {{ old('from') ? '' : 'selected' }}>Selecciona el origen</option>
+                        @foreach ($destinations as $dest)
+                            <option value="{{ $dest->name }}" {{ old('from') === $dest->name ? 'selected' : '' }}>{{ $dest->name }}</option>
+                        @endforeach
+                    </select>
                     @error('from')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
@@ -29,7 +34,12 @@
 
                 <div>
                     <label for="to" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Destino</label>
-                    <input id="to" name="to" type="text" value="{{ old('to') }}" placeholder="Guadalajara" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                    <select id="to" name="to" required class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <option value="" disabled {{ old('to') ? '' : 'selected' }}>Selecciona el destino</option>
+                        @foreach ($destinations as $dest)
+                            <option value="{{ $dest->name }}" {{ old('to') === $dest->name ? 'selected' : '' }}>{{ $dest->name }}</option>
+                        @endforeach
+                    </select>
                     @error('to')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
@@ -94,7 +104,7 @@
                                 </span>
                             </div>
 
-                            <form method="POST" action="{{ route('admin.landing-routes.destroy', $route) }}" class="mt-3">
+                            <form method="POST" action="{{ route('admin.viajes.destroy', $route) }}" class="mt-3">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-sm font-semibold text-red-600 hover:text-red-700" onclick="return confirm('¿Deseas eliminar esta ruta?')">

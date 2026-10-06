@@ -44,8 +44,11 @@ class TicketImageService
         abort_if($reservations->isEmpty(), 422, 'No hay boletos que incluir en la imagen.');
 
         $font = $this->fontPath();
-        $cardHeight = $this->cardHeight();
-        $totalHeight = self::MARGIN + ($cardHeight * $reservations->count())
+        // Each card's height depends on how many boarding-legend lines
+        // its own reservation needs (0, 1, or 2), so the total canvas
+        // height is a sum of per-card heights, not a uniform multiple.
+        $cardHeights = $reservations->map(fn (SeatReservation $r) => $this->cardHeight(count($r->boardingLegendLines())));
+        $totalHeight = self::MARGIN + $cardHeights->sum()
             + (self::CARD_GAP * max(0, $reservations->count() - 1)) + self::MARGIN;
 
         $canvas = imagecreatetruecolor(self::WIDTH, $totalHeight);
@@ -64,11 +67,12 @@ class TicketImageService
 
         $y = self::MARGIN;
         foreach ($reservations as $reservation) {
-            $this->drawTicketCard($canvas, $font, $reservation, $y, $cardHeight, [
+            $height = $this->cardHeight(count($reservation->boardingLegendLines()));
+            $this->drawTicketCard($canvas, $font, $reservation, $y, $height, [
                 'red' => $red, 'yellow' => $yellow, 'dark' => $dark, 'white' => $white,
                 'cardBg' => $cardBg, 'border' => $border, 'muted' => $muted,
             ]);
-            $y += $cardHeight + self::CARD_GAP;
+            $y += $height + self::CARD_GAP;
         }
 
         $path = $this->tempPath('tickets', 'jpg');
@@ -78,10 +82,12 @@ class TicketImageService
         return $path;
     }
 
-    private function cardHeight(): int
+    private function cardHeight(int $legendLineCount): int
     {
-        // header + top padding + seat/trip-type row + QR + code row + bottom padding
-        return self::CARD_HEADER_HEIGHT + 24 + 36 + self::QR_SIZE + 60 + 24;
+        // header + top padding + seat/trip-type row + [legend lines] + QR + code row + bottom padding
+        $legendExtra = $legendLineCount > 0 ? (20 + 18 * $legendLineCount) : 0;
+
+        return self::CARD_HEADER_HEIGHT + 24 + 36 + $legendExtra + self::QR_SIZE + 60 + 24;
     }
 
     private function drawTicketCard($canvas, string $font, SeatReservation $reservation, int $top, int $height, array $c): void
@@ -102,10 +108,10 @@ class TicketImageService
         $this->centeredText($canvas, $font, 12, $c['white'], $left, $right, $top + 22, 'MERLO TRANSPORTES');
         $this->centeredText($canvas, $font, 19, $c['white'], $left, $right, $top + 48, mb_strtoupper($trip->from.'  ->  '.$trip->to));
 
-        $returnDate = $trip->return_date?->format('d/m/Y') ?? '—';
-        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->format('d/m/Y') ?? '—');
+        $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
+        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
         $dateLine = $tripDate.'  ·  '.($trip->departure_time_formatted ?? '—');
-        $this->centeredText($canvas, $font, 12, $c['white'], $left, $right, $top + 70, $dateLine);
+        $this->centeredText($canvas, $font, 14, $c['white'], $left, $right, $top + 72, $dateLine);
 
         // Seat badge + trip type + customer name.
         $rowY = $top + self::CARD_HEADER_HEIGHT + 32;
@@ -122,8 +128,20 @@ class TicketImageService
         $nameWidth = $this->textWidth($font, 13, $nameText);
         $this->text($canvas, $font, 13, $c['muted'], $right - 20 - $nameWidth, $rowY, $nameText);
 
-        // Big QR, centered — this is what actually gets scanned at boarding.
+        // Boarding-point legend (where/when to show up), right above the
+        // QR so it's impossible to miss on the card.
         $qrTop = $rowY + 24;
+        $legendLines = $reservation->boardingLegendLines();
+        if (! empty($legendLines)) {
+            $lineY = $qrTop + 14;
+            foreach ($legendLines as $legendLine) {
+                $this->centeredText($canvas, $font, 12, $c['red'], $left, $right, $lineY, $legendLine);
+                $lineY += 18;
+            }
+            $qrTop = $lineY + 6;
+        }
+
+        // Big QR, centered — this is what actually gets scanned at boarding.
         $qrPath = $this->generateQrFile($reservation);
         $qrImg = @imagecreatefrompng($qrPath);
         if ($qrImg) {

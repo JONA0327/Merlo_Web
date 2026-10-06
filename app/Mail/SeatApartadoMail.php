@@ -38,12 +38,12 @@ class SeatApartadoMail extends Mailable
         $checkinUrl = URL::route('admin.checkin.scan', ['code' => $reservation->ticket_code], true);
         $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data='.urlencode($checkinUrl);
 
-        $returnDate = $trip->return_date?->format('d/m/Y') ?? '—';
+        $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
         $departure = $trip->departure_time_formatted ?? '—';
         // A resold return-leg ticket boards on the RETURN date, not
         // the trip's outbound day — the "Salida" row on the ticket
         // must reflect that or the passenger shows up on the wrong day.
-        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->format('d/m/Y') ?? '—');
+        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
         $tripType = match (true) {
             $reservation->isReturnLeg() => 'Solo regreso',
             $reservation->isRoundTrip() => 'Viaje redondo',
@@ -95,7 +95,13 @@ class SeatApartadoMail extends Mailable
             ->map(fn ($s) => '<span style="display:inline-block;padding:4px 10px;margin:2px;border:1px solid #8C1D2B;border-radius:6px;background:#fff;color:#8C1D2B;font-weight:700;">'.e($s).'</span>')
             ->implode('');
         $notes = $reservation->notes ? '<div style="margin-top:14px;padding:10px 12px;background:#FFF8E1;border-left:3px solid #F5B301;border-radius:4px;font-size:12px;color:#5C4A00;">'.e($reservation->notes).'</div>' : '';
-        $returnRow = $reservation->isRoundTrip() ? '<tr><td style="padding:6px 0;color:#8C1D2B/70;font-weight:600;width:90px;">Regreso</td><td style="padding:6px 0;text-align:right;font-weight:600;">'.$returnDate.'</td></tr>' : '';
+        $returnRow = $reservation->needsBothLegs() ? '<tr><td style="padding:6px 0;color:#8C1D2B/70;font-weight:600;width:90px;">Regreso</td><td style="padding:6px 0;text-align:right;font-weight:800;font-size:15px;">'.$returnDate.'</td></tr>' : '';
+        $legendHtml = collect($reservation->boardingLegendLines())
+            ->map(fn ($line) => '<p style="margin:0 0 4px 0;font-weight:700;">'.e($line).'</p>')
+            ->implode('');
+        $legendBlock = $legendHtml
+            ? '<tr><td style="padding:0 28px 16px 28px;"><div style="padding:12px 14px;background:rgba(245,179,1,0.15);border:1px solid rgba(245,179,1,0.5);border-radius:10px;font-size:13px;color:#2B1113;">'.$legendHtml.'</div></td></tr>'
+            : '';
 
         return <<<HTML
 <!doctype html>
@@ -145,7 +151,7 @@ class SeatApartadoMail extends Mailable
               </tr>
               <tr>
                 <td style="padding:6px 0;color:#8C1D2B/70;font-weight:600;">Salida</td>
-                <td style="padding:6px 0;text-align:right;font-weight:600;">$tripDate &middot; $departure</td>
+                <td style="padding:6px 0;text-align:right;font-weight:800;font-size:15px;">$tripDate &middot; $departure</td>
               </tr>
               $returnRow
               <tr>
@@ -163,6 +169,8 @@ class SeatApartadoMail extends Mailable
             $notes
           </td>
         </tr>
+
+        $legendBlock
 
         <tr>
           <td style="padding:24px 28px 28px 28px;">

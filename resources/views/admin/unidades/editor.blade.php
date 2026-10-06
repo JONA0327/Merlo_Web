@@ -162,7 +162,12 @@
                         {{-- ============== 1.5 Asiento seleccionado ============== --}}
                         {{-- Hidden by default; the JS toggles `data-has-selection`
                              on this section so it only shows the per-seat
-                             controls when exactly one seat is selected. --}}
+                             controls when at least one seat is selected. The
+                             "Tipo de viaje permitido" select only applies to a
+                             single seat (JS hides it when more than one is
+                             selected); "Zona" applies to every selected seat
+                             at once, so it's usable with multi-select
+                             (Mayús+clic, arrastrar, Ctrl+A). --}}
                         <details id="seat-properties-section" class="group border-b border-black/5" data-has-selection="false" open>
                             <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 hover:bg-black/5 transition-colors">
                                 <svg class="section-icon h-4 w-4 shrink-0 text-[#2B1113]/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -174,16 +179,25 @@
                                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
                                 </svg>
                             </summary>
-                            <div class="border-t border-black/5 bg-[#FFFBF6] p-3 space-y-2">
-                                <p class="text-[11px] text-[#2B1113]/60">Cambia el tipo de boleto que puede comprar este asiento. Útil para reservar filas de adelante a viajes redondos y de atrás a solo ida.</p>
-                                <label class="block">
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Tipo de viaje permitido</span>
-                                    <select id="seat-allowed-trip-type" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                        <option value="both">Ambos (ida y redondo)</option>
-                                        <option value="one_way">Solo ida</option>
-                                        <option value="round_trip">Solo redondo</option>
-                                    </select>
-                                </label>
+                            <div class="border-t border-black/5 bg-[#FFFBF6] p-3 space-y-3">
+                                <div id="seat-allowed-trip-type-wrap">
+                                    <p class="text-[11px] text-[#2B1113]/60">Cambia el tipo de boleto que puede comprar este asiento. Útil para reservar filas de adelante a viajes redondos y de atrás a solo ida.</p>
+                                    <label class="mt-1.5 block">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Tipo de viaje permitido</span>
+                                        <select id="seat-allowed-trip-type" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                            <option value="both">Ambos (ida y redondo)</option>
+                                            <option value="one_way">Solo ida</option>
+                                            <option value="round_trip">Solo redondo</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="border-t border-black/5 pt-3">
+                                    <p class="text-[11px] text-[#2B1113]/60">Agrupa asientos en una "zona" (ej. una mancuerna) para poder apartarlos juntos de un clic en Apartar asientos. Con varios asientos seleccionados, la zona se aplica a todos.</p>
+                                    <label class="mt-1.5 block">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Zona</span>
+                                        <input type="text" id="seat-zone" maxlength="40" placeholder="Ej. Mancuerna 1" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                    </label>
+                                </div>
                                 <p class="text-[10px] text-[#2B1113]/40">Se guarda al pulsar <strong>Guardar distribución</strong>.</p>
                             </div>
                         </details>
@@ -361,6 +375,7 @@
                     'corner_radius' => $s->corner_radius,
                     'border_width' => $s->border_width,
                     'allowed_trip_type' => $s->allowed_trip_type,
+                    'zone' => $s->zone,
                     'color' => $s->color,
                     'pos_x' => $s->pos_x,
                     'pos_y' => $s->pos_y,

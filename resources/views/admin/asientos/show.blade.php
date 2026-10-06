@@ -22,6 +22,10 @@
                 <span class="h-1.5 w-1.5 rounded-full bg-blue-600"></span>
                 {{ $sentCount }} enviado{{ $sentCount === 1 ? '' : 's' }}
             </span>
+            <a href="{{ route('admin.asientos.manifest', $trip) }}" target="_blank" class="inline-flex items-center gap-1.5 rounded-full bg-[#2B1113]/5 px-3 py-1.5 text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 2.75C5 1.784 5.784 1 6.75 1h6.5c.966 0 1.75.784 1.75 1.75v3.552c.377.046.752.097 1.126.153A2.212 2.212 0 0118 8.653v4.097A2.25 2.25 0 0115.75 15h-.241l.305 1.984A1.75 1.75 0 0113.84 19H6.16a1.75 1.75 0 01-1.973-2.016L4.491 15H4.25A2.25 2.25 0 012 12.75V8.653c0-1.082.775-2.034 1.874-2.198.374-.056.75-.107 1.126-.153V2.75zm8.5 3.397V2.75a.25.25 0 00-.25-.25h-6.5a.25.25 0 00-.25.25v3.397c1.126-.1 2.264-.148 3.5-.148s2.374.049 3.5.148zm-7 9.853l.414-2.691c1.364-.1 2.73-.15 4.086-.15 1.356 0 2.722.05 4.086.15l.414 2.691a.25.25 0 01-.247.287H6.747a.25.25 0 01-.247-.287z" clip-rule="evenodd"/></svg>
+                Imprimir lista
+            </a>
         </div>
     </div>
 
@@ -53,28 +57,45 @@
 
         {{-- ===================== Panel derecho: apartado + lista ===================== --}}
         <div class="xl:col-span-5 space-y-6">
+            @if ($trip->hasEnded())
+                <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+                    <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Viaje cerrado</h3>
+                    <p class="mt-1 text-xs text-[#2B1113]/60">La fecha de este viaje ya pasó. Puedes seguir viendo los apartados de abajo, pero ya no se pueden crear nuevos apartados, enviar boletos ni editar la disponibilidad de asientos.</p>
+                </div>
+            @else
             {{-- Form para crear apartado --}}
             <form method="POST" action="{{ route('admin.asientos.store', $trip) }}" id="apartado-form" class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
                 @csrf
 
                 <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartar para un cliente</h3>
-                <p class="mt-1 text-xs text-[#2B1113]/60">Selecciona uno o varios asientos en el plano y captura los datos del cliente. Quedarán como <strong>pendientes</strong>.</p>
+                <p class="mt-1 text-xs text-[#2B1113]/60">Selecciona uno o varios asientos en el plano y captura los datos del cliente. Al guardar, el boleto se envía <strong>automáticamente por WhatsApp</strong>.</p>
 
                 @php
-                    $oneWayPrice = $trip->priceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY);
-                    $roundPrice = $trip->priceFor(\App\Models\TripTicketPrice::TYPE_ROUND_TRIP);
+                    $tripTypeLabels = \App\Models\TripTicketPrice::tripTypes();
+                    $zones = $trip->busUnit->seats->pluck('zone')->filter()->unique()->sort()->values();
                 @endphp
-                <div class="mt-3 inline-flex rounded-xl bg-[#FFFBF6] p-1 ring-1 ring-black/5 w-full" id="admin-trip-type-toggle">
-                    <button type="button" data-trip-type="one_way" class="admin-trip-type-tab flex-1 rounded-lg px-3 py-2 text-xs font-bold transition-colors bg-[#8C1D2B] text-white">
-                        <span class="block">Solo ida</span>
-                        <span class="block text-[10px] font-semibold opacity-80">{{ $oneWayPrice ? $oneWayPrice->formatted_price : '—' }}</span>
-                    </button>
-                    <button type="button" data-trip-type="round_trip" class="admin-trip-type-tab flex-1 rounded-lg px-3 py-2 text-xs font-bold transition-colors text-[#2B1113]/60">
-                        <span class="block">Viaje redondo</span>
-                        <span class="block text-[10px] font-semibold opacity-80">{{ $roundPrice ? $roundPrice->formatted_price : '—' }}</span>
-                    </button>
+                <label class="mt-3 block">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
+                    <select name="trip_type" id="admin-trip-type-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        @foreach ($tripTypeLabels as $type => $label)
+                            @php $price = $trip->priceFor($type); @endphp
+                            <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }} — {{ $price ? $price->formatted_price : 'sin precio' }}</option>
+                        @endforeach
+                    </select>
+                </label>
+
+                <div id="admin-zone-picker" class="mt-3 hidden">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Zonas disponibles</span>
+                    <p class="mt-0.5 text-[10px] text-[#2B1113]/40">Clic en una zona para seleccionar sus asientos en el plano.</p>
+                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                        @foreach ($zones as $zone)
+                            <button type="button" data-zone="{{ $zone }}" class="admin-zone-chip rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[#8C1D2B] ring-1 ring-[#8C1D2B]/30 hover:bg-[#8C1D2B]/10 transition-colors">{{ $zone }}</button>
+                        @endforeach
+                        @if ($zones->isEmpty())
+                            <span class="text-[11px] text-[#2B1113]/40">No hay zonas definidas en el editor de esta unidad.</span>
+                        @endif
+                    </div>
                 </div>
-                <input type="hidden" name="trip_type" id="admin-trip-type-input" value="one_way">
 
                 <div class="mt-4 space-y-3">
                     <label class="block">
@@ -84,17 +105,40 @@
                     </label>
 
                     <label class="block">
-                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Correo del cliente</span>
-                        <input type="email" name="customer_email" value="{{ old('customer_email') }}" required maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">WhatsApp del cliente</span>
+                        <input type="tel" inputmode="numeric" name="customer_phone" value="{{ old('customer_phone') }}" required maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <p class="mt-1 text-[10px] text-[#2B1113]/40">A 10 dígitos se le agrega automáticamente el 52 de México. Al guardar el apartado, el boleto se envía automáticamente por WhatsApp a este número.</p>
+                        @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
                     <label class="block">
-                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">WhatsApp del cliente</span>
-                        <input type="tel" inputmode="numeric" name="customer_phone" value="{{ old('customer_phone') }}" required maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        <p class="mt-1 text-[10px] text-[#2B1113]/40">A 10 dígitos se le agrega automáticamente el 52 de México. El boleto se manda por correo y por WhatsApp.</p>
-                        @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Correo del cliente (opcional)</span>
+                        <input type="email" name="customer_email" value="{{ old('customer_email') }}" maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <p class="mt-1 text-[10px] text-[#2B1113]/40">Solo para tenerlo como referencia — el boleto no se manda por correo.</p>
+                        @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿Pagado?</span>
+                            <select name="paid" id="admin-paid-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                <option value="1" {{ old('paid', '1') === '1' ? 'selected' : '' }}>Sí, ya está pagado</option>
+                                <option value="0" {{ old('paid') === '0' ? 'selected' : '' }}>No, pagará después</option>
+                            </select>
+                            @error('paid') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        </label>
+
+                        <label class="block">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método de pago</span>
+                            <select name="payment_method" id="admin-payment-method-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                <option value="transfer" {{ old('payment_method') === 'transfer' ? 'selected' : '' }}>Transferencia</option>
+                                <option value="card" {{ old('payment_method', 'card') === 'card' ? 'selected' : '' }}>Tarjeta</option>
+                                <option value="cash" {{ old('payment_method') === 'cash' ? 'selected' : '' }}>Efectivo</option>
+                            </select>
+                            @error('payment_method') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        </label>
+                    </div>
+                    <p id="admin-payment-hint" class="text-[10px] text-[#2B1113]/40"></p>
 
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
@@ -109,9 +153,10 @@
                 <div id="apartado-hidden-inputs"></div>
 
                 <button type="submit" id="apartado-submit" disabled class="mt-4 w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-sm shadow-[#8C1D2B]/20 hover:bg-[#6F1622] transition-colors disabled:cursor-not-allowed disabled:opacity-40">
-                    Apartar selección
+                    Apartar y enviar por WhatsApp
                 </button>
             </form>
+            @endif
         </div>
     </div>
 
@@ -151,7 +196,7 @@
                             </div>
 
                             <div class="flex shrink-0 flex-col items-end gap-1.5">
-                                @if ($reservation->isPending())
+                                @if ($reservation->isPending() && ! $trip->hasEnded())
                                     <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
@@ -160,13 +205,33 @@
                                         </button>
                                     </form>
                                 @endif
-                                <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirm('¿Cancelar este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}? {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.')">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
-                                </form>
+                                @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
+                                    <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="edit-category-{{ $reservation->id }}">Editar</button>
+                                @endif
+                                @unless ($trip->hasEnded())
+                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirm('¿Cancelar este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}? {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
+                                    </form>
+                                @endunless
                             </div>
                         </div>
+
+                        @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
+                            <div id="edit-category-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
+                                <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $reservation]) }}" class="flex items-center gap-2">
+                                    @csrf
+                                    @method('PUT')
+                                    <select name="trip_type" class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                        @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
+                                            <option value="{{ $type }}" {{ $reservation->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <button type="submit" class="shrink-0 rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-[11px] font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar</button>
+                                </form>
+                            </div>
+                        @endif
                     </li>
                 @endforeach
             </ul>
@@ -176,8 +241,42 @@
     </div>
 
     <script>
+        document.querySelectorAll('.admin-edit-category-toggle').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const panel = document.getElementById(btn.getAttribute('data-target'));
+                if (panel) panel.classList.toggle('hidden');
+            });
+        });
+
+        (function () {
+            const paidSelect = document.getElementById('admin-paid-select');
+            const methodSelect = document.getElementById('admin-payment-method-select');
+            const hint = document.getElementById('admin-payment-hint');
+            if (!paidSelect || !methodSelect || !hint) return;
+
+            function updateHint() {
+                const paid = paidSelect.value === '1';
+                if (paid) {
+                    hint.textContent = 'Se manda el boleto con QR por WhatsApp de inmediato.';
+                    return;
+                }
+                if (methodSelect.value === 'transfer') {
+                    hint.textContent = 'Se crea como pendiente con una referencia de transferencia; valídala después en Pagos para mandar el boleto con QR.';
+                } else {
+                    hint.textContent = 'Se crea como pendiente y solo se manda un aviso de reservación; confirma el pago después en Pagos para imprimir/mandar el boleto con QR.';
+                }
+            }
+
+            paidSelect.addEventListener('change', updateHint);
+            methodSelect.addEventListener('change', updateHint);
+            updateHint();
+        })();
+    </script>
+
+    <script>
         window.__ADMIN_SEAT_PICKER__ = {
             tripId: {{ $trip->id }},
+            tripEnded: {{ $trip->hasEnded() ? 'true' : 'false' }},
             unitName: {!! json_encode($trip->busUnit->name) !!},
             canvasWidth: {{ $trip->busUnit->canvas_width }},
             canvasHeight: {{ $trip->busUnit->canvas_height }},
@@ -195,6 +294,7 @@
                 'border_width' => $s->border_width,
                 'color' => $s->color,
                 'allowed_trip_type' => $s->allowed_trip_type,
+                'zone' => $s->zone,
                 'pos_x' => $s->pos_x,
                 'pos_y' => $s->pos_y,
             ])) !!},

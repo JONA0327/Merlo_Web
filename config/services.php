@@ -35,16 +35,9 @@ return [
         ],
     ],
 
-    // OpenPay sandbox (Mexico). Sandbox keys come from the dashboard
-    // when you sign up; production keys are issued after OpenPay's
-    // manual compliance review (see their docs).
-    'openpay' => [
-        'enabled' => env('OPENPAY_ENABLED', false),
-        'id' => env('OPENPAY_ID'),
-        'private_key' => env('OPENPAY_PRIVATE_KEY'),
-        'public_key' => env('OPENPAY_PUBLIC_KEY'),
-        'sandbox' => env('OPENPAY_SANDBOX', true),
-        'country' => env('OPENPAY_COUNTRY', 'MX'),
-    ],
+    // OpenPay config block removed: the gateway is disabled for now,
+    // so there's no use reading these keys. Restore the
+    // `OPENPAY_*` env vars and this array if/when the gateway
+    // comes back.
 
 ];

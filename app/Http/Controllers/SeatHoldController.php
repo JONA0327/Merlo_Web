@@ -17,8 +17,9 @@ class SeatHoldController extends Controller
         abort_unless($landingRoute->hasSeatMap(), 404);
 
         $isReturnResale = $request->input('trip_type') === 'return_resale';
+        $holder = $this->resolveHolder($request);
 
-        $hold = DB::transaction(function () use ($landingRoute, $busUnitSeat, $isReturnResale) {
+        $hold = DB::transaction(function () use ($landingRoute, $busUnitSeat, $isReturnResale, $holder) {
             $trip = LandingRoute::query()->lockForUpdate()->findOrFail($landingRoute->id);
 
             abort_unless(
@@ -45,35 +46,66 @@ class SeatHoldController extends Controller
                 ->where('bus_unit_seat_id', $busUnitSeat->id)
                 ->first();
 
-            if ($existingHold && ! $existingHold->isExpired() && $existingHold->user_id !== auth()->id()) {
+            // Don't override an active hold owned by someone else.
+            // (Our own hold just gets refreshed below — that's normal
+            // when the user clicks a seat again to "bump" the timer.)
+            if ($existingHold && ! $existingHold->isExpired() && $existingHold->holder_id !== $holder['key']) {
                 abort(409, 'Ese asiento ya está siendo elegido por otra persona.');
+            }
+
+            // Stamp the holder on create/update so both logged-in
+            // users (user_id) and guests (session_id) end up with the
+            // right identifier for the SeatHold::holder_id accessor.
+            $attrs = ['expires_at' => now()->addMinutes(10)];
+            if ($holder['type'] === 'user') {
+                $attrs['user_id'] = $holder['id'];
+                $attrs['session_id'] = null;
+            } else {
+                $attrs['user_id'] = null;
+                $attrs['session_id'] = $holder['id'];
             }
 
             return SeatHold::updateOrCreate(
                 ['landing_route_id' => $trip->id, 'bus_unit_seat_id' => $busUnitSeat->id],
-                ['user_id' => auth()->id(), 'expires_at' => now()->addMinutes(10)]
+                $attrs
             );
         });
 
+        // Broadcast carries the same "u:1" / "s:..." form so the JS
+        // compareSelf logic doesn't need two separate fields.
         SeatAvailabilityUpdated::dispatchSafely($landingRoute->id, [[
             'id' => $busUnitSeat->id,
             'status' => 'held',
-            'heldBy' => auth()->id(),
+            'heldBy' => $holder['key'],
             'expiresAt' => $hold->expires_at->toIso8601String(),
         ]]);
 
-        return response()->json(['status' => 'held', 'expiresAt' => $hold->expires_at->toIso8601String()]);
+        return response()->json([
+            'status' => 'held',
+            'expiresAt' => $hold->expires_at->toIso8601String(),
+            'holderId' => $holder['key'],
+        ]);
     }
 
-    public function destroy(LandingRoute $landingRoute, BusUnitSeat $busUnitSeat): JsonResponse
+    public function destroy(Request $request, LandingRoute $landingRoute, BusUnitSeat $busUnitSeat): JsonResponse
     {
-        DB::transaction(function () use ($landingRoute, $busUnitSeat) {
+        $holder = $this->resolveHolder($request);
+
+        DB::transaction(function () use ($landingRoute, $busUnitSeat, $holder) {
             LandingRoute::query()->lockForUpdate()->findOrFail($landingRoute->id);
 
-            SeatHold::where('landing_route_id', $landingRoute->id)
-                ->where('bus_unit_seat_id', $busUnitSeat->id)
-                ->where('user_id', auth()->id())
-                ->delete();
+            // Only the row this visitor owns gets removed — anyone
+            // else's hold is left alone so the seat stays held for
+            // them for the rest of their window.
+            $query = SeatHold::where('landing_route_id', $landingRoute->id)
+                ->where('bus_unit_seat_id', $busUnitSeat->id);
+
+            if ($holder['type'] === 'user') {
+                $query->where('user_id', $holder['id']);
+            } else {
+                $query->where('session_id', $holder['id']);
+            }
+            $query->delete();
         });
 
         SeatAvailabilityUpdated::dispatchSafely($landingRoute->id, [[
@@ -82,5 +114,22 @@ class SeatHoldController extends Controller
         ]]);
 
         return response()->json(['status' => 'available']);
+    }
+
+    /**
+     * Resolve the visitor's "holder key" used for this controller's
+     * row writes and for the broadcast payload. Logged-in users use
+     * their account id; everyone else falls back to the Laravel
+     * session id (which every browser already carries as a cookie).
+     */
+    private function resolveHolder(Request $request): array
+    {
+        if ($user = $request->user()) {
+            return ['type' => 'user', 'id' => $user->id, 'key' => 'u:'.$user->id];
+        }
+
+        $sid = $request->session()->getId();
+
+        return ['type' => 'session', 'id' => $sid, 'key' => 's:'.$sid];
     }
 }

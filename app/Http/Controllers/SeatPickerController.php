@@ -9,7 +9,7 @@ use App\Models\PaymentMethod;
 use App\Models\SeatHold;
 use App\Models\SeatReservation;
 use App\Models\TripTicketPrice;
-use App\Services\OpenPayService;
+use App\Services\EvolutionWhatsAppService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -45,6 +46,13 @@ class SeatPickerController extends Controller
         if ($resaleSeatIds->isNotEmpty()) {
             $validTypes[] = 'return_resale';
         }
+        // "De regreso" (a direct, standalone return-leg purchase — not the
+        // resale of an already-released round-trip return) only makes
+        // sense when the trip actually has a return date and the admin
+        // configured a price for it.
+        if ($landingRoute->return_date !== null && $landingRoute->priceFor(TripTicketPrice::TYPE_REGRESO)) {
+            $validTypes[] = TripTicketPrice::TYPE_REGRESO;
+        }
         $defaultTripType = in_array($requested, $validTypes, true)
             ? $requested
             : $this->defaultTripTypeFor($landingRoute);
@@ -54,35 +62,50 @@ class SeatPickerController extends Controller
             ? $user->savedCards()->orderByDesc('is_default')->orderByDesc('id')->get()
             : collect();
 
+        // Holder key for the visitor: a logged-in account uses 'u:{id}'
+        // and a guest uses 's:{session_id}' — both shapes match the
+        // seat_holds.holder_id accessor used below, so the JS just
+        // compares one string per hold.
+        $holderKey = $user ? 'u:'.$user->id : 's:'.session()->getId();
+
         return view('seat-picker', [
             'trip' => $landingRoute,
             'defaultTripType' => $defaultTripType,
             'takenIds' => $landingRoute->seatReservations()->pluck('bus_unit_seat_id'),
-            'heldSeats' => $landingRoute->seatHolds()->active()->get(['bus_unit_seat_id', 'user_id', 'expires_at']),
+            'heldSeats' => $landingRoute->seatHolds()->active()->get(['bus_unit_seat_id', 'user_id', 'session_id', 'expires_at'])->map(fn ($h) => [
+                'bus_unit_seat_id' => $h->bus_unit_seat_id,
+                'holder_id' => $h->holder_id,
+                'expires_at' => $h->expires_at->toIso8601String(),
+            ]),
+            'selfHolderId' => $holderKey,
             'savedCards' => $savedCards,
             'resaleSeatIds' => $resaleSeatIds,
             'paymentMethods' => config('services.openpay.enabled') ? collect() : PaymentMethod::active()->get(),
         ]);
     }
 
-    public function store(Request $request, LandingRoute $landingRoute, OpenPayService $openpay): RedirectResponse
+    public function store(Request $request, LandingRoute $landingRoute, EvolutionWhatsAppService $whatsapp): RedirectResponse
     {
         abort_unless($landingRoute->hasSeatMap(), 404);
 
         $validated = $request->validate([
-            'trip_type' => ['required', 'string', 'in:one_way,round_trip,return_resale'],
-            'payment_method' => ['required', 'string', 'in:card,oxxo,spei,transfer'],
+            'trip_type' => ['required', 'string', 'in:one_way,round_trip,return_resale,regreso'],
+            // Only transfer + cash are wired up — card / OXXO / SPEI
+            // went through OpenPay, which is currently disabled. The
+            // SeatReservation::PAYMENT_METHOD_* constants still exist
+            // for historical rows (older purchases show up with the
+            // old method in admin / pagos) but no new ones can be created.
+            'payment_method' => ['required', 'string', 'in:transfer,cash'],
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
                 'integer',
                 'exists:bus_unit_seats,id',
             ],
-            'openpay_token' => ['nullable', 'string'],
-            'device_session_id' => ['nullable', 'string'],
-            'saved_card_id' => ['nullable', 'integer', 'exists:saved_cards,id'],
-            'customer_phone' => ['nullable', 'string', 'max:30'],
+            // Required only when there's no logged-in user (guest checkout):
+            // a signed-in customer already has a name/email/phone on file.
+            'customer_name' => [Rule::requiredIf(fn () => ! $request->user()), 'nullable', 'string', 'max:120'],
+            'customer_phone' => [Rule::requiredIf(fn () => ! $request->user()), 'nullable', 'string', 'max:30'],
             'billing_address' => ['nullable', 'array'],
-            'save_card' => ['nullable', 'boolean'],
         ]);
 
         $tripType = $validated['trip_type'];
@@ -153,7 +176,7 @@ class SeatPickerController extends Controller
                             'tax' => $tax,
                             'total' => $total,
                             'currency' => 'MXN',
-                            'customer_name' => $user?->name,
+                            'customer_name' => $validated['customer_name'] ?? $user?->name,
                             'customer_email' => $user?->email,
                             'customer_phone' => $validated['customer_phone'] ?? $user?->phone,
                             'billing_address' => $validated['billing_address'] ?? null,
@@ -200,13 +223,16 @@ class SeatPickerController extends Controller
 
             // Create the reservation in pending_payment state so we
             // can attach the OpenPay charge id once we have it.
-            $reservation = DB::transaction(function () use ($landingRoute, $user, $seatIds, $tripType, $paymentMethod, $subtotal, $tax, $total, $validated) {
+            $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
+
+            $reservation = DB::transaction(function () use ($landingRoute, $user, $seatIds, $tripType, $leg, $paymentMethod, $subtotal, $tax, $total, $validated) {
                 $first = $seatIds->first();
                 $reservation = SeatReservation::create([
                     'landing_route_id' => $landingRoute->id,
                     'bus_unit_seat_id' => $first,
                     'user_id' => $user?->id,
                     'trip_type' => $tripType,
+                    'leg' => $leg,
                     'unit_price' => $subtotal + $tax,
                     'payment_method' => $paymentMethod,
                     'payment_status' => SeatReservation::PAYMENT_PENDING,
@@ -214,7 +240,7 @@ class SeatPickerController extends Controller
                     'tax' => $tax,
                     'total' => $total,
                     'currency' => 'MXN',
-                    'customer_name' => $user?->name,
+                    'customer_name' => $validated['customer_name'] ?? $user?->name,
                     'customer_email' => $user?->email,
                     'customer_phone' => $validated['customer_phone'] ?? $user?->phone,
                     'billing_address' => $validated['billing_address'] ?? null,
@@ -237,6 +263,7 @@ class SeatPickerController extends Controller
                             'bus_unit_seat_id' => $seatId,
                             'user_id' => $user?->id,
                             'trip_type' => $tripType,
+                            'leg' => $leg,
                             'unit_price' => $subtotal + $tax,
                             'payment_method' => $paymentMethod,
                             'payment_status' => SeatReservation::PAYMENT_PENDING,
@@ -244,7 +271,7 @@ class SeatPickerController extends Controller
                             'tax' => $tax,
                             'total' => $total,
                             'currency' => 'MXN',
-                            'customer_name' => $user?->name,
+                            'customer_name' => $validated['customer_name'] ?? $user?->name,
                             'customer_email' => $user?->email,
                             'notes' => 'group:'.$reservation->id,
                         ]);
@@ -260,110 +287,38 @@ class SeatPickerController extends Controller
             // is held (via the shared decrement/hold-release tail below)
             // for 3 days while an admin matches the reference against a
             // real transfer on their bank statement — see
-            // SeatReservation::generateTransferReference().
+            // SeatReservation::generateTransferReference(). Falls back
+            // to the form-submitted name when the buyer is a guest
+            // (no $user), so the reference initials still work.
             $reservation->update([
-                'transfer_reference' => SeatReservation::generateTransferReference($landingRoute->day, $seatIds->count(), $user->name),
+                'transfer_reference' => SeatReservation::generateTransferReference(
+                    $landingRoute->day,
+                    $seatIds->count(),
+                    $validated['customer_name'] ?? $user?->name ?? 'Cliente'
+                ),
                 'transfer_expires_at' => now()->addDays(3),
                 'payment_status' => SeatReservation::PAYMENT_PENDING,
             ]);
             $chargeStatus = 'pending';
-        } else {
-            // Resolve the OpenPay "source" for card payments:
-            //   - saved card (one-click): pass the saved card's openpay_card_id
-            //   - new card: pass the token from OpenPay.js
-            // For OXXO / SPEI, no source is needed.
-            $openpaySource = null;
-            $deviceData = [];
-            $usingSavedCard = false;
-
-            if ($paymentMethod === 'card') {
-                if (! empty($validated['saved_card_id']) && $user) {
-                    $savedCard = $user->savedCards()->whereKey($validated['saved_card_id'])->first();
-                    if ($savedCard) {
-                        $openpaySource = $savedCard->openpay_card_id;
-                        $usingSavedCard = true;
-                    }
-                }
-                if (! $openpaySource) {
-                    $openpaySource = $validated['openpay_token'] ?? null;
-                    if (! $openpaySource) {
-                        return redirect()->route('travel.seats', ['landingRoute' => $landingRoute->id, 'type' => $tripType])
-                            ->with('error', 'Ingresa una tarjeta para continuar.');
-                    }
-                    $deviceData = ['device_session_id' => $validated['device_session_id'] ?? null];
-                }
-            }
-
-            // Talk to OpenPay to create the charge. For card, we need
-            // a token from OpenPay.js (or a saved card id). For OXXO /
-            // SPEI, the source is null and OpenPay returns a barcode / CLABE.
-            $customerId = $user
-                ? $openpay->ensureCustomer($user, $validated['customer_phone'] ?? null)
-                : null;
-
-            try {
-                $charge = $openpay->createCharge(
-                    $reservation,
-                    $customerId ?? 'guest-'.$reservation->id,
-                    $openpaySource,
-                    $deviceData
-                );
-            } catch (\Throwable $e) {
-                Log::error('OpenPay createCharge failed: '.$e->getMessage(), [
-                    'reservation_id' => $reservation->id,
-                ]);
-                $reservation->update(['payment_status' => SeatReservation::PAYMENT_FAILED]);
-                return redirect()->route('travel.payment.error', $reservation)
-                    ->with('error', 'No se pudo procesar el pago: '.$e->getMessage());
-            }
-
+        } elseif ($paymentMethod === SeatReservation::PAYMENT_METHOD_CASH) {
+            // Cash-at-the-window flow: no gateway, no reference, no
+            // automatic expiry. The seat is reserved (still held via the
+            // shared decrement/hold-release tail below) until an admin
+            // physically confirms the cash was received — then the QR
+            // is generated and printed at the counter (see
+            // AdminPaymentController::confirmCash / cashTicket). Sending
+            // any "thanks for paying" email here would be wrong: the
+            // ticket literally doesn't exist yet.
             $reservation->update([
-                'openpay_customer_id' => $customerId,
-                'openpay_charge_id' => $charge['id'],
-                'openpay_authorization' => $charge['authorization'],
-                'openpay_payment_method' => $charge['method'],
-                'openpay_card_brand' => $charge['card_brand'],
-                'openpay_card_last4' => $charge['card_last4'],
-                'openpay_card_exp_month' => $charge['card_exp_month'],
-                'openpay_card_exp_year' => $charge['card_exp_year'],
-                'openpay_fee' => $charge['fee'],
-                'openpay_barcode_url' => $charge['barcode_url'],
-                'openpay_barcode' => $charge['barcode'],
-                'openpay_payment_url' => $charge['payment_url'],
-                'openpay_expires_at' => $charge['expires_at'],
-                'openpay_raw_response' => json_encode($charge['raw']),
-                'payment_status' => $this->mapOpenpayStatus($charge['status']),
-                'paid_at' => $charge['status'] === 'completed' ? now() : null,
+                'payment_status' => SeatReservation::PAYMENT_PENDING,
             ]);
-
-            // Optional: save the card for future one-click checkouts. Only
-            // applies to new-card payments (saved-card payments don't have
-            // a fresh token to store).
-            if ($paymentMethod === 'card'
-                && ! $usingSavedCard
-                && $request->boolean('save_card')
-                && $user
-                && $charge['status'] === 'completed'
-                && ! empty($validated['openpay_token'])) {
-                try {
-                    $openpay->saveCard(
-                        $user,
-                        $validated['device_session_id'] ?? '',
-                        $validated['openpay_token'],
-                        $request->boolean('make_default')
-                    );
-                } catch (\Throwable $e) {
-                    Log::warning('OpenPay saveCard failed (charge still succeeded): '.$e->getMessage());
-                }
-            }
-
-            $chargeStatus = $charge['status'];
+            $chargeStatus = 'pending';
         }
 
-        // Decrement available_seats on successful card charge (or for
-        // pending OXXO / SPEI / bank transfer — they're held for the
-        // buyer until they pay or it expires). Not for resold return
-        // legs — that capacity was already decremented when the
+        // Decrement available_seats regardless of payment method —
+        // every accepted checkout (transfer / cash) holds the seat for
+        // the buyer until they pay or the window lapses. Not for resold
+        // return legs — that capacity was already decremented when the
         // original round-trip reservation was purchased.
         if (! $isReturnResale) {
             $landingRoute->decrement('available_seats', $seatIds->count());
@@ -377,15 +332,27 @@ class SeatPickerController extends Controller
             $seatIds->map(fn ($id) => ['id' => (int) $id, 'status' => 'purchased'])->all()
         );
 
-        if ($chargeStatus === 'completed') {
-            $reservation->markGroupPaid();
-            $reservation->sendGroupTickets();
+        // Neither method produces a QR-bearing ticket yet — that only
+        // happens once an admin confirms the transfer/cash in /admin/pagos
+        // (see AdminPaymentController::validateTransfer()/confirmCash()).
+        // Right now the buyer just gets a plain-text "your seat is
+        // reserved, pay X to confirm" notice, same as the admin-apartado
+        // cash-pending flow — covers every seat in the group, not just
+        // the root row.
+        if ($reservation->customer_phone && $whatsapp->isConfigured()) {
+            try {
+                $whatsapp->sendReservationNotice($reservation->groupMembers());
+            } catch (\Throwable $e) {
+                Log::warning('Online-purchase WhatsApp reservation notice failed for reservation '.$reservation->id.': '.$e->getMessage());
+            }
         }
 
-        return match ($chargeStatus) {
-            'completed' => redirect()->route('travel.payment.success', $reservation),
-            default => redirect()->route('travel.payment.pending', $reservation),
-        };
+        // No payment method in this build produces an instant "completed"
+        // (every accepted checkout waits for an admin to validate the
+        // cash receipt or transfer reference) — so we land on pending
+        // every time. Kept as a single redirect rather than a match() so
+        // it's obvious there's only one outcome.
+        return redirect()->route('travel.payment.pending', $reservation);
     }
 
     public function uploadTransferProof(Request $request, SeatReservation $reservation): RedirectResponse
@@ -417,6 +384,15 @@ class SeatPickerController extends Controller
 
     public function success(Request $request, SeatReservation $reservation): View
     {
+        // Guest checkouts keep working with this access check: a guest
+        // reservation has user_id = null and the request also has no
+        // authenticated user, so the comparison `null === null` is true
+        // and the guest can see their own (and only their own, if they
+        // were redirected straight from store()). Acceptable trade-off
+        // for v1 — a guest who guesses / brute-forces a sequential
+        // reservation id sees the same data the original buyer saw
+        // (no card numbers, no proof-of-payment), so the leak surface
+        // is just "is this trip taken?" — not adding signed URLs yet.
         abort_unless($reservation->user_id === $request->user()?->id, 403);
 
         return view('payment.success', ['reservation' => $reservation->load('landingRoute.busUnit', 'seat')]);
@@ -424,16 +400,28 @@ class SeatPickerController extends Controller
 
     public function pending(Request $request, SeatReservation $reservation): View
     {
+        // See success() above — same intentional guest-access rule.
         abort_unless($reservation->user_id === $request->user()?->id, 403);
 
+        // A multi-seat purchase creates one SeatReservation per seat
+        // (linked via notes='group:{root_id}'). The checkout redirects
+        // to the ROOT reservation — so we also pull every sibling here
+        // and pass them to the blade. Without this, paying for 4 seats
+        // would only display seat #1's details and the customer would
+        // think only one ticket was issued.
+        $reservation->loadMissing(['landingRoute.busUnit', 'seat']);
+        $group = $reservation->groupMembers()->load('seat');
+
         return view('payment.pending', [
-            'reservation' => $reservation->load('landingRoute.busUnit', 'seat'),
+            'reservation' => $reservation,
+            'group' => $group,
             'paymentMethods' => $reservation->isTransfer() ? PaymentMethod::active()->get() : collect(),
         ]);
     }
 
     public function error(Request $request, SeatReservation $reservation): View
     {
+        // See success() above — same intentional guest-access rule.
         abort_unless($reservation->user_id === $request->user()?->id, 403);
 
         return view('payment.error', ['reservation' => $reservation->load('landingRoute.busUnit', 'seat')]);
@@ -445,16 +433,5 @@ class SeatPickerController extends Controller
         if ($prices->isEmpty()) return TripTicketPrice::TYPE_ONE_WAY;
         $cheapest = $prices->sortBy('price')->keys()->first();
         return $cheapest ?: TripTicketPrice::TYPE_ONE_WAY;
-    }
-
-    private function mapOpenpayStatus(?string $status): string
-    {
-        return match ($status) {
-            'completed' => SeatReservation::PAYMENT_COMPLETED,
-            'failed', 'cancelled' => SeatReservation::PAYMENT_FAILED,
-            'refunded' => SeatReservation::PAYMENT_REFUNDED,
-            'chargeback' => SeatReservation::PAYMENT_CHARGEBACK,
-            default => SeatReservation::PAYMENT_PENDING,
-        };
     }
 }

@@ -54,9 +54,19 @@
                             Apartar asientos
                         </a>
 
+                        <a href="{{ route('admin.guias.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'guias' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zM3.5 8.5v6.75c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V8.5h-13z" clip-rule="evenodd"/></svg>
+                            Guías
+                        </a>
+
                         <a href="{{ route('admin.precios.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'precios' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.75a.75.75 0 00-1.5 0v.541c-.42.087-.808.222-1.147.414-1.012.572-1.353 1.61-.786 2.629.317.567.875.92 1.446 1.148.453.18.881.31 1.237.45v1.698c-.42-.087-.808-.222-1.147-.414-.591-.333-1.105-.86-1.244-1.546a.75.75 0 00-1.48.253c.243 1.332 1.156 2.247 2.184 2.785.378.197.74.327 1.087.404v.518a.75.75 0 001.5 0v-.518c.42-.087.808-.222 1.147-.414 1.012-.572 1.353-1.61.786-2.629-.317-.567-.875-.92-1.446-1.148a10.21 10.21 0 00-1.237-.45v-1.698c.42.087.808.222 1.147.414.591.333 1.105.86 1.244 1.546a.75.75 0 001.48-.253c-.243-1.332-1.156-2.247-2.184-2.785A4.59 4.59 0 0010.75 6.79V6.25z" clip-rule="evenodd"/></svg>
                             Precios de boleto
+                        </a>
+
+                        <a href="{{ route('admin.destinations.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'destinations' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                            Destinos
                         </a>
 
                         <a href="{{ route('admin.checkin.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'checkin' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
@@ -149,7 +159,9 @@
                                 ['key' => 'paqueteria', 'label' => 'Paquetería', 'route' => 'admin.paqueteria'],
                                 ['key' => 'unidades', 'label' => 'Plantilla', 'route' => 'admin.unidades'],
                                 ['key' => 'asientos', 'label' => 'Apartar', 'route' => 'admin.asientos.index'],
+                                ['key' => 'guias', 'label' => 'Guías', 'route' => 'admin.guias.index'],
                                 ['key' => 'precios', 'label' => 'Precios', 'route' => 'admin.precios.index'],
+                                ['key' => 'destinations', 'label' => 'Destinos', 'route' => 'admin.destinations.index'],
                                 ['key' => 'checkin', 'label' => 'Check-in', 'route' => 'admin.checkin.index'],
                                 ['key' => 'ventas', 'label' => 'Ventas', 'route' => 'admin.ventas'],
                                 ['key' => 'pagos', 'label' => 'Pagos', 'route' => 'admin.pagos.index'],

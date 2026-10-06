@@ -61,7 +61,7 @@
                     {{ $trip->from ?? '' }} → {{ $trip->to ?? '' }}
                 </p>
                 <p class="text-xs font-semibold opacity-80">
-                    {{ $trip->day?->format('d/m/Y') ?? 'Sin fecha' }}
+                    {{ $trip->day?->toSpanishLongDate() ?? 'Sin fecha' }}
                     · {{ $trip->departure_time_formatted ?? 'Sin horario' }}
                     · {{ $reservation->trip_type_label }}
                 </p>

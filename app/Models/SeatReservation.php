@@ -31,12 +31,23 @@ class SeatReservation extends Model
     public const PAYMENT_METHOD_OXXO = 'oxxo';
     public const PAYMENT_METHOD_SPEI = 'spei';
     public const PAYMENT_METHOD_TRANSFER = 'transfer';
+    public const PAYMENT_METHOD_CASH = 'cash';
 
     public const LEG_OUTBOUND = 'outbound';
     public const LEG_RETURN = 'return';
 
+    // Fixed boarding-point instructions printed on every ticket — the
+    // company boards from the same two spots regardless of route, so
+    // this isn't modeled as a per-trip field (yet). Written in
+    // unambiguous 24h notation: 00:30 (12:30 AM) and 15:30 (3:30 PM) —
+    // plain "12:30"/"3:30" reads as noon/3 AM without a meridiem marker.
+    public const OUTBOUND_MEETING_POINT = 'Preséntate a las 00:30 en la Alameda, frente a Salud Digna.';
+    public const RETURN_MEETING_POINT = 'Regreso a las 15:30 desde Joaquín Herrera.';
+
     protected $fillable = [
         'landing_route_id',
+        'trip_guide_id',
+        'travel_date',
         'bus_unit_seat_id',
         'user_id',
         'trip_type',
@@ -75,6 +86,7 @@ class SeatReservation extends Model
     ];
 
     protected $casts = [
+        'travel_date' => 'date',
         'ticket_sent_at' => 'datetime',
         'unit_price' => 'float',
         'outbound_verified_at' => 'datetime',
@@ -101,6 +113,20 @@ class SeatReservation extends Model
     public function landingRoute(): BelongsTo
     {
         return $this->belongsTo(LandingRoute::class);
+    }
+
+    public function tripGuide(): BelongsTo
+    {
+        return $this->belongsTo(TripGuide::class);
+    }
+
+    /**
+     * Still staged in a guide, waiting for the real trip to be created —
+     * landing_route_id is null and travel_date carries its intended date.
+     */
+    public function isGuidePending(): bool
+    {
+        return $this->landing_route_id === null && $this->trip_guide_id !== null;
     }
 
     public function seat(): BelongsTo
@@ -187,10 +213,61 @@ class SeatReservation extends Model
         return $this->trip_type === TripTicketPrice::TYPE_ROUND_TRIP;
     }
 
+    public function isEspecial(): bool
+    {
+        return $this->trip_type === TripTicketPrice::TYPE_ESPECIAL;
+    }
+
+    public function isRegreso(): bool
+    {
+        return $this->trip_type === TripTicketPrice::TYPE_REGRESO;
+    }
+
+    /**
+     * "especial" needs both legs verified at check-in, same as a real
+     * round trip (see scopePendingCheckIn()) — this is the generalized
+     * check views should use instead of isRoundTrip() wherever that
+     * was really asking "does this need an outbound AND a return scan".
+     */
+    public function needsBothLegs(): bool
+    {
+        return $this->isRoundTrip() || $this->isEspecial();
+    }
+
+    /**
+     * Boarding-point instructions for whichever leg(s) this ticket
+     * actually covers — a return-only ticket (isReturnLeg()) only shows
+     * the return point; a one-way outbound ticket only shows the
+     * outbound point; round trip / especial show both.
+     *
+     * @return array<int, string>
+     */
+    public function boardingLegendLines(): array
+    {
+        $lines = [];
+
+        if (! $this->isReturnLeg()) {
+            $lines[] = self::OUTBOUND_MEETING_POINT;
+        }
+
+        if ($this->isReturnLeg() || $this->needsBothLegs()) {
+            $lines[] = self::RETURN_MEETING_POINT;
+        }
+
+        return $lines;
+    }
+
     public function getTripTypeLabelAttribute(): string
     {
         if ($this->isReturnLeg()) {
-            return 'Solo regreso (reventa)';
+            // Two different flows both produce a leg=return row: the
+            // existing admin resale (always carries source_reservation_id)
+            // and a direct "De regreso" purchase/apartado (no source —
+            // nobody released anything, it was just sold/booked as its
+            // own product). Distinguish them in the label.
+            return $this->source_reservation_id !== null
+                ? 'Solo regreso (reventa)'
+                : 'Solo regreso';
         }
 
         if ($this->isOneWay() && $this->source_reservation_id !== null) {
@@ -336,6 +413,34 @@ class SeatReservation extends Model
     }
 
     /**
+     * Admin-driven return reschedule (distinct from the customer
+     * self-service flow above, which has its own request→5-day-window→
+     * choose dance): an operator at check-in picks the new date the
+     * customer states right there, immediately — no waiting window,
+     * but exactly one shot. Available for round-trip AND "especial"
+     * (needsBothLegs()), only before the return has actually boarded,
+     * and only once — hasChangedReturn() blocks a second reschedule
+     * the same way it already blocks the customer flow from stacking.
+     *
+     * Deliberately does NOT require isPaymentCompleted(): unlike the
+     * customer self-service flow (a financial transaction gate), this
+     * is an admin handling someone in person at check-in — e.g. a cash
+     * "especial" ticket can already have its outbound leg verified
+     * while payment_status is still "pending" (not yet confirmed at
+     * ventanilla), and the admin should still be able to rebook their
+     * return.
+     */
+    public function canAdminRescheduleReturn(): bool
+    {
+        return $this->needsBothLegs()
+            && ! $this->isPaymentFailed()
+            && ! $this->isPaymentRefunded()
+            && ! $this->isReturnVerified()
+            && ! $this->hasChangedReturn()
+            && ! $this->isReturnVoided();
+    }
+
+    /**
      * A fixed deadline (not a rolling one) counted in business days
      * (Mon–Fri) from now — Saturday/Sunday don't count against the
      * customer. Doesn't account for MX public holidays.
@@ -383,6 +488,22 @@ class SeatReservation extends Model
         return $this->payment_method === self::PAYMENT_METHOD_TRANSFER;
     }
 
+    public function isCash(): bool
+    {
+        return $this->payment_method === self::PAYMENT_METHOD_CASH;
+    }
+
+    /**
+     * Cash and card (ventanilla) apartados both get confirmed the same
+     * way: an operator confirms in person that payment was received,
+     * then the real QR ticket is generated and printed/sent — unlike
+     * transfer, which has its own reference-number validation flow.
+     */
+    public function needsVentanillaActivation(): bool
+    {
+        return in_array($this->payment_method, [self::PAYMENT_METHOD_CASH, self::PAYMENT_METHOD_CARD], true);
+    }
+
     public function isTransferExpired(): bool
     {
         return $this->transfer_expires_at !== null && $this->transfer_expires_at->isPast();
@@ -398,6 +519,7 @@ class SeatReservation extends Model
         if ($this->payment_method === self::PAYMENT_METHOD_OXXO) return 'OXXO';
         if ($this->payment_method === self::PAYMENT_METHOD_SPEI) return 'SPEI';
         if ($this->payment_method === self::PAYMENT_METHOD_TRANSFER) return 'Transferencia';
+        if ($this->payment_method === self::PAYMENT_METHOD_CASH) return 'Efectivo';
         if ($this->payment_method === self::PAYMENT_METHOD_CARD) {
             return strtoupper($this->openpay_card_brand ?? 'Tarjeta');
         }
@@ -595,7 +717,7 @@ class SeatReservation extends Model
     {
         return $query->where(function ($q) {
             $q->where(function ($q1) {
-                $q1->where('trip_type', TripTicketPrice::TYPE_ONE_WAY)
+                $q1->whereIn('trip_type', [TripTicketPrice::TYPE_ONE_WAY, TripTicketPrice::TYPE_REGRESO])
                     ->where('leg', self::LEG_RETURN)
                     ->whereNull('return_verified_at');
             })->orWhere(function ($q2) {
@@ -603,7 +725,10 @@ class SeatReservation extends Model
                     ->where('leg', '!=', self::LEG_RETURN)
                     ->whereNull('outbound_verified_at');
             })->orWhere(function ($q3) {
-                $q3->where('trip_type', TripTicketPrice::TYPE_ROUND_TRIP)
+                // "especial" is treated like round_trip for check-in:
+                // both legs must be verified, regardless of which one
+                // is still missing.
+                $q3->whereIn('trip_type', [TripTicketPrice::TYPE_ROUND_TRIP, TripTicketPrice::TYPE_ESPECIAL])
                     ->where(function ($q4) {
                         $q4->whereNull('outbound_verified_at')
                             ->orWhereNull('return_verified_at');

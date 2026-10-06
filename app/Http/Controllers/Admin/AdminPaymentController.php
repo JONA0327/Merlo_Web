@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SeatReservation;
 use App\Models\Setting;
+use App\Services\EvolutionWhatsAppService;
 use App\Services\OpenPayService;
+use App\Services\TicketImageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -43,6 +46,11 @@ class AdminPaymentController extends Controller
                     ->orWhere('ticket_code', 'like', "%{$search}%")
                     ->orWhere('customer_name', 'like', "%{$search}%")
                     ->orWhere('customer_email', 'like', "%{$search}%")
+                    // Guests (cash purchases especially) identify by phone
+                    // instead of email, so make that searchable too —
+                    // a ventanilla worker can paste the number they
+                    // already have on hand.
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
                     // Lets an admin paste the "concepto" they read off a
                     // real bank transfer straight into the same search box
                     // to find the matching reservation.
@@ -204,7 +212,7 @@ class AdminPaymentController extends Controller
      * check already happened by virtue of the reference being
      * unguessable and DB-unique.
      */
-    public function validateTransfer(Request $request, SeatReservation $reservation): RedirectResponse
+    public function validateTransfer(Request $request, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
         if (! $reservation->isTransfer() || ! $reservation->isPaymentPending()) {
             return back()->with('error', 'Esta reservación no tiene una transferencia pendiente de validar.');
@@ -225,7 +233,16 @@ class AdminPaymentController extends Controller
         $reservation->markGroupPaid();
         $reservation->sendGroupTickets();
 
-        return back()->with('status', 'Transferencia validada. El boleto se envió al cliente.');
+        // Once validated, generate the QR-bearing ticket image and ship
+        // it to the customer's phone. Until this point the customer
+        // only saw a transfer-receipt upload page (no QR) — the QR is
+        // born here, mirroring the cash-at-window flow.
+        $whatsappSent = $this->sendGroupTicketsViaWhatsApp($reservation, $whatsapp, $ticketImages);
+        $this->markGroupSentIfDelivered($reservation, $whatsappSent);
+
+        return back()->with('status', 'Transferencia validada. ' . ($whatsappSent
+            ? 'El boleto se envió por correo y por WhatsApp al cliente.'
+            : 'El boleto se envió por correo al cliente (WhatsApp no disponible).'));
     }
 
     /**
@@ -241,5 +258,196 @@ class AdminPaymentController extends Controller
         $reservation->releaseGroupAndFreeSeat();
 
         return redirect()->route('admin.pagos.index')->with('status', 'Transferencia rechazada. Los asientos vuelven a estar disponibles.');
+    }
+
+    /**
+     * Ventanilla-side activation of a cash OR card apartado pending
+     * payment. Mirrors validateTransfer(): the admin physically confirms
+     * the payment was received, we mark the whole purchase group paid,
+     * fire off the ticket by email (if there's an email), then redirect
+     * to a printable view AND also push the same image to the customer's
+     * WhatsApp — operators with WhatsApp configured don't have to
+     * hand-deliver the image; those without can ignore the warning
+     * and just print.
+     */
+    public function confirmCash(SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
+    {
+        if (! $reservation->needsVentanillaActivation() || ! $reservation->isPaymentPending()) {
+            return back()->with('error', 'Esta reservación no tiene un pago pendiente de confirmar en ventanilla.');
+        }
+
+        $reservation->update(['paid_at' => now()]);
+        $reservation->markGroupPaid();
+        $reservation->sendGroupTickets();
+
+        $whatsappSent = $this->sendGroupTicketsViaWhatsApp($reservation, $whatsapp, $ticketImages);
+        $this->markGroupSentIfDelivered($reservation, $whatsappSent);
+
+        return redirect()
+            ->route('admin.pagos.cash-ticket', $reservation)
+            ->with('status', 'Pago confirmado. Imprime el boleto y entrégalo al cliente.' . ($whatsappSent
+                ? ' También se envió por WhatsApp.'
+                : ''));
+    }
+
+    /**
+     * Printable view of the freshly-activated cash ticket. Uses the
+     * same combined-image generator as the WhatsApp multi-ticket path
+     * (TicketImageService::buildCombinedImage), so what the operator
+     * hands the customer looks identical to what a customer who paid
+     * online would have received. Cash-ticket images are written to
+     * a temp file and deleted after the response — they're not
+     * persisted anywhere.
+     */
+    public function cashTicket(SeatReservation $reservation): View
+    {
+        // Defensive: only show the printable for just-confirmed cash
+        // tickets. A reload / direct hit on an already-printed ticket
+        // shouldn't regenerate an image (and shouldn't show up in the
+        // queue), so redirect back to the detail page.
+        if (! $reservation->needsVentanillaActivation() || ! $reservation->isPaymentCompleted()) {
+            return redirect()->route('admin.pagos.show', $reservation);
+        }
+
+        $reservation->loadMissing(['landingRoute.busUnit', 'seat']);
+        $isRoot = ! str_starts_with((string) $reservation->notes, 'group:');
+        $groupSeats = $isRoot
+            ? SeatReservation::query()
+                ->where('notes', 'group:'.$reservation->id)
+                ->with('seat')
+                ->get()
+            : collect();
+
+        $imageUrl = route('admin.pagos.cash-ticket-image', $reservation);
+
+        return view('admin.pagos.cash-ticket', [
+            'reservation' => $reservation,
+            'groupSeats' => $groupSeats,
+            'imageUrl' => $imageUrl,
+        ]);
+    }
+
+    /**
+     * Stream the combined ticket image (QR + fecha + leyenda de abordaje)
+     * generated by TicketImageService. The cash-ticket view embeds
+     * this URL in an <img>; if the operator right-clicks → save, they
+     * get the same JPG file the customer would have on WhatsApp.
+     */
+    public function cashTicketImage(SeatReservation $reservation, TicketImageService $ticketImages): Response
+    {
+        abort_unless($reservation->needsVentanillaActivation() && $reservation->isPaymentCompleted(), 404);
+
+        $group = $reservation->groupMembers()->load(['landingRoute', 'seat']);
+        $path = $ticketImages->buildCombinedImage($group);
+
+        try {
+            return response()->file($path, [
+                'Content-Type' => 'image/jpeg',
+                'Content-Disposition' => 'inline; filename="boleto-efectivo-'.$reservation->ticket_code.'.jpg"',
+            ]);
+        } finally {
+            if (file_exists($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * After payment is confirmed (transfer validated or cash received),
+     * build the same combined QR image that cash-ticket.blade.php shows
+     * on screen and ship it to the customer's phone via Evolution API.
+     * Returns true if WhatsApp was actually sent, false if it was
+     * skipped because Evolution isn't configured / no phone on file /
+     * upstream failure (caller can decide whether to surface a warning).
+     *
+     * The image is generated locally as a JPG — WhatsApp's host CDN-
+     * URL approach (used by sendTicket()) only works for the single
+     * per-reservation QR; multi-seat groups need a stacked image,
+     * which only exists on disk and so goes via sendImageFile().
+     */
+    private function sendGroupTicketsViaWhatsApp(SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): bool
+    {
+        if (! $whatsapp->isConfigured() || empty($reservation->customer_phone)) {
+            return false;
+        }
+
+        $group = $reservation->groupMembers()->load(['landingRoute', 'seat']);
+        if ($group->isEmpty()) {
+            return false;
+        }
+
+        $path = null;
+        try {
+            $path = $ticketImages->buildCombinedImage($group);
+            $whatsapp->sendImageFile(
+                $reservation->customer_phone,
+                $path,
+                $this->buildActivatedCaption($reservation, $group),
+                'boleto-merlo-'.$reservation->id.'.jpg'
+            );
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('WhatsApp ticket image failed for reservation '.$reservation->id.': '.$e->getMessage());
+            return false;
+        } finally {
+            if ($path && file_exists($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * sendGroupTickets() only flips a row's status to SENT when it
+     * actually emails it — which it skips entirely for a row with no
+     * customer_email (any guest who only gave a phone number). Without
+     * this, a phone-only guest whose ticket WAS delivered via WhatsApp
+     * stays stuck showing "pendiente" everywhere else in the admin
+     * (asientos list, re-send buttons), even though payment_status is
+     * already completed and the customer already has their QR.
+     */
+    private function markGroupSentIfDelivered(SeatReservation $reservation, bool $whatsappSent): void
+    {
+        if (! $whatsappSent) {
+            return;
+        }
+
+        $group = $reservation->groupMembers();
+        SeatReservation::whereIn('id', $group->pluck('id'))
+            ->where('status', '!=', SeatReservation::STATUS_SENT)
+            ->update(['status' => SeatReservation::STATUS_SENT, 'ticket_sent_at' => now()]);
+    }
+
+    /**
+     * Caption used when shipping the freshly-activated ticket image via
+     * WhatsApp — same brand + boarding-point lines as the original
+     * sendTicket() flow (kept in EvolutionWhatsAppService::buildCaption),
+     * but tagged with the just-paid status so the customer can tell
+     * apart the "apartado en espera" from the "tu boleto ya está listo".
+     */
+    private function buildActivatedCaption(SeatReservation $reservation, $group): string
+    {
+        $trip = $reservation->landingRoute;
+        $tripDate = $reservation->isReturnLeg()
+            ? ($trip->return_date?->toSpanishLongDate() ?? '—')
+            : ($trip->day?->toSpanishLongDate() ?? '—');
+        $departure = $trip->departure_time_formatted ?? '—';
+        $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
+        $total = '$' . number_format((float) $reservation->total, 2);
+        $legLabel = $reservation->needsBothLegs() ? 'salida y tu regreso' : 'subida al autobús';
+
+        return implode("\n", [
+            '*MERLO Transportes* 🚌',
+            '',
+            "Hola {$reservation->customer_display_name}, tu pago fue confirmado. Aquí tienes tu boleto:",
+            '',
+            "*{$trip->from} → {$trip->to}*",
+            "📅 Salida: *{$tripDate} · {$departure}*",
+            "💺 Asientos: {$seatLabels}",
+            "💵 Total pagado: {$total} MXN",
+            '',
+            'Muestra el QR al abordar — el operador lo escanea para registrar tu ' . $legLabel . '.',
+            'Si el QR no escanea, dicta el código:',
+            '`' . $reservation->ticket_code . '`',
+        ]);
     }
 }

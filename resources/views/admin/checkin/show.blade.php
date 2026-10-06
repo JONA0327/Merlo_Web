@@ -36,13 +36,13 @@
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
             <div class="lg:col-span-7 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isRoundTrip() ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800' }}">{{ $reservation->trip_type_label }}</span>
+                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->needsBothLegs() ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800' }}">{{ $reservation->trip_type_label }}</span>
                     <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isSent() ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">{{ $reservation->status }}</span>
                 </div>
 
                 <h3 class="mt-3 font-[Poppins] text-2xl font-extrabold text-[#2B1113]">{{ $trip->from }} <span class="text-[#2B1113]/40">→</span> {{ $trip->to }}</h3>
                 <p class="text-sm text-[#2B1113]/60">{{ $trip->day?->format('d/m/Y') ?? '—' }} &middot; {{ $trip->departure_time_formatted ?? '—' }} &middot; {{ $trip->duration }}</p>
-                @if ($reservation->isRoundTrip() && $trip->return_date)
+                @if ($reservation->needsBothLegs() && $trip->return_date)
                     <p class="text-sm text-[#2B1113]/60">Regreso: {{ $trip->return_date->format('d/m/Y') }}</p>
                 @endif
 
@@ -65,7 +65,7 @@
                         @php
                             $outboundDone = $reservation->isOutboundVerified();
                             $outboundVisible = ! $reservation->isReturnLeg();
-                            $returnVisible = $reservation->isRoundTrip() || $reservation->isReturnLeg();
+                            $returnVisible = $reservation->needsBothLegs() || $reservation->isReturnLeg();
                             $returnDone = $reservation->isReturnVerified();
                         @endphp
                         @if ($outboundVisible)
@@ -135,6 +135,44 @@
                         @endif
                     </div>
                 </div>
+
+                @if ($reservation->needsBothLegs())
+                    <div class="mt-5 border-t border-black/5 pt-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-[#2B1113]/60">¿No regresa en esta fecha?</h4>
+
+                        @if ($reservation->hasChangedReturn())
+                            <p class="mt-2 text-sm text-[#2B1113]/70">
+                                El regreso de este boleto ya fue reprogramado
+                                @if ($reservation->returnChangedTo)
+                                    a un nuevo boleto el {{ $reservation->returnChangedTo->landingRoute?->day?->toSpanishLongDate() }}.
+                                    <a href="{{ route('admin.checkin.scan', $reservation->returnChangedTo->ticket_code) }}" class="font-semibold text-[#8C1D2B] hover:underline">Ver boleto nuevo</a>
+                                @else
+                                    .
+                                @endif
+                            </p>
+                        @elseif ($reservation->canAdminRescheduleReturn())
+                            @if ($returnChangeOptions->isEmpty())
+                                <p class="mt-2 text-sm text-[#2B1113]/70">No hay viajes de regreso publicados con asientos disponibles todavía.</p>
+                            @else
+                                <p class="mt-2 text-xs text-[#2B1113]/60">Si el pasajero dice que no abordará el regreso programado, elige aquí la nueva fecha que indique. Es una sola vez: se generará un boleto nuevo (mismo trayecto, asiento sujeto a disponibilidad) y no podrá volver a cambiarse.</p>
+                                <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-3 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Confirmar la nueva fecha de regreso? Esta acción no se puede deshacer.');">
+                                    @csrf
+                                    <select name="landing_route_id" required class="flex-1 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm">
+                                        <option value="">Selecciona la nueva fecha de regreso…</option>
+                                        @foreach ($returnChangeOptions as $option)
+                                            <option value="{{ $option->id }}">{{ $option->day?->toSpanishLongDate() }} &middot; {{ $option->departure_time_formatted }} &middot; {{ $option->available_seats }} disponibles</option>
+                                        @endforeach
+                                    </select>
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#6F1622] transition-colors">
+                                        Reprogramar regreso
+                                    </button>
+                                </form>
+                            @endif
+                        @else
+                            <p class="mt-2 text-sm text-[#2B1113]/70">Este boleto ya no puede reprogramar su regreso (ya abordó, ya se anuló o el pago no está completo).</p>
+                        @endif
+                    </div>
+                @endif
             </div>
 
             <div class="lg:col-span-5 space-y-4">

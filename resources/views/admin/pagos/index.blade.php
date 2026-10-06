@@ -33,7 +33,7 @@
     <form method="GET" action="{{ route('admin.pagos.index') }}" class="mb-4 flex flex-wrap items-end gap-2">
         <label class="block">
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Buscar</span>
-            <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Charge ID, ticket code, referencia de transferencia, nombre o email" class="mt-1 w-72 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+            <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Charge ID, ticket code, referencia, nombre, email o teléfono" class="mt-1 w-72 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
         </label>
         <label class="block">
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Estado</span>
@@ -48,7 +48,7 @@
             <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método</span>
             <select name="method" class="mt-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                 <option value="">Todos</option>
-                @foreach (['card' => 'Tarjeta', 'oxxo' => 'OXXO', 'spei' => 'SPEI', 'transfer' => 'Transferencia'] as $key => $label)
+                @foreach (['card' => 'Tarjeta', 'oxxo' => 'OXXO', 'spei' => 'SPEI', 'transfer' => 'Transferencia', 'cash' => 'Efectivo'] as $key => $label)
                     <option value="{{ $key }}" @selected($filters['method'] === $key)>{{ $label }}</option>
                 @endforeach
             </select>

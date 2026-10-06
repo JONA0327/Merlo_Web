@@ -26,6 +26,11 @@ class AdminController extends Controller
                 ->withCount(['seats as bookable_seats_count' => fn ($query) => $query->bookable()])
                 ->orderBy('name')
                 ->get(),
+            // Active destinations for the from/to <select> on the create
+            // form. The edit form (admin.viajes-edit) passes its own list
+            // through AdminLandingRouteController@edit, but it shares the
+            // same <select> markup so both stay in lockstep.
+            'destinations' => \App\Models\Destination::query()->active()->orderBy('name')->get(),
         ]);
     }
 

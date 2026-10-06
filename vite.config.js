@@ -12,7 +12,6 @@ export default defineConfig({
                 'resources/js/seat-picker.js',
                 'resources/js/admin-seat-picker.js',
                 'resources/js/admin-seat-availability.js',
-                'resources/js/openpay-checkout.js',
                 'resources/js/package-scanner.js',
             ],
             refresh: true,

@@ -241,16 +241,30 @@ const selectAllButton = document.getElementById('select-all');
 const deleteSelectionButton = document.getElementById('selection-delete');
 const outlineColorInput = document.getElementById('outline-color');
 const seatAllowedTripTypeSelect = document.getElementById('seat-allowed-trip-type');
+const seatAllowedTripTypeWrap = document.getElementById('seat-allowed-trip-type-wrap');
+const seatZoneInput = document.getElementById('seat-zone');
 
 // Per-seat "Tipo de viaje permitido" — change handler is wired once at
 // module load and mutates the single selected seat's allowedTripType
 // attribute (the actual persistence happens when the user hits
-// "Guardar distribución" later).
+// "Guardar distribución" later). Only meaningful for exactly one
+// selected seat (syncSelectionUI() hides this control otherwise).
 if (seatAllowedTripTypeSelect) {
     seatAllowedTripTypeSelect.addEventListener('change', () => {
         if (selectedGroups.size !== 1) return;
         const [only] = selectedGroups;
         only.setAttr('allowedTripType', seatAllowedTripTypeSelect.value);
+    });
+}
+
+// "Zona" — unlike allowed-trip-type, this applies to EVERY currently
+// selected seat at once, so tagging a whole mancuerna/zone takes one
+// edit instead of one per seat. Empty string is stored as null (no zone).
+if (seatZoneInput) {
+    seatZoneInput.addEventListener('input', () => {
+        if (selectedGroups.size === 0) return;
+        const value = seatZoneInput.value.trim() || null;
+        selectedGroups.forEach((group) => group.setAttr('zone', value));
     });
 }
 
@@ -501,6 +515,7 @@ function buildSeatGroup(seat) {
     group.setAttr('seatHeight', seat.height ?? SEAT_SIZE);
     group.setAttr('cornerRadius', seat.corner_radius ?? 8);
     group.setAttr('allowedTripType', seat.allowed_trip_type ?? 'both');
+    group.setAttr('zone', seat.zone ?? null);
     group.setAttr('borderWidth', seat.border_width ?? 2);
     group.setAttr('seatColor', seat.color ?? null);
     group.visible((seat.deck ?? 'lower') === currentDeck);
@@ -540,8 +555,26 @@ function syncSelectionUI() {
             section.setAttribute('data-has-selection', 'true');
             labelBadge.textContent = only.getAttr('seatLabel') || '—';
         }
+        if (seatAllowedTripTypeWrap) seatAllowedTripTypeWrap.hidden = false;
         if (seatAllowedTripTypeSelect) {
             seatAllowedTripTypeSelect.value = only.getAttr('allowedTripType') ?? 'both';
+        }
+        if (seatZoneInput) seatZoneInput.value = only.getAttr('zone') ?? '';
+    } else if (selectedGroups.size > 1) {
+        // Several seats selected: the per-seat trip-type restriction
+        // doesn't make sense to bulk-edit (it's a single value), so
+        // that control hides — but "Zona" is exactly the bulk-tagging
+        // tool multi-select exists for, so it stays visible and applies
+        // to every selected seat (see the 'input' handler above).
+        transformer.nodes([]);
+        const section = document.getElementById('seat-properties-section');
+        const labelBadge = document.getElementById('seat-properties-label');
+        if (section) section.setAttribute('data-has-selection', 'true');
+        if (labelBadge) labelBadge.textContent = `${selectedGroups.size} asientos`;
+        if (seatAllowedTripTypeWrap) seatAllowedTripTypeWrap.hidden = true;
+        if (seatZoneInput) {
+            const zones = new Set([...selectedGroups].map((g) => g.getAttr('zone') ?? ''));
+            seatZoneInput.value = zones.size === 1 ? [...zones][0] : '';
         }
     } else {
         transformer.nodes([]);
@@ -549,6 +582,8 @@ function syncSelectionUI() {
         const labelBadge = document.getElementById('seat-properties-label');
         if (section) section.setAttribute('data-has-selection', 'false');
         if (labelBadge) labelBadge.textContent = '—';
+        if (seatAllowedTripTypeWrap) seatAllowedTripTypeWrap.hidden = false;
+        if (seatZoneInput) seatZoneInput.value = '';
     }
     uiLayer.batchDraw();
 }
@@ -1230,6 +1265,7 @@ saveButton.addEventListener('click', async () => {
         border_width: group.getAttr('borderWidth'),
         color: group.getAttr('seatColor'),
         allowed_trip_type: group.getAttr('allowedTripType') ?? 'both',
+        zone: group.getAttr('zone') ?? null,
         pos_x: group.x(),
         pos_y: group.y(),
     }));
@@ -1281,7 +1317,7 @@ const TEMPLATE_VERSION = 1;
 const TEMPLATE_SEAT_KEYS = [
     'label', 'kind', 'type', 'deck', 'shape',
     'width', 'height', 'corner_radius', 'border_width',
-    'color', 'allowed_trip_type', 'pos_x', 'pos_y',
+    'color', 'allowed_trip_type', 'zone', 'pos_x', 'pos_y',
 ];
 
 function buildTemplateFromCurrent() {
@@ -1299,6 +1335,7 @@ function buildTemplateFromCurrent() {
                 else if (key === 'pos_x') seat[key] = group.x();
                 else if (key === 'pos_y') seat[key] = group.y();
                 else if (key === 'allowed_trip_type') seat[key] = group.getAttr('allowedTripType');
+                else if (key === 'zone') seat[key] = group.getAttr('zone');
                 else seat[key] = group.getAttr(`seat${key.charAt(0).toUpperCase()}${key.slice(1)}`);
             });
             return seat;

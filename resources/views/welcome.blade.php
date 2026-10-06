@@ -46,9 +46,13 @@
                             <button type="button" class="js-modal-trigger hidden sm:inline-flex items-center px-4 py-2 text-sm font-semibold text-[#2B1113] hover:text-[#8C1D2B] transition-colors" data-auth-modal="login">
                                 Iniciar sesión
                             </button>
-                            <button type="button" class="js-modal-trigger inline-flex items-center gap-2 rounded-full bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors" data-auth-modal="login">
+                            {{-- Guests don't need an account to buy a ticket anymore
+                                 (SeatPickerController accepts guest checkout with just
+                                 name + phone), so "Comprar boleto" takes them straight
+                                 to the search form below instead of forcing login. --}}
+                            <a href="#buscar" class="inline-flex items-center gap-2 rounded-full bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
                                 Comprar boleto
-                            </button>
+                            </a>
                         @endauth
                     </div>
                 </div>
@@ -150,7 +154,20 @@
         {{-- ===================== BUSCADOR ===================== --}}
         <section id="buscar" class="relative -mt-28 lg:-mt-32 px-6 lg:px-8">
             <div class="mx-auto max-w-5xl rounded-3xl bg-white shadow-2xl shadow-black/10 ring-1 ring-black/5 p-6 sm:p-8">
-                <h2 class="font-[Poppins] text-lg font-bold text-[#2B1113] mb-5">Encuentra tu boleto</h2>
+                <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h2 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Encuentra tu boleto</h2>
+                    {{-- Guest banner: surfaced next to the search title instead of
+                         cramming into the header. Logged-in users already have a
+                         "Mis boletos" link in their dashboard, so this is hidden
+                         for them — it only helps the name+phone lookup flow. --}}
+                    @guest
+                        <a href="{{ route('guest.tickets.lookup') }}" class="inline-flex items-center gap-2 self-start rounded-full bg-amber-50 px-4 py-2 text-xs font-bold text-[#2B1113] ring-1 ring-[#F5B301]/40 hover:bg-amber-100 transition-colors">
+                            <svg class="h-3.5 w-3.5 text-[#8C1D2B]" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4zm12 12V4H5v12h10zM6 6h8v2H6V6zm0 4h8v2H6v-2zm0 4h5v2H6v-2z"/></svg>
+                            <span>¿Ya compraste sin cuenta?</span>
+                            <span class="text-[#8C1D2B]">Ver mis boletos →</span>
+                        </a>
+                    @endguest
+                </div>
                 <form method="GET" action="{{ route('travel.search') }}" id="trip-search-form" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-4">
                     <label class="block">
                         <span class="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#8C1D2B]">
@@ -491,15 +508,12 @@
                         </p>
                     </div>
                     <div class="flex flex-col sm:flex-row lg:justify-end gap-4">
-                        @auth
-                            <a href="#buscar" class="inline-flex items-center justify-center gap-2 rounded-full bg-[#F5B301] px-7 py-3.5 text-sm font-bold text-[#2B1113] shadow-lg shadow-black/20 hover:bg-[#E0A400] transition-colors">
-                                Comprar boleto ahora
-                            </a>
-                        @else
-                            <button type="button" class="js-modal-trigger inline-flex items-center justify-center gap-2 rounded-full bg-[#F5B301] px-7 py-3.5 text-sm font-bold text-[#2B1113] shadow-lg shadow-black/20 hover:bg-[#E0A400] transition-colors" data-auth-modal="login">
-                                Comprar boleto ahora
-                            </button>
-                        @endauth
+                        {{-- Same fix as the header CTA: guests can buy without
+                             an account, so the hero button goes straight to the
+                             search form instead of opening the login modal. --}}
+                        <a href="#buscar" class="inline-flex items-center justify-center gap-2 rounded-full bg-[#F5B301] px-7 py-3.5 text-sm font-bold text-[#2B1113] shadow-lg shadow-black/20 hover:bg-[#E0A400] transition-colors">
+                            Comprar boleto ahora
+                        </a>
                         <a href="#contacto" class="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-7 py-3.5 text-sm font-bold text-white ring-1 ring-white/25 hover:bg-white/20 transition-colors">
                             Hablar con nosotros
                         </a>
