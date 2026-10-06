@@ -41,8 +41,10 @@ class SeatReservation extends Model
     // this isn't modeled as a per-trip field (yet). Written in
     // unambiguous 24h notation: 00:30 (12:30 AM) and 15:30 (3:30 PM) —
     // plain "12:30"/"3:30" reads as noon/3 AM without a meridiem marker.
-    public const OUTBOUND_MEETING_POINT = 'Preséntate a las 00:30 en la Alameda, frente a Salud Digna.';
-    public const RETURN_MEETING_POINT = 'Regreso a las 15:30 desde Joaquín Herrera.';
+    // Fallback text used only when the admin hasn't set a custom legend
+    // in Configuraciones (Setting::outboundMeetingPoint()/returnMeetingPoint()).
+    public const DEFAULT_OUTBOUND_MEETING_POINT = 'Preséntate a las 00:30 en la Alameda, frente a Salud Digna.';
+    public const DEFAULT_RETURN_MEETING_POINT = 'Regreso a las 15:30 desde Joaquín Herrera.';
 
     protected $fillable = [
         'landing_route_id',
@@ -247,11 +249,11 @@ class SeatReservation extends Model
         $lines = [];
 
         if (! $this->isReturnLeg()) {
-            $lines[] = self::OUTBOUND_MEETING_POINT;
+            $lines[] = Setting::current()->outboundMeetingPoint();
         }
 
         if ($this->isReturnLeg() || $this->needsBothLegs()) {
-            $lines[] = self::RETURN_MEETING_POINT;
+            $lines[] = Setting::current()->returnMeetingPoint();
         }
 
         return $lines;

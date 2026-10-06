@@ -19,6 +19,8 @@ class Setting extends Model
         'evolution_api_url',
         'evolution_api_key',
         'evolution_instance',
+        'boarding_outbound_legend',
+        'boarding_return_legend',
     ];
 
     protected $casts = [
@@ -99,6 +101,27 @@ class Setting extends Model
         $value = $this->{$column};
 
         return $value !== null && $value > 0 ? (float) $value : null;
+    }
+
+    /**
+     * Boarding-point legend lines shown on tickets / WhatsApp notices.
+     * Admin-editable from Configuraciones; falls back to the original
+     * hardcoded defaults (SeatReservation::DEFAULT_*_MEETING_POINT)
+     * when left blank, so an empty settings row doesn't produce a
+     * ticket with no boarding instructions at all.
+     */
+    public function outboundMeetingPoint(): string
+    {
+        return filled($this->boarding_outbound_legend)
+            ? $this->boarding_outbound_legend
+            : SeatReservation::DEFAULT_OUTBOUND_MEETING_POINT;
+    }
+
+    public function returnMeetingPoint(): string
+    {
+        return filled($this->boarding_return_legend)
+            ? $this->boarding_return_legend
+            : SeatReservation::DEFAULT_RETURN_MEETING_POINT;
     }
 
     /**

@@ -41,6 +41,20 @@
                 <x-input-error :messages="$errors->get('return_resale_validity_hours')" class="mt-2" />
             </div>
 
+            <div class="border-t border-black/5 pt-5">
+                <x-input-label for="boarding_outbound_legend" value="Leyenda de abordaje — ida" />
+                <x-text-input id="boarding_outbound_legend" name="boarding_outbound_legend" type="text" class="block mt-1.5 w-full" placeholder="Preséntate a las 00:30 en la Alameda, frente a Salud Digna." value="{{ old('boarding_outbound_legend', $setting->boarding_outbound_legend) }}" />
+                <p class="mt-1.5 text-xs text-[#2B1113]/50">Se muestra en el boleto, el PDF y el aviso de WhatsApp de los viajes de ida/redondo/especial. Deja en blanco para usar el texto por defecto.</p>
+                <x-input-error :messages="$errors->get('boarding_outbound_legend')" class="mt-2" />
+            </div>
+
+            <div>
+                <x-input-label for="boarding_return_legend" value="Leyenda de abordaje — regreso" />
+                <x-text-input id="boarding_return_legend" name="boarding_return_legend" type="text" class="block mt-1.5 w-full" placeholder="Regreso a las 15:30 desde Joaquín Herrera." value="{{ old('boarding_return_legend', $setting->boarding_return_legend) }}" />
+                <p class="mt-1.5 text-xs text-[#2B1113]/50">Se muestra en los boletos de regreso/redondo/especial. Deja en blanco para usar el texto por defecto.</p>
+                <x-input-error :messages="$errors->get('boarding_return_legend')" class="mt-2" />
+            </div>
+
             <div class="flex justify-end pt-2">
                 <x-primary-button type="submit">
                     Guardar
