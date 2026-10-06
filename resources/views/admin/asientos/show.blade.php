@@ -208,10 +208,10 @@
                                     <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="edit-category-{{ $reservation->id }}">Editar</button>
                                 @endif
                                 @unless ($trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirm('¿Cancelar este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}? {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.')">
+                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirmDeleteApartado(this, {{ $allSeats->count() }})">
                                         @csrf
                                         @method('DELETE')
-                                        <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
+                                        <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
                                     </form>
                                 @endunless
                             </div>
@@ -261,6 +261,19 @@
     </div>
 
     <script>
+        // A plain confirm() was too easy to click through by accident
+        // (an admin reported deleting a real apartado this way), so
+        // deleting now requires typing the word ELIMINAR into a prompt.
+        function confirmDeleteApartado(form, seatCount) {
+            const plural = seatCount > 1 ? 's' : '';
+            const typed = window.prompt(
+                `Vas a BORRAR este apartado${seatCount > 1 ? ` (${seatCount} asientos)` : ''}. `
+                + `El${plural ? '' : ' asiento'}${seatCount > 1 ? 's volverán' : ' volverá'} a estar disponible${plural}.\n\n`
+                + 'Escribe ELIMINAR para confirmar:'
+            );
+            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
+        }
+
         document.querySelectorAll('.admin-edit-category-toggle').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const panel = document.getElementById(btn.getAttribute('data-target'));

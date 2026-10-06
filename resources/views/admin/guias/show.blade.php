@@ -164,10 +164,10 @@
                                 @endif
                             </div>
 
-                            <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" onsubmit="return confirm('¿Cancelar este apartado de guía?')">
+                            <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" onsubmit="return confirmDeleteGuiaApartado()">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Cancelar</button>
+                                <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
                             </form>
                         </div>
                     </li>
@@ -177,6 +177,14 @@
     </div>
 
     <script>
+        // Same accidental-click guard as Apartar asientos: a plain
+        // confirm() was too easy to click through, so this now
+        // requires typing ELIMINAR.
+        function confirmDeleteGuiaApartado() {
+            const typed = window.prompt('Vas a BORRAR este apartado de guía.\n\nEscribe ELIMINAR para confirmar:');
+            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
+        }
+
         window.__ADMIN_SEAT_PICKER__ = {
             tripEnded: {{ $date->lt(\Illuminate\Support\Carbon::today()) ? 'true' : 'false' }},
             canvasWidth: {{ $guide->busUnit->canvas_width }},
