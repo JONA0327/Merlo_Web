@@ -39,7 +39,7 @@ class SeatApartadoMail extends Mailable
         $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data='.urlencode($checkinUrl);
 
         $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
-        $departure = $trip->departure_time_formatted ?? '—';
+        $unitName = $trip->busUnit->name ?? '—';
         // A resold return-leg ticket boards on the RETURN date, not
         // the trip's outbound day — the "Salida" row on the ticket
         // must reflect that or the passenger shows up on the wrong day.
@@ -62,7 +62,7 @@ class SeatApartadoMail extends Mailable
             reservation: $reservation,
             tripDate: $tripDate,
             returnDate: $returnDate,
-            departure: $departure,
+            unitName: $unitName,
             tripType: $tripType,
             tripTypeBadge: $tripTypeBadge,
             qrUrl: $qrUrl,
@@ -78,7 +78,7 @@ class SeatApartadoMail extends Mailable
         $reservation,
         string $tripDate,
         string $returnDate,
-        string $departure,
+        string $unitName,
         string $tripType,
         string $tripTypeBadge,
         string $qrUrl,
@@ -151,7 +151,11 @@ class SeatApartadoMail extends Mailable
               </tr>
               <tr>
                 <td style="padding:6px 0;color:#8C1D2B/70;font-weight:600;">Salida</td>
-                <td style="padding:6px 0;text-align:right;font-weight:800;font-size:15px;">$tripDate &middot; $departure</td>
+                <td style="padding:6px 0;text-align:right;font-weight:800;font-size:15px;">$tripDate</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;color:#8C1D2B/70;font-weight:600;">Unidad</td>
+                <td style="padding:6px 0;text-align:right;font-weight:800;font-size:15px;">$unitName</td>
               </tr>
               $returnRow
               <tr>

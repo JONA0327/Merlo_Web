@@ -5,7 +5,7 @@
     $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=10&data='.urlencode($checkinUrl);
 
     $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
-    $departure = $trip->departure_time_formatted ?? '—';
+    $unitName = $trip->busUnit->name ?? '—';
     $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
     $isRescheduledReturn = $reservation->isOneWay() && ! $reservation->isReturnLeg() && $reservation->source_reservation_id !== null;
     $tripType = match (true) {
@@ -77,7 +77,11 @@
                     </div>
                     <div class="flex justify-between">
                         <dt class="font-semibold text-[#8C1D2B]/70">Salida</dt>
-                        <dd class="text-base font-extrabold text-right">{{ $tripDate }} &middot; {{ $departure }}</dd>
+                        <dd class="text-base font-extrabold text-right">{{ $tripDate }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="font-semibold text-[#8C1D2B]/70">Unidad</dt>
+                        <dd class="text-base font-extrabold text-right">{{ $unitName }}</dd>
                     </div>
                     @if ($reservation->needsBothLegs())
                         <div class="flex justify-between">

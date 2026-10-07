@@ -168,6 +168,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/asientos/{landingRoute}/reservas/{reservation}/enviar', [AdminSeatReservationController::class, 'sendTicket'])->name('asientos.send');
     Route::put('/asientos/{landingRoute}/reservas/{reservation}/categoria', [AdminSeatReservationController::class, 'updateCategory'])->name('asientos.update-category');
     Route::delete('/asientos/{landingRoute}/reservas/{reservation}', [AdminSeatReservationController::class, 'destroy'])->name('asientos.destroy');
+    Route::delete('/asientos/{landingRoute}/reservas/{reservation}/asiento', [AdminSeatReservationController::class, 'removeSeat'])->name('asientos.remove-seat');
     Route::get('/asientos/{landingRoute}/lista', [AdminSeatReservationController::class, 'manifest'])->name('asientos.manifest');
     Route::get('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'availability'])->name('asientos.availability');
     Route::put('/asientos/{landingRoute}/disponibilidad', [AdminSeatReservationController::class, 'updateAvailability'])->name('asientos.availability.update');

@@ -110,7 +110,7 @@ class TicketImageService
 
         $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
         $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
-        $dateLine = $tripDate.'  ·  '.($trip->departure_time_formatted ?? '—');
+        $dateLine = $tripDate.'  ·  '.($trip->busUnit->name ?? '—');
         $this->centeredText($canvas, $font, 14, $c['white'], $left, $right, $top + 72, $dateLine);
 
         // Seat badge + trip type + customer name.

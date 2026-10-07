@@ -262,6 +262,25 @@
                                     <p class="text-[10px] text-[#2B1113]/40">Cambiar estado a "Pagado" rellena automáticamente <code class="font-mono">paid_at</code>. El envío por WhatsApp sigue siendo manual — toca "Enviar boleto(s)" cuando quieras mandarlo.</p>
                                     <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
                                 </form>
+
+                                @if ($allSeats->count() > 1)
+                                    @php $groupRows = collect([$reservation])->merge($reservation->groupSeats); @endphp
+                                    <div class="mt-3 border-t border-black/5 pt-3">
+                                        <p class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Quitar un asiento de este apartado</p>
+                                        <p class="mt-1 text-[10px] text-[#2B1113]/40">Deja los demás asientos intactos y reenvía la información actualizada por WhatsApp.</p>
+                                        <div class="mt-2 flex flex-wrap gap-1.5">
+                                            @foreach ($groupRows as $member)
+                                                <form method="POST" action="{{ route('admin.asientos.remove-seat', [$trip, $member]) }}" class="inline" onsubmit="return confirm('¿Quitar el asiento {{ $member->seat?->label }} de este apartado y reenviar la información actualizada?');">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100">
+                                                        {{ $member->seat?->label ?? '—' }} &times;
+                                                    </button>
+                                                </form>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
                         @endif
                     </li>

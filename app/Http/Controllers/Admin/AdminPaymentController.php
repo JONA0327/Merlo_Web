@@ -430,7 +430,7 @@ class AdminPaymentController extends Controller
         $tripDate = $reservation->isReturnLeg()
             ? ($trip->return_date?->toSpanishLongDate() ?? '—')
             : ($trip->day?->toSpanishLongDate() ?? '—');
-        $departure = $trip->departure_time_formatted ?? '—';
+        $unitName = $trip->busUnit->name ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         $total = '$' . number_format((float) $reservation->total, 2);
         $legLabel = $reservation->needsBothLegs() ? 'salida y tu regreso' : 'subida al autobús';
@@ -441,7 +441,8 @@ class AdminPaymentController extends Controller
             "Hola {$reservation->customer_display_name}, tu pago fue confirmado. Aquí tienes tu boleto:",
             '',
             "*{$trip->from} → {$trip->to}*",
-            "📅 Salida: *{$tripDate} · {$departure}*",
+            "📅 Salida: *{$tripDate}*",
+            "🚍 Unidad: *{$unitName}*",
             "💺 Asientos: {$seatLabels}",
             "💵 Total pagado: {$total} MXN",
             '',

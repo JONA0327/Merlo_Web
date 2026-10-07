@@ -242,6 +242,7 @@ class EvolutionWhatsAppService
         // null-coalescing inside an interpolation expression — the parser
         // sometimes gets confused by `?-> ... ??` directly inside `{}`.
         $departureDate = $trip->day?->toSpanishLongDate() ?? '—';
+        $unitName = $trip->busUnit->name ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         // Every seat in a group ("mancuerna" or otherwise) is charged its
         // own unit_price — the total owed is the sum across all of them,
@@ -256,6 +257,7 @@ class EvolutionWhatsAppService
             '',
             "*{$trip->from} → {$trip->to}*",
             "📅 Salida: *{$departureDate}*",
+            "🚍 Unidad: *{$unitName}*",
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
             "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];
@@ -345,7 +347,7 @@ class EvolutionWhatsAppService
     {
         $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
         $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
-        $departure = $trip->departure_time_formatted ?? '—';
+        $unitName = $trip->busUnit->name ?? '—';
         $seat = $reservation->seat?->label ?? '—';
         $price = $reservation->unit_price ? '$'.number_format((float) $reservation->unit_price, 2) : '—';
         $legLabel = $reservation->isReturnLeg() ? 'regreso' : ($reservation->needsBothLegs() ? 'salida y tu regreso' : 'subida al autobús');
@@ -356,7 +358,8 @@ class EvolutionWhatsAppService
             "Hola {$reservation->customer_display_name}, este es tu boleto:",
             '',
             "*{$trip->from} → {$trip->to}*",
-            "📅 Salida: *{$tripDate} · {$departure}*",
+            "📅 Salida: *{$tripDate}*",
+            "🚍 Unidad: *{$unitName}*",
         ];
 
         if ($reservation->needsBothLegs()) {

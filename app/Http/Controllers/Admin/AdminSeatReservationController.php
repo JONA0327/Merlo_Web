@@ -472,6 +472,79 @@ class AdminSeatReservationController extends Controller
     }
 
     /**
+     * Drop ONE seat out of a multi-seat apartado (the rest stays intact)
+     * — for when the customer decides they only need 1 of the 2 they'd
+     * reserved, say. Unlike destroy() above, this never touches the
+     * other seats. If the removed seat happened to be the group's root
+     * (the row carrying transfer_reference/notes/reserved_by), those
+     * get handed off to one of the remaining seats first so the group
+     * doesn't lose its transfer-matching reference or admin note.
+     * Finishes by resending the updated info (ticket or reservation
+     * notice, whichever already applied) so the customer sees the
+     * correct seat list.
+     */
+    public function removeSeat(LandingRoute $landingRoute, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
+    {
+        if ($landingRoute->hasEnded()) {
+            return back()->with('error', 'Este viaje ya pasó — ya no se puede editar el apartado.');
+        }
+
+        if ($reservation->isFullyCheckedIn() || $reservation->isOutboundVerified() || $reservation->isReturnVerified()) {
+            return back()->with('error', 'No se puede quitar un asiento ya verificado.');
+        }
+
+        $group = $reservation->groupMembers();
+
+        if ($group->count() <= 1) {
+            return back()->with('error', 'Este apartado solo tiene un asiento — usa "Borrar" para cancelarlo por completo.');
+        }
+
+        $remaining = $group->reject(fn (SeatReservation $r) => $r->id === $reservation->id)->values();
+        $wasRoot = $reservation->notes === null || ! str_starts_with((string) $reservation->notes, 'group:');
+
+        // Capture what the old root carried before deleting it — its
+        // transfer_reference is DB-unique, so it has to be freed up
+        // (the row deleted) before the new root can take the same value.
+        $oldNotes = $reservation->notes;
+        $oldTransferReference = $reservation->transfer_reference;
+        $oldTransferExpiresAt = $reservation->transfer_expires_at;
+        $oldReservedBy = $reservation->reserved_by;
+
+        $seatLabel = $reservation->seat?->label ?? '—';
+        $reservation->delete();
+
+        if ($wasRoot) {
+            $newRoot = $remaining->first();
+            $newRoot->update([
+                'notes' => $oldNotes,
+                'transfer_reference' => $oldTransferReference,
+                'transfer_expires_at' => $oldTransferExpiresAt,
+                'reserved_by' => $oldReservedBy,
+            ]);
+            SeatReservation::whereIn('id', $remaining->skip(1)->pluck('id'))->update(['notes' => 'group:'.$newRoot->id]);
+        }
+
+        $freshGroup = $remaining->first()->fresh()->groupMembers()->load(['landingRoute', 'seat']);
+
+        $resent = $freshGroup->first()->isPaymentPending()
+            ? $this->sendReservationNoticeViaWhatsApp($freshGroup, $whatsapp)
+            : $this->sendGroupViaWhatsApp($freshGroup, $whatsapp, $ticketImages);
+
+        if ($resent && ! $freshGroup->first()->isPaymentPending()) {
+            SeatReservation::whereIn('id', $freshGroup->pluck('id'))->update([
+                'status' => SeatReservation::STATUS_SENT,
+                'ticket_sent_at' => now(),
+            ]);
+        }
+
+        $message = "Asiento {$seatLabel} quitado del apartado.";
+
+        return back()->with($resent ? 'success' : 'error', $resent
+            ? $message.' Se reenvió la información actualizada por WhatsApp.'
+            : $message.' No se pudo reenviar la información por WhatsApp automáticamente.');
+    }
+
+    /**
      * Printable passenger manifest for a trip — every occupied seat,
      * whether it was apartado'd by an admin or bought by the customer
      * directly online, in one list so staff can check names off at
