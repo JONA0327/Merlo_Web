@@ -100,20 +100,26 @@
                 <div class="mt-4 space-y-3">
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Nombre del cliente</span>
-                        <input type="text" name="customer_name" value="{{ old('customer_name') }}" required maxlength="120" placeholder="Ej. María Hernández" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <input type="text" id="admin-apartado-customer-name" name="customer_name" value="{{ old('customer_name') }}" required maxlength="120" placeholder="Ej. María Hernández" list="agenda-clientes-list" autocomplete="off" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <datalist id="agenda-clientes-list">
+                            @foreach ($customers as $c)
+                                <option value="{{ $c->name }}">{{ $c->phone }}</option>
+                            @endforeach
+                        </datalist>
+                        <p class="mt-1 text-[10px] text-[#2B1113]/40">Elige un nombre de la <a href="{{ route('admin.agenda.index') }}" target="_blank" class="underline">agenda</a> para autollenar teléfono/correo, o escribe uno nuevo.</p>
                         @error('customer_name') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">WhatsApp del cliente</span>
-                        <input type="tel" inputmode="numeric" name="customer_phone" value="{{ old('customer_phone') }}" required maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <input type="tel" inputmode="numeric" id="admin-apartado-customer-phone" name="customer_phone" value="{{ old('customer_phone') }}" required maxlength="12" placeholder="444 123 4567" class="phone-mx-input mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                         <p class="mt-1 text-[10px] text-[#2B1113]/40">A 10 dígitos se le agrega automáticamente el 52 de México. Al guardar el apartado, el boleto se envía automáticamente por WhatsApp a este número.</p>
                         @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Correo del cliente (opcional)</span>
-                        <input type="email" name="customer_email" value="{{ old('customer_email') }}" maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <input type="email" id="admin-apartado-customer-email" name="customer_email" value="{{ old('customer_email') }}" maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                         <p class="mt-1 text-[10px] text-[#2B1113]/40">Solo para tenerlo como referencia — el boleto no se manda por correo.</p>
                         @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
@@ -261,6 +267,25 @@
     </div>
 
     <script>
+        // Agenda de clientes: pick a name already on file and autofill
+        // phone/email instead of retyping them (the datalist option's
+        // visible text is the phone; the value is the name).
+        (function () {
+            const customers = @json($customers->map(fn ($c) => ['name' => $c->name, 'phone' => $c->phone, 'email' => $c->email])->values());
+            const nameInput = document.getElementById('admin-apartado-customer-name');
+            const phoneInput = document.getElementById('admin-apartado-customer-phone');
+            const emailInput = document.getElementById('admin-apartado-customer-email');
+            if (!nameInput || !phoneInput || !emailInput) return;
+
+            nameInput.addEventListener('input', () => {
+                const match = customers.find((c) => c.name === nameInput.value);
+                if (match) {
+                    phoneInput.value = match.phone;
+                    emailInput.value = match.email ?? '';
+                }
+            });
+        })();
+
         // A plain confirm() was too easy to click through by accident
         // (an admin reported deleting a real apartado this way), so
         // deleting now requires typing the word ELIMINAR into a prompt.

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusUnitSeat;
+use App\Models\Customer;
 use App\Models\LandingRoute;
 use App\Models\SeatReservation;
 use App\Models\TripTicketPrice;
@@ -125,6 +126,7 @@ class AdminSeatReservationController extends Controller
             'pendingCount' => $pendingCount,
             'sentCount' => $sentCount,
             'takenIds' => $takenIds,
+            'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
         ]);
     }
 
@@ -166,6 +168,11 @@ class AdminSeatReservationController extends Controller
             ],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        // Grows the Agenda de clientes automatically — once a name/phone
+        // is typed here, it's available to autofill next time instead of
+        // retyping it by hand.
+        Customer::remember($data['customer_name'], $data['customer_phone'], $data['customer_email'] ?? null);
 
         $tripType = $data['trip_type'];
         $isPaid = (bool) $data['paid'];

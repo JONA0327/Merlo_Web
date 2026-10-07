@@ -6,11 +6,11 @@
 
     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         @foreach ([
-            ['label' => 'Viajes activos', 'value' => '—', 'icon' => 'bus'],
-            ['label' => 'Envíos de paquetería', 'value' => '—', 'icon' => 'box'],
-            ['label' => 'Ventas del mes', 'value' => '—', 'icon' => 'sales'],
+            ['label' => 'Viajes activos', 'value' => $activeTripsCount, 'icon' => 'bus', 'route' => 'admin.viajes'],
+            ['label' => 'Envíos de paquetería', 'value' => $activePackagesCount, 'icon' => 'box', 'route' => 'admin.paqueteria'],
+            ['label' => 'Ventas del mes', 'value' => '$'.number_format($monthlySales, 2), 'icon' => 'sales', 'route' => 'admin.ventas'],
         ] as $stat)
-            <div class="rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm">
+            <a href="{{ route($stat['route']) }}" class="rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
                 <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-[#8C1D2B]/10 text-[#8C1D2B]">
                     @switch($stat['icon'])
                         @case('bus')
@@ -26,7 +26,7 @@
                 </span>
                 <p class="mt-4 font-[Poppins] text-2xl font-extrabold text-[#2B1113]">{{ $stat['value'] }}</p>
                 <p class="text-sm text-[#2B1113]/60">{{ $stat['label'] }}</p>
-            </div>
+            </a>
         @endforeach
     </div>
 

@@ -5,13 +5,22 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
 use App\Models\LandingRoute;
+use App\Models\Package;
+use App\Models\SeatReservation;
 use Illuminate\View\View;
 
 class AdminController extends Controller
 {
     public function dashboard(): View
     {
-        return view('admin.dashboard');
+        return view('admin.dashboard', [
+            'activeTripsCount' => LandingRoute::where('is_active', true)->where('day', '>=', today())->count(),
+            'activePackagesCount' => Package::where('status', '!=', Package::STATUS_ENTREGADO)->count(),
+            'monthlySales' => SeatReservation::where('payment_status', SeatReservation::PAYMENT_COMPLETED)
+                ->whereMonth('paid_at', now()->month)
+                ->whereYear('paid_at', now()->year)
+                ->sum('total'),
+        ]);
     }
 
     public function viajes(): View

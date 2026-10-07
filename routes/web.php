@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AdminBusUnitController;
 use App\Http\Controllers\Admin\AdminBusUnitSeatController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\AdminCustomerController;
 use App\Http\Controllers\Admin\AdminDestinationController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
@@ -178,6 +179,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     // <select> in the trip create/edit form so the operator doesn't
     // re-type the same place name in three slightly different ways.
     Route::resource('destinations', AdminDestinationController::class)->except(['show']);
+    Route::resource('agenda', AdminCustomerController::class)->only(['index', 'store', 'update', 'destroy'])->parameters(['agenda' => 'customer']);
     Route::get('/guias/crear', [AdminTripGuideController::class, 'create'])->name('guias.create');
     Route::post('/guias', [AdminTripGuideController::class, 'store'])->name('guias.store');
     Route::get('/guias/{guide}', [AdminTripGuideController::class, 'show'])->name('guias.show');
