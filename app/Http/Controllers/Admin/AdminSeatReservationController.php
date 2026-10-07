@@ -158,9 +158,12 @@ class AdminSeatReservationController extends Controller
             // (sí/no) decides whether the real QR ticket ships right away
             // or the apartado stays pending; "payment_method" records how
             // it was/will be paid (transferencia/tarjeta/efectivo) either
-            // way, same as the online-purchase flow tracks it.
+            // way, same as the online-purchase flow tracks it. Keyed by
+            // seat_id (payment_method[123]) so a multi-seat apartado can
+            // split across methods — e.g. one seat cash, another transfer.
             'paid' => ['required', 'boolean'],
-            'payment_method' => ['required', 'string', 'in:transfer,card,cash'],
+            'payment_method' => ['required', 'array', 'min:1'],
+            'payment_method.*' => ['required', 'string', 'in:transfer,card,cash,tbd'],
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
                 'integer',
@@ -176,15 +179,21 @@ class AdminSeatReservationController extends Controller
 
         $tripType = $data['trip_type'];
         $isPaid = (bool) $data['paid'];
-        $paymentMethod = $data['payment_method'];
+        // Keyed by seat_id — a multi-seat apartado can split across
+        // methods (e.g. one seat cash, another transfer).
+        $methodsBySeat = $data['payment_method'];
+        $distinctMethods = array_values(array_unique($methodsBySeat));
         $isCashPending = ! $isPaid;
         $unitPrice = (float) ($landingRoute->priceFor($tripType)?->price ?? 0);
 
         // Unpaid-by-transfer apartados get the same reference-number
         // workflow as an online transfer purchase, so they can be
-        // validated from the exact same /admin/pagos screen.
+        // validated from the exact same /admin/pagos screen. One shared
+        // reference covers the whole group even when only some of its
+        // seats use transfer — same simplification the group-level
+        // transfer-validation flow already makes elsewhere.
         $transferReference = null;
-        if ($isCashPending && $paymentMethod === SeatReservation::PAYMENT_METHOD_TRANSFER) {
+        if ($isCashPending && in_array(SeatReservation::PAYMENT_METHOD_TRANSFER, $distinctMethods, true)) {
             $transferReference = SeatReservation::generateTransferReference(
                 $landingRoute->day ?? now(),
                 count($data['seat_ids']),
@@ -238,7 +247,7 @@ class AdminSeatReservationController extends Controller
         // The root (first seat) carries the admin's free-text note; the
         // rest just carry the group link. This is what lets the WhatsApp
         // send below go out as ONE image instead of one per seat.
-        $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $paymentMethod, $transferReference) {
+        $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference) {
             $root = null;
             foreach ($data['seat_ids'] as $seatId) {
                 $new = SeatReservation::create([
@@ -252,7 +261,7 @@ class AdminSeatReservationController extends Controller
                     'customer_email' => $data['customer_email'] ?? null,
                     'customer_phone' => $data['customer_phone'],
                     'status' => SeatReservation::STATUS_PENDING,
-                    'payment_method' => $paymentMethod,
+                    'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
                     'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
                     'paid_at' => $isCashPending ? null : now(),
                     // transfer_reference is DB-unique, and only the ROOT
@@ -283,8 +292,11 @@ class AdminSeatReservationController extends Controller
             $seatCount = count($data['seat_ids']);
             $tripTypeLabel = TripTicketPrice::tripTypes()[$tripType] ?? $tripType;
             $plural = $seatCount > 1 ? 's' : '';
-            $methodLabel = $root->payment_method_label;
-            $activationHint = $paymentMethod === SeatReservation::PAYMENT_METHOD_TRANSFER
+            $methodLabel = implode(' y ', array_map(
+                fn ($m) => (new SeatReservation(['payment_method' => $m]))->payment_method_label,
+                $distinctMethods
+            ));
+            $activationHint = in_array(SeatReservation::PAYMENT_METHOD_TRANSFER, $distinctMethods, true)
                 ? 'Valida la transferencia en Pagos para mandar el boleto con QR.'
                 : 'El boleto se imprime/envía cuando confirmes el pago en Pagos.';
 
@@ -472,20 +484,29 @@ class AdminSeatReservationController extends Controller
     {
         abort_unless($landingRoute->hasSeatMap(), 404);
 
-        $reservations = $landingRoute->seatReservations()
+        $reservationBySeat = $landingRoute->seatReservations()
             ->where(fn ($q) => $q->whereNull('payment_status')->orWhereNotIn('payment_status', [
                 SeatReservation::PAYMENT_FAILED,
                 SeatReservation::PAYMENT_REFUNDED,
                 SeatReservation::PAYMENT_CHARGEBACK,
             ]))
-            ->with(['seat', 'user'])
+            ->with(['user'])
             ->get()
-            ->sortBy(fn (SeatReservation $r) => $r->seat?->label ?? '', SORT_NATURAL)
+            ->keyBy('bus_unit_seat_id');
+
+        // Every bookable seat prints, not just the ones already sold —
+        // so the sheet doubles as a boarding checklist showing what's
+        // still open, not only who already has a spot.
+        $seats = $landingRoute->busUnit->seats()
+            ->bookable()
+            ->get()
+            ->sortBy(fn ($seat) => $seat->label, SORT_NATURAL)
             ->values();
 
         $pdf = Pdf::loadView('admin.asientos.manifiesto-pdf', [
             'trip' => $landingRoute,
-            'reservations' => $reservations,
+            'seats' => $seats,
+            'reservationBySeat' => $reservationBySeat,
         ]);
 
         return $pdf->stream('lista-asientos-'.$landingRoute->id.'.pdf');
@@ -524,7 +545,7 @@ class AdminSeatReservationController extends Controller
             // via bank transfer) and cash (ventanilla). "card" is
             // preserved as a value for legacy rows but never offered
             // on the form.
-            'payment_method' => ['required', 'string', 'in:transfer,cash,card'],
+            'payment_method' => ['required', 'string', 'in:transfer,cash,card,tbd'],
             'payment_status' => ['required', 'string', 'in:pending,completed'],
         ]);
 

@@ -15,9 +15,13 @@
     table.manifest tr.block-shaded td { background: #FFFBF6; }
     .seat-badge { display: inline-block; border: 1px solid #8C1D2B; border-radius: 4px; padding: 2px 7px; font-weight: bold; font-size: 13px; margin-right: 6px; }
     .name { font-weight: bold; font-size: 13px; }
+    .available { color: #9a8a8c; font-size: 12px; font-style: italic; }
     .check-col { width: 18px; }
     .box { display: inline-block; width: 13px; height: 13px; border: 1px solid #2B1113; }
     .empty { padding: 18px; text-align: center; color: #9a8a8c; }
+    .pay-badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 9px; font-weight: bold; margin-left: 6px; }
+    .pay-badge.paid { background: #d1fae5; color: #065f46; }
+    .pay-badge.pending { background: #fef3c7; color: #92400e; }
 </style>
 </head>
 <body>
@@ -30,20 +34,20 @@
         @if ($trip->return_date)
             <p>Regreso: {{ $trip->return_date->toSpanishLongDate() }}</p>
         @endif
-        <p class="meta">Merlo Transportes &middot; Generado el {{ now()->toSpanishLongDate() }} {{ now()->format('H:i') }} &middot; {{ $reservations->count() }} asiento{{ $reservations->count() === 1 ? '' : 's' }}</p>
+        <p class="meta">Merlo Transportes &middot; Generado el {{ now()->toSpanishLongDate() }} {{ now()->format('H:i') }} &middot; {{ $seats->count() }} asiento{{ $seats->count() === 1 ? '' : 's' }} &middot; {{ $reservationBySeat->count() }} ocupado{{ $reservationBySeat->count() === 1 ? '' : 's' }}</p>
     </div>
 
-    @if ($reservations->isEmpty())
-        <p class="empty">Aún no hay asientos apartados ni comprados para este viaje.</p>
+    @if ($seats->isEmpty())
+        <p class="empty">Esta unidad no tiene asientos configurados.</p>
     @else
         @php
             // Matches the bus's real seat distribution: every 4 consecutive
             // seats form one printed block — the first 2 stack in the left
             // column, the next 2 stack in the right column (1/2 left,
             // 3/4 right; 5/6 left, 7/8 right; ...), with a divider line
-            // between blocks. $reservations already arrives sorted by
-            // seat label.
-            $blocks = $reservations->chunk(4);
+            // between blocks. $seats already arrives sorted by label and
+            // includes every bookable seat, not just the occupied ones.
+            $blocks = $seats->chunk(4);
         @endphp
 
         <table class="manifest">
@@ -59,16 +63,28 @@
                         <tr class="{{ $shaded ? 'block-shaded' : '' }} {{ $line === $lineCount - 1 ? 'block-end' : '' }}">
                             <td class="col-left">
                                 @if ($left->has($line))
+                                    @php $r = $reservationBySeat->get($left[$line]->id); @endphp
                                     <span class="check-col"><span class="box"></span></span>
-                                    <span class="seat-badge">{{ $left[$line]->seat?->label ?? '—' }}</span>
-                                    <span class="name">{{ $left[$line]->customer_display_name }}</span>
+                                    <span class="seat-badge">{{ $left[$line]->label }}</span>
+                                    @if ($r)
+                                        <span class="name">{{ $r->customer_display_name }}</span>
+                                        <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}</span>
+                                    @else
+                                        <span class="available">Disponible</span>
+                                    @endif
                                 @endif
                             </td>
                             <td class="col-right">
                                 @if ($right->has($line))
+                                    @php $r = $reservationBySeat->get($right[$line]->id); @endphp
                                     <span class="check-col"><span class="box"></span></span>
-                                    <span class="seat-badge">{{ $right[$line]->seat?->label ?? '—' }}</span>
-                                    <span class="name">{{ $right[$line]->customer_display_name }}</span>
+                                    <span class="seat-badge">{{ $right[$line]->label }}</span>
+                                    @if ($r)
+                                        <span class="name">{{ $r->customer_display_name }}</span>
+                                        <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}</span>
+                                    @else
+                                        <span class="available">Disponible</span>
+                                    @endif
                                 @endif
                             </td>
                         </tr>

@@ -242,7 +242,6 @@ class EvolutionWhatsAppService
         // null-coalescing inside an interpolation expression — the parser
         // sometimes gets confused by `?-> ... ??` directly inside `{}`.
         $departureDate = $trip->day?->toSpanishLongDate() ?? '—';
-        $departureTime = $trip->departure_time_formatted ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         // Every seat in a group ("mancuerna" or otherwise) is charged its
         // own unit_price — the total owed is the sum across all of them,
@@ -256,7 +255,7 @@ class EvolutionWhatsAppService
             "Hola {$first->customer_display_name}, tu apartado fue registrado:",
             '',
             "*{$trip->from} → {$trip->to}*",
-            "📅 Salida: *{$departureDate} · {$departureTime}*",
+            "📅 Salida: *{$departureDate}*",
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
             "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];

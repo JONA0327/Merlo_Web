@@ -28,6 +28,12 @@ let currentTripType = 'one_way';
 
 const seatNodesById = new Map();
 const selectedIds = new Set();
+// Per-seat payment method override — lets a 2+ seat apartado split
+// across methods (e.g. one seat cash, one transfer) instead of forcing
+// the same method on every seat. Seeded from the "Método de pago"
+// default select whenever a seat is added; untouched on re-renders so
+// a manual per-seat change survives selecting/deselecting other seats.
+const seatPaymentMethods = new Map();
 
 // 'one_way' and 'especial' can pick ANY bookable seat — no
 // allowed_trip_type / zone restriction applies to them. The zone chips
@@ -340,20 +346,39 @@ function repaintSeat(seatId) {
     layer.batchDraw();
 }
 
+const PAYMENT_METHOD_OPTIONS = [
+    ['transfer', 'Transferencia'],
+    ['cash', 'Efectivo'],
+    ['tbd', 'Por definir'],
+];
+
 function updateForm() {
     const summaryEl = document.getElementById('apartado-selected-summary');
     const inputsEl = document.getElementById('apartado-hidden-inputs');
     const submitBtn = document.getElementById('apartado-submit');
+    const defaultMethodSelect = document.getElementById('admin-payment-method-select');
     if (!summaryEl || !inputsEl || !submitBtn) return;
+
+    // Drop payment-method entries for seats no longer selected, and seed
+    // new ones from the default select so every selected seat always has
+    // a value even before the admin touches anything.
+    Array.from(seatPaymentMethods.keys()).forEach((id) => {
+        if (!selectedIds.has(id)) seatPaymentMethods.delete(id);
+    });
+    selectedIds.forEach((id) => {
+        if (!seatPaymentMethods.has(id)) {
+            seatPaymentMethods.set(id, defaultMethodSelect?.value || 'transfer');
+        }
+    });
 
     // Rebuild the hidden inputs from scratch — simpler than diffing, and
     // the selection set stays small (typically a handful of seats).
     inputsEl.replaceChildren();
 
-    const labels = Array.from(selectedIds)
-        .map((id) => seatNodesById.get(id)?.seat.label)
-        .filter(Boolean)
-        .sort();
+    const seats = Array.from(selectedIds)
+        .map((id) => ({ id, label: seatNodesById.get(id)?.seat.label }))
+        .filter((s) => s.label)
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
     selectedIds.forEach((id) => {
         const input = document.createElement('input');
@@ -363,12 +388,29 @@ function updateForm() {
         inputsEl.appendChild(input);
     });
 
-    if (labels.length === 0) {
+    if (seats.length === 0) {
         summaryEl.className = 'mt-4 rounded-xl bg-[#FFFBF6] p-3 text-xs text-[#2B1113]/60';
         summaryEl.textContent = 'Clic en el plano para seleccionar asientos.';
     } else {
         summaryEl.className = 'mt-4 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 ring-1 ring-emerald-200';
-        summaryEl.innerHTML = `<strong>${labels.length}</strong> asiento${labels.length === 1 ? '' : 's'} seleccionado${labels.length === 1 ? '' : 's'}: ${labels.map((l) => `<span class="inline-block rounded bg-white px-1.5 py-0.5 font-bold mr-1 ring-1 ring-emerald-200">${l}</span>`).join('')}`;
+        const header = `<strong>${seats.length}</strong> asiento${seats.length === 1 ? '' : 's'} seleccionado${seats.length === 1 ? '' : 's'}`
+            + (seats.length > 1 ? ' — puedes cambiar el método de pago por asiento:' : ':');
+        const rows = seats.map((s) => {
+            const options = PAYMENT_METHOD_OPTIONS.map(([value, label]) =>
+                `<option value="${value}" ${seatPaymentMethods.get(s.id) === value ? 'selected' : ''}>${label}</option>`
+            ).join('');
+            return `<div class="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1 ring-1 ring-emerald-200">
+                <span class="font-bold">${s.label}</span>
+                <select name="payment_method[${s.id}]" data-seat-method="${s.id}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">${options}</select>
+            </div>`;
+        }).join('');
+        summaryEl.innerHTML = header + rows;
+
+        summaryEl.querySelectorAll('[data-seat-method]').forEach((select) => {
+            select.addEventListener('change', () => {
+                seatPaymentMethods.set(Number(select.dataset.seatMethod), select.value);
+            });
+        });
     }
 
     submitBtn.disabled = selectedIds.size === 0;
@@ -420,6 +462,17 @@ function selectZone(zoneName) {
 const tripTypeSelect = document.getElementById('admin-trip-type-select');
 if (tripTypeSelect) {
     tripTypeSelect.addEventListener('change', () => setAdminTripType(tripTypeSelect.value));
+}
+
+// Changing the default "Método de pago" select re-applies it to every
+// currently selected seat — a quick way to set them all the same way
+// before fine-tuning individual seats.
+const defaultMethodSelect = document.getElementById('admin-payment-method-select');
+if (defaultMethodSelect) {
+    defaultMethodSelect.addEventListener('change', () => {
+        selectedIds.forEach((id) => seatPaymentMethods.set(id, defaultMethodSelect.value));
+        updateForm();
+    });
 }
 
 document.querySelectorAll('.admin-zone-chip').forEach((chip) => {

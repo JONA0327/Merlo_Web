@@ -135,10 +135,16 @@
                         </label>
 
                         <label class="block">
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método de pago</span>
-                            <select name="payment_method" id="admin-payment-method-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                <option value="transfer" {{ old('payment_method') === 'transfer' ? 'selected' : '' }}>Transferencia</option>
-                                <option value="cash" {{ old('payment_method') === 'cash' ? 'selected' : '' }}>Efectivo</option>
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método de pago (todos)</span>
+                            {{-- Not submitted directly (no name) — it's a quick default
+                                 that fills in the per-seat selects below, which is what
+                                 actually submits as payment_method[seat_id]. Lets a
+                                 2+ seat apartado split across methods, e.g. one seat
+                                 cash and another transfer. --}}
+                            <select id="admin-payment-method-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                <option value="transfer">Transferencia</option>
+                                <option value="cash">Efectivo</option>
+                                <option value="tbd">Por definir</option>
                             </select>
                             @error('payment_method') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                         </label>
@@ -242,7 +248,7 @@
                                             <select name="payment_method" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                                                 <option value="transfer" {{ $reservation->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
                                                 <option value="cash" {{ $reservation->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
-                                                <option value="" {{ ! in_array($reservation->payment_method, ['transfer','cash']) ? 'selected' : '' }}>(sin método)</option>
+                                                <option value="tbd" {{ $reservation->payment_method === 'tbd' ? 'selected' : '' }}>Por definir</option>
                                             </select>
                                         </label>
                                         <label class="block">

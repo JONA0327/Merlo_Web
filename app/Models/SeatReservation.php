@@ -32,6 +32,7 @@ class SeatReservation extends Model
     public const PAYMENT_METHOD_SPEI = 'spei';
     public const PAYMENT_METHOD_TRANSFER = 'transfer';
     public const PAYMENT_METHOD_CASH = 'cash';
+    public const PAYMENT_METHOD_TBD = 'tbd';
 
     public const LEG_OUTBOUND = 'outbound';
     public const LEG_RETURN = 'return';
@@ -503,7 +504,7 @@ class SeatReservation extends Model
      */
     public function needsVentanillaActivation(): bool
     {
-        return in_array($this->payment_method, [self::PAYMENT_METHOD_CASH, self::PAYMENT_METHOD_CARD], true);
+        return in_array($this->payment_method, [self::PAYMENT_METHOD_CASH, self::PAYMENT_METHOD_CARD, self::PAYMENT_METHOD_TBD], true);
     }
 
     public function isTransferExpired(): bool
@@ -522,6 +523,7 @@ class SeatReservation extends Model
         if ($this->payment_method === self::PAYMENT_METHOD_SPEI) return 'SPEI';
         if ($this->payment_method === self::PAYMENT_METHOD_TRANSFER) return 'Transferencia';
         if ($this->payment_method === self::PAYMENT_METHOD_CASH) return 'Efectivo';
+        if ($this->payment_method === self::PAYMENT_METHOD_TBD) return 'Por definir';
         if ($this->payment_method === self::PAYMENT_METHOD_CARD) {
             return strtoupper($this->openpay_card_brand ?? 'Tarjeta');
         }
