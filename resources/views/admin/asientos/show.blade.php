@@ -180,7 +180,19 @@
         @else
             <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 @foreach ($reservations as $reservation)
-                    @php $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter(); @endphp
+                    @php
+                        $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
+                        // Color by trip type so the list reads at a glance:
+                        // ida = azul claro, regreso = rojo, especial = verde.
+                        // "redondo" stays neutral (no single leg it maps to).
+                        $tripTypeBadgeClass = match ($reservation->trip_type) {
+                            \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
+                            \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+                            \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+                            default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
+                        };
+                        $reservation->setRelation('landingRoute', $trip);
+                    @endphp
                     <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0 flex-1">
@@ -190,7 +202,7 @@
                                     @foreach ($allSeats as $seatLabel)
                                         <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
                                     @endforeach
-                                    <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
+                                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $tripTypeBadgeClass }}">{{ $reservation->trip_type_label }}</span>
                                     <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isPending() ? 'bg-amber-200 text-amber-900' : ($reservation->isSent() ? 'bg-blue-200 text-blue-900' : 'bg-slate-200 text-slate-700') }}">
                                         {{ $reservation->status }}
                                     </span>
@@ -218,6 +230,9 @@
                                 @endif
                                 @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
                                     <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="edit-category-{{ $reservation->id }}">Editar</button>
+                                @endif
+                                @if ($reservation->canAdminRescheduleReturn())
+                                    <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="reschedule-return-{{ $reservation->id }}">Reprogramar regreso</button>
                                 @endif
                                 @unless ($trip->hasEnded())
                                     <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirmDeleteApartado(this, {{ $allSeats->count() }})">
@@ -281,6 +296,34 @@
                                         </div>
                                     </div>
                                 @endif
+                            </div>
+                        @endif
+
+                        @if ($reservation->canAdminRescheduleReturn())
+                            <div id="reschedule-return-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
+                                @php $returnOptions = $reservation->returnRescheduleOptions(); @endphp
+                                <p class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿No regresa el mismo día?</p>
+                                <p class="mt-1 text-[10px] text-[#2B1113]/40">Elige la fecha real de regreso que diga el cliente. Es una sola vez: se genera un boleto nuevo (asiento sujeto a disponibilidad) y no se puede volver a cambiar.</p>
+
+                                @if ($returnOptions->isNotEmpty())
+                                    <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Confirmar la nueva fecha de regreso? Esta acción no se puede deshacer.');">
+                                        @csrf
+                                        <select name="landing_route_id" required class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                            <option value="">Selecciona la fecha de regreso…</option>
+                                            @foreach ($returnOptions as $option)
+                                                <option value="{{ $option->id }}">{{ $option->day?->toSpanishLongDate() }} &middot; {{ $option->available_seats }} disponibles</option>
+                                            @endforeach
+                                        </select>
+                                        <button type="submit" class="shrink-0 rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Reprogramar</button>
+                                    </form>
+                                @endif
+
+                                <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Agendar esta fecha de regreso? Esta acción no se puede deshacer.');">
+                                    @csrf
+                                    <input type="date" name="travel_date" min="{{ now()->toDateString() }}" required class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                    <button type="submit" class="shrink-0 rounded-lg bg-[#2B1113]/5 px-3 py-1.5 text-xs font-bold text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">Agendar (sin viaje aún)</button>
+                                </form>
+                                <p class="mt-1 text-[10px] text-[#2B1113]/40">Si esa fecha no está en la lista, agéndala aquí — el asiento se asigna solo en cuanto el viaje se abra.</p>
                             </div>
                         @endif
                     </li>
@@ -387,10 +430,17 @@
             seatStatuses: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
                 $seatId => $items->last()->status,
             ])) !!},
+            // Whoever most recently claimed the seat — lets the picker
+            // paint a "regreso" claim red (matching the manifest's color
+            // scheme) instead of the generic pending/sent colors.
+            seatTripTypes: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
+                $seatId => $items->last()->trip_type,
+            ])) !!},
             // The set of seats already taken by a real client purchase
             // (separate from admin apartados). Empty unless the customer
             // flow has been used in this environment.
             takenIds: {!! json_encode($takenIds) !!},
+            releasedSeatIds: {!! json_encode($releasedSeatIds) !!},
         };
     </script>
     @vite(['resources/js/admin-seat-picker.js'])

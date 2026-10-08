@@ -22,7 +22,12 @@ const SELECTED_ACCENT_WIDTH = 4;
 const OTHER_TYPE_COLORS = { fill: '#E5E7EB', stroke: '#9CA3AF' };
 
 const seatStatuses = config.seatStatuses ?? {};
+const seatTripTypes = config.seatTripTypes ?? {};
 const takenIds = new Set(config.takenIds ?? []);
+// Seats whose round-trip/especial passenger's return was released for
+// same-day resale (they're not coming back this day) — available, but
+// only when booking a "regreso" (return-only) apartado on this seat.
+const releasedSeatIds = new Set(config.releasedSeatIds ?? []);
 
 let currentTripType = 'one_way';
 
@@ -49,18 +54,22 @@ function matchesTripType(seat, type) {
     return allowed === 'both' || allowed === effectiveType;
 }
 
+function isReleasedForRegreso(seat) {
+    return currentTripType === 'regreso' && releasedSeatIds.has(seat.id);
+}
+
 function isSeatSelectable(seat) {
     if (config.tripEnded) return false;
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id)) return false;
-    if (seatStatuses[seat.id]) return false; // pending or sent
+    if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false; // pending or sent
     return matchesTripType(seat, currentTripType);
 }
 
 function isOtherType(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id)) return false;
-    if (seatStatuses[seat.id]) return false;
+    if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false;
     return ! matchesTripType(seat, currentTripType);
 }
 
@@ -84,6 +93,13 @@ function colorsFor(seat) {
     if (seat.type === 'disabled') return DISABLED_COLORS;
     if (takenIds.has(seat.id)) return SOLD_COLORS;
     const status = seatStatuses[seat.id];
+    if (status && isReleasedForRegreso(seat)) return AVAILABLE_COLORS;
+    // A seat already claimed by a "regreso" apartado reads red, same as
+    // the printed manifest's color for that category — but only while
+    // viewing the "regreso" category itself. Whether the return leg is
+    // taken is irrelevant when apartando ida/redondo/especial, where the
+    // normal pending/sent colors (reflecting the outbound leg) apply.
+    if (status && currentTripType === 'regreso' && seatTripTypes[seat.id] === 'regreso') return SOLD_COLORS;
     if (status === 'sent') return SENT_COLORS;
     if (status === 'pending') return PENDING_COLORS;
     if (isOtherType(seat)) return OTHER_TYPE_COLORS;
@@ -219,7 +235,13 @@ config.seats.forEach((seat) => {
     layer.add(node.group);
     seatNodesById.set(seat.id, node);
 
-    if (isSeatSelectable(seat)) {
+    // Always bind — whether a click actually does anything is gated by
+    // the node's `listening` flag (toggled per seat in setAdminTripType()
+    // via isSeatSelectable()), not by whether a handler exists. A seat
+    // that's unselectable under the type shown at page load (e.g. "ida")
+    // but becomes selectable after switching type (e.g. "regreso" on a
+    // released return seat) still needs its handler already in place.
+    if (seat.kind !== 'object' && seat.type !== 'disabled') {
         node.group.on('click tap', () => toggleSeat(seat));
         node.group.on('mouseenter', () => { stage.container().style.cursor = 'pointer'; });
         node.group.on('mouseleave', () => { stage.container().style.cursor = 'default'; });

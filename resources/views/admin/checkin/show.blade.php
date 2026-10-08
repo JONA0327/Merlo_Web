@@ -151,10 +151,9 @@
                                 @endif
                             </p>
                         @elseif ($reservation->canAdminRescheduleReturn())
-                            @if ($returnChangeOptions->isEmpty())
-                                <p class="mt-2 text-sm text-[#2B1113]/70">No hay viajes de regreso publicados con asientos disponibles todavía.</p>
-                            @else
-                                <p class="mt-2 text-xs text-[#2B1113]/60">Si el pasajero dice que no abordará el regreso programado, elige aquí la nueva fecha que indique. Es una sola vez: se generará un boleto nuevo (mismo trayecto, asiento sujeto a disponibilidad) y no podrá volver a cambiarse.</p>
+                            <p class="mt-2 text-xs text-[#2B1113]/60">Si el pasajero dice que no abordará el regreso programado, elige aquí la nueva fecha que indique. Es una sola vez: se generará un boleto nuevo (mismo trayecto, asiento sujeto a disponibilidad) y no podrá volver a cambiarse.</p>
+
+                            @if ($returnChangeOptions->isNotEmpty())
                                 <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-3 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Confirmar la nueva fecha de regreso? Esta acción no se puede deshacer.');">
                                     @csrf
                                     <select name="landing_route_id" required class="flex-1 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm">
@@ -168,6 +167,15 @@
                                     </button>
                                 </form>
                             @endif
+
+                            <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Agendar esta fecha de regreso? Esta acción no se puede deshacer.');">
+                                @csrf
+                                <input type="date" name="travel_date" min="{{ now()->toDateString() }}" required class="flex-1 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm">
+                                <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-[#2B1113]/5 px-4 py-2 text-xs font-bold text-[#2B1113] shadow-sm hover:bg-[#2B1113]/10 transition-colors">
+                                    Agendar (viaje aún no existe)
+                                </button>
+                            </form>
+                            <p class="mt-1 text-[10px] text-[#2B1113]/40">¿La fecha que te dio el cliente no está en la lista? Agéndala aquí aunque el viaje no exista todavía — el asiento se asignará solo en cuanto lo abras.</p>
                         @else
                             <p class="mt-2 text-sm text-[#2B1113]/70">Este boleto ya no puede reprogramar su regreso (ya abordó, ya se anuló o el pago no está completo).</p>
                         @endif

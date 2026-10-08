@@ -444,6 +444,30 @@ class SeatReservation extends Model
     }
 
     /**
+     * Every published, open-seat trip on the reverse direction of this
+     * reservation's route — the admin's choices when rescheduling a
+     * return (see canAdminRescheduleReturn()). Shared by the check-in
+     * detail page and the Apartar asientos list so both offer the same
+     * options from the same query.
+     */
+    public function returnRescheduleOptions(): \Illuminate\Support\Collection
+    {
+        if (! $this->relationLoaded('landingRoute')) {
+            $this->load('landingRoute');
+        }
+
+        return LandingRoute::query()
+            ->where('from', $this->landingRoute->to)
+            ->where('to', $this->landingRoute->from)
+            ->where('is_active', true)
+            ->whereNotNull('bus_unit_id')
+            ->where('available_seats', '>', 0)
+            ->where('day', '>=', now()->toDateString())
+            ->orderBy('day')
+            ->get();
+    }
+
+    /**
      * A fixed deadline (not a rolling one) counted in business days
      * (Mon–Fri) from now — Saturday/Sunday don't count against the
      * customer. Doesn't account for MX public holidays.

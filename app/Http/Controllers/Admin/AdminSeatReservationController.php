@@ -89,7 +89,7 @@ class AdminSeatReservationController extends Controller
         // and total the pending/enviado badges — the "Apartados" list
         // below is paginated separately so a trip with months of history
         // doesn't load (or render) hundreds of cards at once.
-        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes']);
+        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type']);
         $reservationsBySeat = $allReservations->groupBy('bus_unit_seat_id');
         $roots = $allReservations->filter(fn (SeatReservation $r) => $r->notes === null || ! str_starts_with((string) $r->notes, 'group:'));
         $pendingCount = $roots->where('status', SeatReservation::STATUS_PENDING)->count();
@@ -119,6 +119,17 @@ class AdminSeatReservationController extends Controller
             ->whereNotNull('user_id')
             ->pluck('bus_unit_seat_id');
 
+        // Seats whose round-trip/especial passenger isn't coming back
+        // this day (released via AdminPaymentController::releaseReturn()
+        // or AdminTripCheckinController::rescheduleReturn()) — the seat
+        // picker treats these as available, but ONLY for a "regreso"
+        // apartado on this same return leg, not for every trip type.
+        $releasedSeatIds = $landingRoute->seatReservations()
+            ->whereNotNull('return_released_at')
+            ->whereNull('resold_return_reservation_id')
+            ->where('return_resale_expires_at', '>', now())
+            ->pluck('bus_unit_seat_id');
+
         return view('admin.asientos.show', [
             'trip' => $landingRoute,
             'reservations' => $reservations,
@@ -126,6 +137,7 @@ class AdminSeatReservationController extends Controller
             'pendingCount' => $pendingCount,
             'sentCount' => $sentCount,
             'takenIds' => $takenIds,
+            'releasedSeatIds' => $releasedSeatIds,
             'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
         ]);
     }
@@ -206,13 +218,25 @@ class AdminSeatReservationController extends Controller
         // (pending/sent). A double-booking would surface in the picker
         // as soon as both admins refreshed, so we block it here while
         // the form was still open.
-        $alreadyTaken = $landingRoute->seatReservations()
+        //
+        // Exception: a seat whose blocking reservation is a round-trip/
+        // especial return that's been released for same-day resale
+        // (the passenger isn't coming back this day) is NOT "taken" when
+        // the NEW apartado is itself a "regreso" — that's exactly the
+        // seat this release exists to free up. Any other trip type still
+        // sees it as taken (the outbound leg is still real).
+        $blockingReservations = $landingRoute->seatReservations()
             ->whereIn('bus_unit_seat_id', $data['seat_ids'])
             ->where(function ($q) {
                 $q->whereIn('status', [SeatReservation::STATUS_PENDING, SeatReservation::STATUS_SENT])
                     ->orWhereNotNull('user_id');
             })
+            ->get();
+
+        $alreadyTaken = $blockingReservations
+            ->reject(fn (SeatReservation $r) => $tripType === TripTicketPrice::TYPE_REGRESO && $r->isResaleWindowOpen())
             ->pluck('bus_unit_seat_id')
+            ->unique()
             ->all();
 
         if (! empty($alreadyTaken)) {
@@ -247,7 +271,7 @@ class AdminSeatReservationController extends Controller
         // The root (first seat) carries the admin's free-text note; the
         // rest just carry the group link. This is what lets the WhatsApp
         // send below go out as ONE image instead of one per seat.
-        $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference) {
+        $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations) {
             $root = null;
             foreach ($data['seat_ids'] as $seatId) {
                 $new = SeatReservation::create([
@@ -273,6 +297,18 @@ class AdminSeatReservationController extends Controller
                     'reserved_by' => $request->user()?->id,
                     'notes' => $root ? 'group:'.$root->id : ($data['notes'] ?? null),
                 ]);
+
+                // Claiming a released seat for a "regreso" apartado
+                // consumes that release — mark it resold so it can't be
+                // claimed twice (same field the online resale flow uses).
+                if ($tripType === TripTicketPrice::TYPE_REGRESO) {
+                    // Loose match: $seatId comes from the submitted form
+                    // (string), bus_unit_seat_id is cast to int by the
+                    // model — a strict === here silently never matches.
+                    $released = $blockingReservations->first(fn (SeatReservation $r) => (int) $r->bus_unit_seat_id === (int) $seatId && $r->isResaleWindowOpen());
+                    $released?->update(['resold_return_reservation_id' => $new->id]);
+                }
+
                 $root ??= $new;
             }
 
@@ -557,7 +593,12 @@ class AdminSeatReservationController extends Controller
     {
         abort_unless($landingRoute->hasSeatMap(), 404);
 
-        $reservationBySeat = $landingRoute->seatReservations()
+        // Grouped, not keyed — a seat can legitimately carry TWO rows now
+        // (an outbound round-trip/especial passenger not returning this
+        // day, plus a different "regreso" passenger who claimed the
+        // released return leg on that same seat). keyBy() would silently
+        // drop one of them.
+        $reservationsBySeat = $landingRoute->seatReservations()
             ->where(fn ($q) => $q->whereNull('payment_status')->orWhereNotIn('payment_status', [
                 SeatReservation::PAYMENT_FAILED,
                 SeatReservation::PAYMENT_REFUNDED,
@@ -565,7 +606,7 @@ class AdminSeatReservationController extends Controller
             ]))
             ->with(['user'])
             ->get()
-            ->keyBy('bus_unit_seat_id');
+            ->groupBy('bus_unit_seat_id');
 
         // Every bookable seat prints, not just the ones already sold —
         // so the sheet doubles as a boarding checklist showing what's
@@ -579,7 +620,7 @@ class AdminSeatReservationController extends Controller
         $pdf = Pdf::loadView('admin.asientos.manifiesto-pdf', [
             'trip' => $landingRoute,
             'seats' => $seats,
-            'reservationBySeat' => $reservationBySeat,
+            'reservationsBySeat' => $reservationsBySeat,
         ]);
 
         return $pdf->stream('lista-asientos-'.$landingRoute->id.'.pdf');
