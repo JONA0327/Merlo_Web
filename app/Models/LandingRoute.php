@@ -168,6 +168,22 @@ class LandingRoute extends Model
     }
 
     /**
+     * What ONE seat costs for this trip type — the value stored as a
+     * reservation's unit_price. Same as numericPriceFor() except for
+     * "especial", whose configured price is for the whole mancuerna
+     * (e.g. $1,800 for seats 1 y 2 together), so each seat carries its
+     * share and the pair adds back up to the mancuerna price.
+     */
+    public function seatPriceFor(string $tripType): float
+    {
+        $price = $this->numericPriceFor($tripType);
+
+        return $tripType === TripTicketPrice::TYPE_ESPECIAL
+            ? round($price / TripTicketPrice::SEATS_PER_MANCUERNA, 2)
+            : $price;
+    }
+
+    /**
      * Whether the given type currently has a per-trip OVERRIDE
      * (distinct from inheriting the global default). Used by the
      * admin "Precios de boleto" screen to render "(default)" hints

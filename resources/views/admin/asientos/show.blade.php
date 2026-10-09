@@ -80,7 +80,7 @@
                     <select name="trip_type" id="admin-trip-type-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                         @foreach ($tripTypeLabels as $type => $label)
                             @php $price = $trip->priceFor($type); @endphp
-                            <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }} — {{ $price ? $price->formatted_price : 'sin precio' }}</option>
+                            <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }} — {{ $price ? $price->formatted_price : 'sin precio' }}{{ $price && $type === \App\Models\TripTicketPrice::TYPE_ESPECIAL ? ' por mancuerna' : '' }}</option>
                         @endforeach
                     </select>
                 </label>

@@ -267,7 +267,7 @@ class AdminSeatReservationController extends Controller
         $methodsBySeat = $data['payment_method'];
         $distinctMethods = array_values(array_unique($methodsBySeat));
         $isCashPending = ! $isPaid;
-        $unitPrice = (float) ($landingRoute->priceFor($tripType)?->price ?? 0);
+        $unitPrice = $landingRoute->seatPriceFor($tripType);
         $returnDatesBySeat = array_filter($data['return_date'] ?? []);
         $returnPaidBySeat = $data['return_paid'] ?? [];
         // Only meaningful for ida (a brand-new charged sale) and
@@ -811,7 +811,7 @@ class AdminSeatReservationController extends Controller
         $reservation->update([
             'trip_type' => $tripType,
             'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
-            'unit_price' => (float) ($landingRoute->priceFor($tripType)?->price ?? 0),
+            'unit_price' => $landingRoute->seatPriceFor($tripType),
             'payment_method' => $data['payment_method'],
             'payment_status' => $data['payment_status'],
             // paid_at keeps its original timestamp once set; unpaying clears

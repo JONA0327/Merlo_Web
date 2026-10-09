@@ -313,11 +313,15 @@ class EvolutionWhatsAppService
         $trip = $first->landingRoute;
         $seats = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         $legend = collect($first->boardingLegendLines())->map(fn ($line) => "📍 *{$line}*")->implode("\n");
+        // Total across every seat — for an "especial" mancuerna that's
+        // the mancuerna price (each seat only carries its share).
+        $total = $group->sum(fn (SeatReservation $r) => (float) $r->unit_price);
 
         return "*MERLO Transportes* 🚌\n\n"
             ."Hola {$first->customer_display_name}, aquí tienen tus {$group->count()} boletos:\n\n"
             ."*{$trip->from} → {$trip->to}*\n"
             ."💺 Asientos: {$seats}\n"
+            .'💵 Total: $'.number_format($total, 2)." MXN\n"
             .'💳 Pago: '.$group->map(fn (SeatReservation $r) => $r->payment_method_label)->unique()->implode(', ')." (pagado)\n\n"
             .($legend ? $legend."\n\n" : '')
             .'Todos tus códigos QR están en esta imagen — muéstrala completa al abordar.';

@@ -16,6 +16,13 @@ class TripTicketPrice extends Model
     public const TYPE_ESPECIAL = 'especial';
     public const TYPE_REGRESO = 'regreso';
 
+    /**
+     * "Especial" is priced per mancuerna (the pair of seats sold
+     * together), not per seat — the configured price covers both seats,
+     * so each seat's unit_price is that amount split across the pair.
+     */
+    public const SEATS_PER_MANCUERNA = 2;
+
     protected $fillable = [
         'landing_route_id',
         'trip_type',

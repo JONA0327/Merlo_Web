@@ -170,7 +170,7 @@ class StandingReservation extends Model
                 'bus_unit_seat_id' => $assignment->bus_unit_seat_id,
                 'trip_type' => $assignment->trip_type,
                 'leg' => $assignment->trip_type === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
-                'unit_price' => (float) ($trip->priceFor($assignment->trip_type)?->price ?? 0),
+                'unit_price' => $trip->seatPriceFor($assignment->trip_type),
                 'customer_name' => $assignment->customer_name,
                 'customer_email' => $assignment->customer_email,
                 'customer_phone' => $assignment->customer_phone,

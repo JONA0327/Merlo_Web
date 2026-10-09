@@ -181,7 +181,7 @@ class TripGuide extends Model
                 $matched = static::remapReservationForTrip($reservation, $trip);
                 $reservation->landing_route_id = $trip->id;
                 if ($matched) {
-                    $reservation->unit_price = (float) ($trip->priceFor($reservation->trip_type)?->price ?? 0);
+                    $reservation->unit_price = $trip->seatPriceFor($reservation->trip_type);
                 } else {
                     $unmatchedLabels[] = $reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}";
                 }
