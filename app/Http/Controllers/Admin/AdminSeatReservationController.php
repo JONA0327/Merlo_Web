@@ -7,6 +7,8 @@ use App\Models\BusUnitSeat;
 use App\Models\Customer;
 use App\Models\LandingRoute;
 use App\Models\SeatReservation;
+use App\Models\Setting;
+use App\Models\StandingReservation;
 use App\Models\TripTicketPrice;
 use App\Services\EvolutionWhatsAppService;
 use App\Services\TicketImageService;
@@ -19,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class AdminSeatReservationController extends Controller
 {
@@ -66,6 +69,15 @@ class AdminSeatReservationController extends Controller
         abort_unless($landingRoute->hasSeatMap(), 404, 'Este viaje no tiene un mapa de asientos configurado.');
 
         $landingRoute->load('busUnit.seats', 'prices');
+
+        // Catches up any "de planta" seat added/activated AFTER this trip
+        // already opened (applyToTrip() otherwise only runs when the trip
+        // itself is created/edited — see AdminLandingRouteController) —
+        // idempotent, so revisiting this page never double-books one
+        // that's already here.
+        if (! $landingRoute->hasEnded()) {
+            StandingReservation::applyToTrip($landingRoute);
+        }
 
         // Only admin-created apartados belong on this screen — we filter
         // by customer_name/email being set so legacy client-purchase
@@ -130,6 +142,25 @@ class AdminSeatReservationController extends Controller
             ->where('return_resale_expires_at', '>', now())
             ->pluck('bus_unit_seat_id');
 
+        // Seats with an active "de planta" assignment for this exact
+        // route/bus — painted purple and blocked from manual selection on
+        // the picker (see admin-seat-picker.js) so the admin sees at a
+        // glance which ones auto-book themselves, and never accidentally
+        // double-books one. Excludes any released "no viaja hoy" for THIS
+        // trip (see releaseStanding()) — those go back to looking/acting
+        // like a normal free seat for just this one trip.
+        $standingSeatIds = StandingReservation::activeSeatIdsFor($landingRoute->from, $landingRoute->to, $landingRoute->bus_unit_id, $landingRoute->id);
+
+        // Every active standing assignment for this route/bus, keyed by
+        // seat — used to find the matching assignment for the "No viaja
+        // hoy" button on an apartado the picker auto-booked from one.
+        $standingBySeat = StandingReservation::where('from', $landingRoute->from)
+            ->where('to', $landingRoute->to)
+            ->where('bus_unit_id', $landingRoute->bus_unit_id)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('bus_unit_seat_id');
+
         return view('admin.asientos.show', [
             'trip' => $landingRoute,
             'reservations' => $reservations,
@@ -139,6 +170,20 @@ class AdminSeatReservationController extends Controller
             'takenIds' => $takenIds,
             'releasedSeatIds' => $releasedSeatIds,
             'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
+            // For the "asiento no corresponde a este autobús" warning's
+            // reassignment dropdown — see SeatReservation::hasSeatMismatch()
+            // and TripGuide::linkTrip(). Natural sort so labels read
+            // 1,2,3…10,11 instead of the lexicographic 1,10,11,2,20…
+            'currentBusSeats' => $landingRoute->busUnit->seats()->bookable()->get()->sortBy('label', SORT_NATURAL)->values(),
+            // Any seat already held on THIS trip for a given leg — same
+            // scope reassignSeat() itself checks — so the dropdown only
+            // ever offers seats that are actually free.
+            'takenSeatIdsByLeg' => $landingRoute->seatReservations()
+                ->get(['bus_unit_seat_id', 'leg'])
+                ->groupBy('leg')
+                ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
+            'standingSeatIds' => $standingSeatIds,
+            'standingBySeat' => $standingBySeat,
         ]);
     }
 
@@ -182,6 +227,23 @@ class AdminSeatReservationController extends Controller
                 Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $landingRoute->bus_unit_id),
             ],
             'notes' => ['nullable', 'string', 'max:1000'],
+            // Keyed by seat_id, same shape as payment_method — "ya sé
+            // cuándo regresa" per seat (one person in the group might
+            // come back a different day than another, or not at all).
+            // Meaningless for trip_type=regreso (it already IS a return),
+            // the view never shows the field there.
+            'return_date' => ['nullable', 'array'],
+            'return_date.*' => ['nullable', 'date', 'after_or_equal:tomorrow'],
+            // Only meaningful for "ida" (the only case where the return
+            // is a brand-new charge) — ignored for redondo/especial,
+            // whose return is always free/already paid regardless.
+            'return_paid' => ['nullable', 'array'],
+            'return_paid.*' => ['nullable', 'boolean'],
+            // General — not per seat: when checked, EVERY seat in this
+            // apartado also becomes a standing "de planta" assignment for
+            // this exact route/bus (see StandingReservation), so every
+            // future matching trip auto-books it from now on.
+            'mark_as_standing' => ['nullable', 'boolean'],
         ]);
 
         // Grows the Agenda de clientes automatically — once a name/phone
@@ -197,6 +259,19 @@ class AdminSeatReservationController extends Controller
         $distinctMethods = array_values(array_unique($methodsBySeat));
         $isCashPending = ! $isPaid;
         $unitPrice = (float) ($landingRoute->priceFor($tripType)?->price ?? 0);
+        $returnDatesBySeat = array_filter($data['return_date'] ?? []);
+        $returnPaidBySeat = $data['return_paid'] ?? [];
+        // Only meaningful for ida (a brand-new charged sale) and
+        // redondo/especial (the already-paid return, just not same day)
+        // — "regreso" itself has no return leg of its own to register.
+        $allowsReturnDate = in_array($tripType, [
+            TripTicketPrice::TYPE_ONE_WAY,
+            TripTicketPrice::TYPE_ROUND_TRIP,
+            TripTicketPrice::TYPE_ESPECIAL,
+        ], true);
+        $regresoPrice = $allowsReturnDate
+            ? (float) ($landingRoute->priceFor(TripTicketPrice::TYPE_REGRESO)?->price ?? 0)
+            : 0.0;
 
         // Unpaid-by-transfer apartados get the same reference-number
         // workflow as an online transfer purchase, so they can be
@@ -271,7 +346,8 @@ class AdminSeatReservationController extends Controller
         // The root (first seat) carries the admin's free-text note; the
         // rest just carry the group link. This is what lets the WhatsApp
         // send below go out as ONE image instead of one per seat.
-        $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations) {
+        try {
+            $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
             $root = null;
             foreach ($data['seat_ids'] as $seatId) {
                 $new = SeatReservation::create([
@@ -298,6 +374,63 @@ class AdminSeatReservationController extends Controller
                     'notes' => $root ? 'group:'.$root->id : ($data['notes'] ?? null),
                 ]);
 
+                // "Asiento predeterminado (de planta)" — general checkbox,
+                // not per seat: every seat in this apartado also gets a
+                // standing assignment for this exact route/bus, so any
+                // FUTURE trip auto-books it too (TODAY's seat is already
+                // booked above, same as always).
+                if (! empty($data['mark_as_standing'])) {
+                    StandingReservation::updateOrCreate(
+                        [
+                            'from' => $landingRoute->from,
+                            'to' => $landingRoute->to,
+                            'bus_unit_id' => $landingRoute->bus_unit_id,
+                            'bus_unit_seat_id' => $seatId,
+                        ],
+                        [
+                            'customer_name' => $data['customer_name'],
+                            'customer_phone' => $data['customer_phone'],
+                            'customer_email' => $data['customer_email'] ?? null,
+                            'trip_type' => $tripType,
+                            'notes' => $data['notes'] ?? null,
+                            'is_active' => true,
+                        ]
+                    );
+                }
+
+                // "Ya sé cuándo regresa" — registered per seat right here
+                // at apartado time instead of waiting for a later
+                // Reprogramar regreso. Ida is a brand-new charged sale
+                // (the ticket never included a return); redondo/especial
+                // is the same free/already-paid reschedule as always,
+                // just applied immediately since the admin already knows
+                // they won't use the same-day return.
+                if ($allowsReturnDate && isset($returnDatesBySeat[$seatId])) {
+                    $returnDate = \Illuminate\Support\Carbon::parse($returnDatesBySeat[$seatId])->startOfDay();
+                    $isIda = $tripType === TripTicketPrice::TYPE_ONE_WAY;
+                    // Independent from the main seat's "paid" toggle —
+                    // the admin might apartar the ida as already paid
+                    // while the return still needs collecting, or vice
+                    // versa. Defaults to not paid when left unset.
+                    $returnIsPaid = $isIda && ! empty($returnPaidBySeat[$seatId]);
+                    $returnTicket = $new->createReturnLegTicket($returnDate, $isIda ? [
+                        'unit_price' => $regresoPrice,
+                        'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
+                        'payment_status' => $returnIsPaid ? SeatReservation::PAYMENT_COMPLETED : SeatReservation::PAYMENT_PENDING,
+                        'paid_at' => $returnIsPaid ? now() : null,
+                        'notes' => 'Regreso agendado al apartar el boleto de ida #'.$new->id,
+                    ] : []);
+
+                    if (! $isIda) {
+                        $new->update([
+                            'return_changed_to_reservation_id' => $returnTicket->id,
+                            'return_released_at' => now(),
+                            'return_released_by' => $request->user()?->id,
+                            'return_resale_expires_at' => now()->addHours(Setting::current()->returnResaleValidityHours()),
+                        ]);
+                    }
+                }
+
                 // Claiming a released seat for a "regreso" apartado
                 // consumes that release — mark it resold so it can't be
                 // claimed twice (same field the online resale flow uses).
@@ -313,7 +446,12 @@ class AdminSeatReservationController extends Controller
             }
 
             return $root;
-        });
+            });
+        } catch (HttpException $e) {
+            return back()
+                ->withInput()
+                ->with('error', $e->getMessage() ?: 'No se pudo agendar el regreso para uno de los asientos.');
+        }
 
         $group = $root->groupMembers()->load(['landingRoute', 'seat']);
 
@@ -347,7 +485,7 @@ class AdminSeatReservationController extends Controller
                 ->with('error', "Apartado creado para {$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}, {$methodLabel}), pero no se pudo enviar el aviso por WhatsApp automáticamente. {$activationHint}");
         }
 
-        $sent = $this->sendGroupViaWhatsApp($group, $whatsapp, $ticketImages);
+        $sent = $whatsapp->sendGroupTicket($group, $ticketImages);
 
         if ($sent) {
             SeatReservation::whereIn('id', $group->pluck('id'))->update([
@@ -415,7 +553,15 @@ class AdminSeatReservationController extends Controller
             return back()->with('error', 'Este apartado ya no está pendiente.');
         }
 
-        $sent = $this->sendGroupViaWhatsApp($group, $whatsapp, $ticketImages);
+        // A guide that linked to this trip on a different "plantilla" than
+        // it was staged for can leave a seat that doesn't actually belong
+        // to this bus (see TripGuide::linkTrip()) — never generate/send a
+        // boleto with that stale seat until an admin reasigna it.
+        if ($group->contains(fn (SeatReservation $r) => $r->hasSeatMismatch())) {
+            return back()->with('error', 'Uno de estos asientos no corresponde al autobús de este viaje — reasígnalo abajo antes de enviar.');
+        }
+
+        $sent = $whatsapp->sendGroupTicket($group, $ticketImages);
 
         if ($sent) {
             SeatReservation::whereIn('id', $group->pluck('id'))->update([
@@ -432,54 +578,69 @@ class AdminSeatReservationController extends Controller
     }
 
     /**
-     * Sends the whole group as ONE WhatsApp message: the original
-     * single-QR flow for one seat, or TicketImageService's combined
-     * multi-ticket image for several. Returns whether it actually went
-     * out — callers decide what to do on failure (leave the apartado
-     * pending so this same logic can be retried from the "Enviar
-     * boleto" button).
+     * Manual fix for an apartado a guide linked here on the wrong
+     * "plantilla" (see TripGuide::linkTrip()): the seat it's pointing at
+     * doesn't belong to this trip's bus unit, so it never got the
+     * automatic WhatsApp send. The admin picks a real seat here instead —
+     * once fixed, if this group was never sent, re-queue the same
+     * notification linkTrip() would have sent originally.
      */
-    private function sendGroupViaWhatsApp(Collection $group, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): bool
+    public function reassignSeat(Request $request, LandingRoute $landingRoute, SeatReservation $reservation): RedirectResponse
     {
-        if (! $whatsapp->isConfigured()) {
-            return false;
+        abort_unless($reservation->landing_route_id === $landingRoute->id, 404);
+
+        $data = $request->validate([
+            'bus_unit_seat_id' => [
+                'required',
+                'integer',
+                Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $landingRoute->bus_unit_id),
+            ],
+        ]);
+
+        $taken = SeatReservation::where('landing_route_id', $landingRoute->id)
+            ->where('id', '!=', $reservation->id)
+            ->where('bus_unit_seat_id', $data['bus_unit_seat_id'])
+            ->where('leg', $reservation->leg)
+            ->exists();
+
+        if ($taken) {
+            return back()->with('error', 'Ese asiento ya está apartado en este viaje.');
         }
 
-        $first = $group->first();
+        $reservation->update(['bus_unit_seat_id' => $data['bus_unit_seat_id']]);
 
-        if ($group->count() === 1) {
-            try {
-                $whatsapp->sendTicket($first);
-
-                return true;
-            } catch (\Throwable $e) {
-                Log::warning('Apartado WhatsApp send failed for reservation '.$first->id.': '.$e->getMessage());
-
-                return false;
-            }
+        if (! $reservation->ticket_sent_at) {
+            \App\Jobs\SendLinkedTicketNotification::dispatch($reservation->groupRootId());
         }
 
-        $imagePath = null;
+        return back()->with('success', 'Asiento reasignado correctamente.');
+    }
 
-        try {
-            $imagePath = $ticketImages->buildCombinedImage($group);
-            $whatsapp->sendImageFile(
-                $first->customer_phone,
-                $imagePath,
-                $this->buildGroupCaption($group),
-                'boletos-merlo-'.$first->id.'.jpg'
-            );
+    /**
+     * "No viaja hoy" — the regular "de planta" passenger isn't coming on
+     * THIS trip. Cancels the apartado StandingReservation::applyToTrip()
+     * auto-booked for them (freeing the seat for a normal apartado just
+     * this once) and records the skip so the seat picker stops treating
+     * it as standing for this trip specifically — every OTHER matching
+     * trip still auto-books it exactly as before.
+     */
+    public function releaseStanding(LandingRoute $landingRoute, StandingReservation $standing): RedirectResponse
+    {
+        abort_unless(
+            $standing->bus_unit_id === $landingRoute->bus_unit_id
+                && $standing->from === $landingRoute->from
+                && $standing->to === $landingRoute->to,
+            404
+        );
 
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Combined apartado WhatsApp send failed for group '.$first->id.': '.$e->getMessage());
+        $standing->skips()->firstOrCreate(['landing_route_id' => $landingRoute->id]);
 
-            return false;
-        } finally {
-            if ($imagePath && file_exists($imagePath)) {
-                @unlink($imagePath);
-            }
-        }
+        $landingRoute->seatReservations()
+            ->where('bus_unit_seat_id', $standing->bus_unit_seat_id)
+            ->where('notes', 'like', 'Asiento de planta%')
+            ->delete();
+
+        return back()->with('success', 'Asiento liberado para este viaje — seguirá apartándose solo en los demás.');
     }
 
     /**
@@ -564,7 +725,7 @@ class AdminSeatReservationController extends Controller
 
         $resent = $freshGroup->first()->isPaymentPending()
             ? $this->sendReservationNoticeViaWhatsApp($freshGroup, $whatsapp)
-            : $this->sendGroupViaWhatsApp($freshGroup, $whatsapp, $ticketImages);
+            : $whatsapp->sendGroupTicket($freshGroup, $ticketImages);
 
         if ($resent && ! $freshGroup->first()->isPaymentPending()) {
             SeatReservation::whereIn('id', $freshGroup->pluck('id'))->update([
@@ -707,24 +868,6 @@ class AdminSeatReservationController extends Controller
         ])->implode(' · ');
 
         return back()->with('success', 'Apartado actualizado. '.$summary.'.');
-    }
-
-    private function buildGroupCaption(Collection $reservations): string
-    {
-        $first = $reservations->first();
-        $trip = $first->landingRoute;
-        $seats = $reservations->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
-        // Every seat in a group apartado shares the same trip_type
-        // (store() applies it uniformly), so the first reservation's
-        // legend applies to the whole group.
-        $legend = collect($first->boardingLegendLines())->map(fn ($line) => "📍 *{$line}*")->implode("\n");
-
-        return "*MERLO Transportes* 🚌\n\n"
-            ."Hola {$first->customer_display_name}, aquí tienen tus {$reservations->count()} boletos:\n\n"
-            ."*{$trip->from} → {$trip->to}*\n"
-            ."💺 Asientos: {$seats}\n\n"
-            .($legend ? $legend."\n\n" : '')
-            .'Todos tus códigos QR están en esta imagen — muéstrala completa al abordar.';
     }
 
     /**

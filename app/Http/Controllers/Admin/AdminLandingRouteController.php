@@ -7,6 +7,7 @@ use App\Models\BusUnit;
 use App\Models\Destination;
 use App\Models\LandingRoute;
 use App\Models\Setting;
+use App\Models\StandingReservation;
 use App\Models\TripGuide;
 use App\Models\TripTicketPrice;
 use Illuminate\Http\RedirectResponse;
@@ -86,10 +87,18 @@ class AdminLandingRouteController extends Controller
         // until the admin sets a default in /admin/precios.
         $this->seedDefaultPrices($route);
 
-        $linked = TripGuide::linkTrip($route);
+        $linkResult = TripGuide::linkTrip($route);
+        $linked = $linkResult['linked'];
         $message = 'Ruta agregada correctamente.';
         if ($linked > 0) {
             $message .= " Se vincularon {$linked} asiento".($linked === 1 ? '' : 's').' que ya estaban apartados desde una guía.';
+        }
+        if (! empty($linkResult['unmatched'])) {
+            $message .= ' ⚠ No se pudo asignar asiento automáticamente a: '.implode(', ', $linkResult['unmatched']).' (la guía estaba en otra plantilla) — reasígnalos desde Apartar asientos.';
+        }
+        $planta = StandingReservation::applyToTrip($route);
+        if ($planta > 0) {
+            $message .= " Se asignaron {$planta} asiento".($planta === 1 ? '' : 's').' de planta automáticamente.';
         }
         $defaults = Setting::current()->defaultPrices();
         if (! empty($defaults)) {
@@ -172,10 +181,19 @@ class AdminLandingRouteController extends Controller
             'image' => $image,
         ]);
 
-        $linked = TripGuide::linkTrip($landingRoute->fresh());
+        $freshRoute = $landingRoute->fresh();
+        $linkResult = TripGuide::linkTrip($freshRoute);
+        $linked = $linkResult['linked'];
         $message = 'Viaje actualizado correctamente.';
         if ($linked > 0) {
             $message .= " Se vincularon {$linked} asiento".($linked === 1 ? '' : 's').' que ya estaban apartados desde una guía.';
+        }
+        if (! empty($linkResult['unmatched'])) {
+            $message .= ' ⚠ No se pudo asignar asiento automáticamente a: '.implode(', ', $linkResult['unmatched']).' (la guía estaba en otra plantilla) — reasígnalos desde Apartar asientos.';
+        }
+        $planta = StandingReservation::applyToTrip($freshRoute);
+        if ($planta > 0) {
+            $message .= " Se asignaron {$planta} asiento".($planta === 1 ? '' : 's').' de planta automáticamente.';
         }
 
         return redirect()->route('admin.viajes')->with('success', $message);

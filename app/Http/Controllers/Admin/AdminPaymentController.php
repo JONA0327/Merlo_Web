@@ -443,6 +443,7 @@ class AdminPaymentController extends Controller
             "*{$trip->from} → {$trip->to}*",
             "📅 Salida: *{$tripDate}*",
             "🚍 Unidad: *{$unitName}*",
+            "🏷️ Tipo: {$reservation->trip_type_label}",
             "💺 Asientos: {$seatLabels}",
             "💵 Total pagado: {$total} MXN",
             '',

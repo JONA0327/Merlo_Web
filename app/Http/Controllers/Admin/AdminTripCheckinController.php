@@ -4,17 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Events\SeatAvailabilityUpdated;
 use App\Http\Controllers\Controller;
-use App\Models\BusUnitSeat;
 use App\Models\LandingRoute;
 use App\Models\SeatReservation;
 use App\Models\Setting;
-use App\Models\TripGuide;
-use App\Models\TripTicketPrice;
-use Illuminate\Support\Carbon;
 use App\Services\EvolutionWhatsAppService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -225,21 +221,20 @@ class AdminTripCheckinController extends Controller
     /**
      * Admin-driven return reschedule from the check-in detail page: the
      * customer says they won't make their scheduled return, the operator
-     * picks the new date right there (from already-published trips on
-     * the reverse route), and this immediately creates the replacement
-     * one-way return ticket — mirrors
+     * picks the new date right there (from an already-published trip on
+     * the reverse route, or just a date if none exists yet), and this
+     * immediately creates the replacement one-way return ticket — mirrors
      * ClientDashboardController::confirmReturnChange() (same "new seat,
      * not necessarily the old one, subject to availability, no charge"
      * rules) but skips that flow's request→5-day-window dance since the
      * admin is deciding this in person, right now. Exactly one shot:
      * canAdminRescheduleReturn() blocks doing this again once it's done.
      *
-     * The chosen date doesn't have to be an already-open trip: if
-     * landing_route_id is omitted and travel_date is given instead, the
-     * new ticket is staged against a TripGuide (same "book ahead of the
-     * trip existing" mechanism Guías already uses) and auto-links to a
-     * real seat the moment a matching trip gets created — see
-     * TripGuide::linkTrip().
+     * SeatReservation::createReturnLegTicket() decides on its own whether
+     * the chosen date already has an open trip or needs to be staged
+     * against a TripGuide (auto-links once a matching trip is created —
+     * see TripGuide::linkTrip()), so this controller doesn't need to care
+     * which case it is.
      */
     public function rescheduleReturn(Request $request, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp): RedirectResponse
     {
@@ -252,82 +247,47 @@ class AdminTripCheckinController extends Controller
             'travel_date' => ['nullable', 'date', 'after_or_equal:today'],
         ]);
 
-        $reservation->load('landingRoute');
+        $route = $reservation->outboundRouteInfo();
 
-        if (empty($validated['landing_route_id']) && empty($validated['travel_date'])) {
+        $date = null;
+        if (! empty($validated['landing_route_id'])) {
+            $picked = LandingRoute::find($validated['landing_route_id']);
+            abort_if($picked && ($picked->from !== $route['to'] || $picked->to !== $route['from']), 422, 'El viaje elegido no corresponde al regreso de esta ruta.');
+            $date = $picked?->day ? Carbon::parse($picked->day)->startOfDay() : null;
+        } elseif (! empty($validated['travel_date'])) {
+            $date = Carbon::parse($validated['travel_date'])->startOfDay();
+        }
+
+        if (! $date) {
             return $this->backToDetail($reservation, 'error', 'Elige una fecha de regreso.');
         }
 
-        if (empty($validated['landing_route_id'])) {
-            return $this->rescheduleReturnToGuide($request, $reservation, Carbon::parse($validated['travel_date'])->startOfDay());
-        }
-
         try {
-            $newTicket = DB::transaction(function () use ($reservation, $validated, $request) {
-                $target = LandingRoute::query()->lockForUpdate()->findOrFail($validated['landing_route_id']);
+            $newTicket = $reservation->createReturnLegTicket($date);
 
-                abort_if($target->from !== $reservation->landingRoute->to || $target->to !== $reservation->landingRoute->from, 422, 'El viaje elegido no corresponde al regreso de esta ruta.');
-                abort_if(! $target->hasSeatMap(), 422, 'El viaje elegido no tiene asientos disponibles.');
-                abort_if($target->available_seats < 1, 409, 'Ya no hay asientos disponibles en la fecha elegida.');
-
-                $takenIds = $target->seatReservations()->pluck('bus_unit_seat_id');
-                $seat = $target->busUnit->seats()
-                    ->bookable()
-                    ->whereNotIn('id', $takenIds)
-                    ->get()
-                    ->first(fn (BusUnitSeat $s) => $s->allowsTripType(TripTicketPrice::TYPE_ONE_WAY));
-
-                abort_if(! $seat, 409, 'Ya no hay asientos disponibles en la fecha elegida.');
-
-                // Not leg=return on a brand-new separate trip: this is a
-                // standalone one-way ticket on the reverse-direction
-                // trip, same as any other passenger riding it — it
-                // checks in and displays its date (trip->day) normally.
-                // source_reservation_id just links it back for
-                // traceability; no charge (the customer already paid
-                // for this leg on the original ticket).
-                $newTicket = SeatReservation::create([
-                    'landing_route_id' => $target->id,
-                    'bus_unit_seat_id' => $seat->id,
-                    'user_id' => $reservation->user_id,
-                    'trip_type' => TripTicketPrice::TYPE_ONE_WAY,
-                    'source_reservation_id' => $reservation->id,
-                    'unit_price' => 0,
-                    'payment_method' => $reservation->payment_method,
-                    'payment_status' => SeatReservation::PAYMENT_COMPLETED,
-                    'paid_at' => now(),
-                    'subtotal' => 0,
-                    'tax' => 0,
-                    'total' => 0,
-                    'currency' => 'MXN',
-                    'customer_name' => $reservation->customer_name,
-                    'customer_email' => $reservation->customer_email,
-                    'customer_phone' => $reservation->customer_phone,
-                    'status' => SeatReservation::STATUS_PENDING,
-                    'ip_address' => $request->ip(),
-                    'notes' => 'Reprogramación de regreso del boleto #'.$reservation->id.' (admin, check-in)',
-                ]);
-
-                $target->decrement('available_seats');
-
-                // The seat's ORIGINAL return leg (same day, this trip's
-                // return) is now unused — release it through the same
-                // resale mechanism AdminPaymentController::releaseReturn()
-                // uses, so it shows up as available for a same-day
-                // "regreso" apartado on that seat instead of sitting
-                // empty. Time-boxed by the same "vigencia" setting as
-                // any other released return.
-                $reservation->update([
-                    'return_changed_to_reservation_id' => $newTicket->id,
-                    'return_released_at' => now(),
-                    'return_released_by' => $request->user()?->id,
-                    'return_resale_expires_at' => now()->addHours(Setting::current()->returnResaleValidityHours()),
-                ]);
-
-                return $newTicket;
-            });
+            // The seat's ORIGINAL return leg (same day, this trip's
+            // return) is now unused — release it through the same resale
+            // mechanism AdminPaymentController::releaseReturn() uses, so
+            // it shows up as available for a same-day "regreso" apartado
+            // on that seat instead of sitting empty. Time-boxed by the
+            // same "vigencia" setting as any other released return.
+            $reservation->update([
+                'return_changed_to_reservation_id' => $newTicket->id,
+                'return_released_at' => now(),
+                'return_released_by' => $request->user()?->id,
+                'return_resale_expires_at' => now()->addHours(Setting::current()->returnResaleValidityHours()),
+            ]);
         } catch (HttpException $e) {
             return $this->backToDetail($reservation, 'error', $e->getMessage() ?: 'No se pudo reprogramar el regreso.');
+        }
+
+        if ($newTicket->landing_route_id === null) {
+            // No real trip to show yet — go straight to the guide's own
+            // map instead of back to the (still trip-less) ticket detail,
+            // so the admin actually sees the seat that just got assigned.
+            return redirect()
+                ->route('admin.guias.show', [$newTicket->tripGuide, 'fecha' => $date->toDateString()])
+                ->with('success', 'Regreso agendado para el '.$date->toSpanishLongDate().'. Aún no existe el viaje — en cuanto lo abras, el asiento '.$newTicket->seat?->label.' se asignará automáticamente y podrás enviar el boleto desde Apartar asientos.');
         }
 
         SeatAvailabilityUpdated::dispatchSafely(
@@ -357,106 +317,6 @@ class AdminTripCheckinController extends Controller
             $reservation,
             'success',
             'Regreso reprogramado para el '.$newTicket->landingRoute->day?->toSpanishLongDate().'. Se envió el nuevo boleto'.($whatsappSent ? ' por correo y WhatsApp.' : ' por correo.')
-        );
-    }
-
-    /**
-     * Same reschedule as rescheduleReturn() above, for a date that has
-     * no open trip yet. Stages the replacement ticket on a TripGuide
-     * (reusing one that already covers this route/bus/date, or creating
-     * a tight one-day one) with no landing_route_id — exactly the same
-     * "book ahead of the trip existing" shape AdminTripGuideController
-     * already uses, so TripGuide::linkTrip() picks it up automatically
-     * the moment a matching trip is created. No ticket/QR to send yet
-     * (there's no real trip to put on it) — that happens later from
-     * Apartar asientos, same as any other guide-staged apartado.
-     */
-    private function rescheduleReturnToGuide(Request $request, SeatReservation $reservation, Carbon $date): RedirectResponse
-    {
-        $from = $reservation->landingRoute->to;
-        $to = $reservation->landingRoute->from;
-        $busUnitId = $reservation->landingRoute->bus_unit_id;
-
-        try {
-            $newTicket = DB::transaction(function () use ($reservation, $request, $date, $from, $to, $busUnitId) {
-                abort_if(
-                    LandingRoute::where('from', $from)->where('to', $to)->where('bus_unit_id', $busUnitId)->whereDate('day', $date->toDateString())->exists(),
-                    422,
-                    'Ya existe un viaje abierto para esa fecha — selecciónalo de la lista en lugar de agendarlo.'
-                );
-
-                $guide = TripGuide::query()
-                    ->where('from', $from)
-                    ->where('to', $to)
-                    ->where('bus_unit_id', $busUnitId)
-                    ->where('date_from', '<=', $date->toDateString())
-                    ->where('date_to', '>=', $date->toDateString())
-                    ->first();
-
-                $guide ??= TripGuide::create([
-                    'from' => $from,
-                    'to' => $to,
-                    'bus_unit_id' => $busUnitId,
-                    'date_from' => $date->toDateString(),
-                    'date_to' => $date->toDateString(),
-                    'notes' => 'Creada automáticamente al reprogramar el regreso del boleto #'.$reservation->id,
-                ]);
-
-                $takenIds = SeatReservation::whereNull('landing_route_id')
-                    ->whereNotNull('trip_guide_id')
-                    ->whereDate('travel_date', $date->toDateString())
-                    ->pluck('bus_unit_seat_id');
-
-                $seat = $guide->busUnit->seats()
-                    ->bookable()
-                    ->whereNotIn('id', $takenIds)
-                    ->get()
-                    ->first(fn (BusUnitSeat $s) => $s->allowsTripType(TripTicketPrice::TYPE_ONE_WAY));
-
-                abort_if(! $seat, 409, 'No hay asientos disponibles en esa unidad para esa fecha.');
-
-                $newTicket = SeatReservation::create([
-                    'trip_guide_id' => $guide->id,
-                    'travel_date' => $date->toDateString(),
-                    'bus_unit_seat_id' => $seat->id,
-                    'user_id' => $reservation->user_id,
-                    'trip_type' => TripTicketPrice::TYPE_ONE_WAY,
-                    'source_reservation_id' => $reservation->id,
-                    'unit_price' => 0,
-                    'payment_method' => $reservation->payment_method,
-                    'payment_status' => SeatReservation::PAYMENT_COMPLETED,
-                    'paid_at' => now(),
-                    'subtotal' => 0,
-                    'tax' => 0,
-                    'total' => 0,
-                    'currency' => 'MXN',
-                    'customer_name' => $reservation->customer_name,
-                    'customer_email' => $reservation->customer_email,
-                    'customer_phone' => $reservation->customer_phone,
-                    'status' => SeatReservation::STATUS_PENDING,
-                    'ip_address' => $request->ip(),
-                    'notes' => 'Reprogramación de regreso del boleto #'.$reservation->id.' (admin, check-in) — agendado, pendiente de que se abra el viaje',
-                ]);
-
-                // Same release-for-resale bookkeeping as the real-trip
-                // branch — the original seat's return leg is free either way.
-                $reservation->update([
-                    'return_changed_to_reservation_id' => $newTicket->id,
-                    'return_released_at' => now(),
-                    'return_released_by' => $request->user()?->id,
-                    'return_resale_expires_at' => now()->addHours(Setting::current()->returnResaleValidityHours()),
-                ]);
-
-                return $newTicket;
-            });
-        } catch (HttpException $e) {
-            return $this->backToDetail($reservation, 'error', $e->getMessage() ?: 'No se pudo agendar el regreso.');
-        }
-
-        return $this->backToDetail(
-            $reservation,
-            'success',
-            'Regreso agendado para el '.$date->toSpanishLongDate().'. Aún no existe el viaje — en cuanto lo abras, el asiento '.$newTicket->seat?->label.' se asignará automáticamente y podrás enviar el boleto desde Apartar asientos.'
         );
     }
 

@@ -9,6 +9,7 @@ const AVAILABLE_COLORS = { fill: '#FFFFFF', stroke: '#15803D' };
 const PENDING_COLORS = { fill: '#FACC15', stroke: '#A16207' };
 const SENT_COLORS = { fill: '#3B82F6', stroke: '#1D4ED8' };
 const SOLD_COLORS = { fill: '#EF4444', stroke: '#991B1B' };
+const STANDING_COLORS = { fill: '#A855F7', stroke: '#6B21A8' };
 const DISABLED_COLORS = { fill: '#D1D5DB', stroke: '#6B7280' };
 const OBJECT_COLORS = { fill: '#94A3B8', stroke: '#475569' };
 const OUTLINE_DEFAULT_COLOR = '#2B1113';
@@ -23,6 +24,18 @@ const OTHER_TYPE_COLORS = { fill: '#E5E7EB', stroke: '#9CA3AF' };
 
 const seatStatuses = config.seatStatuses ?? {};
 const seatTripTypes = config.seatTripTypes ?? {};
+// Guías only: a pending reservation staged here that's actually a
+// return leg of an outbound ticket (SeatReservation::createReturnLegTicket()),
+// painted red regardless of the currently-selected category — unlike
+// the Apartar asientos "regreso" marking, this isn't gated by category
+// since the guide page isn't choosing between trip types the same way.
+const seatIsReturnLeg = config.seatIsReturnLeg ?? {};
+// Seats with an active StandingReservation ("de planta") for this
+// route/bus — booked automatically on every matching trip from now on.
+// Only painted while the seat is otherwise free; once it's actually
+// taken, the normal pending/sent/sold colors (reflecting what really
+// happened) take over instead.
+const seatIsStanding = config.seatIsStanding ?? {};
 const takenIds = new Set(config.takenIds ?? []);
 // Seats whose round-trip/especial passenger's return was released for
 // same-day resale (they're not coming back this day) — available, but
@@ -39,6 +52,14 @@ const selectedIds = new Set();
 // default select whenever a seat is added; untouched on re-renders so
 // a manual per-seat change survives selecting/deselecting other seats.
 const seatPaymentMethods = new Map();
+// Per-seat "ya sé cuándo regresa" date — optional, only offered for
+// ida/redondo/especial (not for a "regreso" apartado itself). Empty by
+// default; only seats where the admin actually typed a date submit one.
+const seatReturnDates = new Map();
+// Only meaningful alongside a return date for "ida" (a brand-new
+// charged sale) — redondo/especial returns are always free/already
+// paid regardless, so this never renders for those categories.
+const seatReturnPaid = new Map();
 
 // 'one_way' and 'especial' can pick ANY bookable seat — no
 // allowed_trip_type / zone restriction applies to them. The zone chips
@@ -63,6 +84,12 @@ function isSeatSelectable(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id)) return false;
     if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false; // pending or sent
+    // A "de planta" seat books itself automatically (StandingReservation::
+    // applyToTrip()) — never pick it by hand here, that's how two
+    // different apartados would end up fighting over the same seat. If
+    // the regular passenger isn't coming, release it from the apartado
+    // list below first ("No viaja hoy"); it becomes pickable right after.
+    if (seatIsStanding[seat.id]) return false;
     return matchesTripType(seat, currentTripType);
 }
 
@@ -93,6 +120,7 @@ function colorsFor(seat) {
     if (seat.type === 'disabled') return DISABLED_COLORS;
     if (takenIds.has(seat.id)) return SOLD_COLORS;
     const status = seatStatuses[seat.id];
+    if (status && seatIsReturnLeg[seat.id]) return SOLD_COLORS;
     if (status && isReleasedForRegreso(seat)) return AVAILABLE_COLORS;
     // A seat already claimed by a "regreso" apartado reads red, same as
     // the printed manifest's color for that category — but only while
@@ -102,6 +130,7 @@ function colorsFor(seat) {
     if (status && currentTripType === 'regreso' && seatTripTypes[seat.id] === 'regreso') return SOLD_COLORS;
     if (status === 'sent') return SENT_COLORS;
     if (status === 'pending') return PENDING_COLORS;
+    if (seatIsStanding[seat.id]) return STANDING_COLORS;
     if (isOtherType(seat)) return OTHER_TYPE_COLORS;
     return AVAILABLE_COLORS;
 }
@@ -392,6 +421,12 @@ function updateForm() {
             seatPaymentMethods.set(id, defaultMethodSelect?.value || 'transfer');
         }
     });
+    Array.from(seatReturnDates.keys()).forEach((id) => {
+        if (!selectedIds.has(id)) seatReturnDates.delete(id);
+    });
+    Array.from(seatReturnPaid.keys()).forEach((id) => {
+        if (!selectedIds.has(id)) seatReturnPaid.delete(id);
+    });
 
     // Rebuild the hidden inputs from scratch — simpler than diffing, and
     // the selection set stays small (typically a handful of seats).
@@ -417,13 +452,30 @@ function updateForm() {
         summaryEl.className = 'mt-4 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 ring-1 ring-emerald-200';
         const header = `<strong>${seats.length}</strong> asiento${seats.length === 1 ? '' : 's'} seleccionado${seats.length === 1 ? '' : 's'}`
             + (seats.length > 1 ? ' — puedes cambiar el método de pago por asiento:' : ':');
+        const showReturnDate = currentTripType !== 'regreso';
+        // Only "ida" actually charges for the return leg — for
+        // redondo/especial it's always free/already paid, so asking
+        // "¿pagado?" there would be meaningless.
+        const showReturnPaid = currentTripType === 'one_way';
+        const minReturnDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
         const rows = seats.map((s) => {
             const options = PAYMENT_METHOD_OPTIONS.map(([value, label]) =>
                 `<option value="${value}" ${seatPaymentMethods.get(s.id) === value ? 'selected' : ''}>${label}</option>`
             ).join('');
-            return `<div class="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1 ring-1 ring-emerald-200">
+            const returnDateField = showReturnDate
+                ? `<input type="date" name="return_date[${s.id}]" data-seat-return="${s.id}" min="${minReturnDate}" value="${seatReturnDates.get(s.id) || ''}" placeholder="Fecha de regreso" title="¿Ya sabe cuándo regresa? (opcional)" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">`
+                : '';
+            const returnPaidField = showReturnPaid
+                ? `<select name="return_paid[${s.id}]" data-seat-return-paid="${s.id}" title="¿El regreso ya está pagado?" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                    <option value="0" ${seatReturnPaid.get(s.id) !== '1' ? 'selected' : ''}>Regreso no pagado</option>
+                    <option value="1" ${seatReturnPaid.get(s.id) === '1' ? 'selected' : ''}>Regreso pagado</option>
+                </select>`
+                : '';
+            return `<div class="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-emerald-200">
                 <span class="font-bold">${s.label}</span>
                 <select name="payment_method[${s.id}]" data-seat-method="${s.id}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">${options}</select>
+                ${returnDateField}
+                ${returnPaidField}
             </div>`;
         }).join('');
         summaryEl.innerHTML = header + rows;
@@ -431,6 +483,16 @@ function updateForm() {
         summaryEl.querySelectorAll('[data-seat-method]').forEach((select) => {
             select.addEventListener('change', () => {
                 seatPaymentMethods.set(Number(select.dataset.seatMethod), select.value);
+            });
+        });
+        summaryEl.querySelectorAll('[data-seat-return]').forEach((input) => {
+            input.addEventListener('change', () => {
+                seatReturnDates.set(Number(input.dataset.seatReturn), input.value);
+            });
+        });
+        summaryEl.querySelectorAll('[data-seat-return-paid]').forEach((select) => {
+            select.addEventListener('change', () => {
+                seatReturnPaid.set(Number(select.dataset.seatReturnPaid), select.value);
             });
         });
     }

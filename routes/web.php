@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminBusUnitController;
 use App\Http\Controllers\Admin\AdminBusUnitSeatController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminCustomerController;
+use App\Http\Controllers\Admin\AdminStandingReservationController;
 use App\Http\Controllers\Admin\AdminDestinationController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
@@ -166,6 +167,8 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'show'])->name('asientos.show');
     Route::post('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'store'])->name('asientos.store');
     Route::post('/asientos/{landingRoute}/reservas/{reservation}/enviar', [AdminSeatReservationController::class, 'sendTicket'])->name('asientos.send');
+    Route::post('/asientos/{landingRoute}/reservas/{reservation}/reasignar-asiento', [AdminSeatReservationController::class, 'reassignSeat'])->name('asientos.reassign-seat');
+    Route::post('/asientos/{landingRoute}/planta/{standing}/liberar', [AdminSeatReservationController::class, 'releaseStanding'])->name('asientos.release-standing');
     Route::put('/asientos/{landingRoute}/reservas/{reservation}/categoria', [AdminSeatReservationController::class, 'updateCategory'])->name('asientos.update-category');
     Route::delete('/asientos/{landingRoute}/reservas/{reservation}', [AdminSeatReservationController::class, 'destroy'])->name('asientos.destroy');
     Route::delete('/asientos/{landingRoute}/reservas/{reservation}/asiento', [AdminSeatReservationController::class, 'removeSeat'])->name('asientos.remove-seat');
@@ -181,6 +184,9 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     // re-type the same place name in three slightly different ways.
     Route::resource('destinations', AdminDestinationController::class)->except(['show']);
     Route::resource('agenda', AdminCustomerController::class)->only(['index', 'store', 'update', 'destroy'])->parameters(['agenda' => 'customer']);
+    Route::put('/planta/masivo/actualizar', [AdminStandingReservationController::class, 'updateMany'])->name('planta.update-many');
+    Route::delete('/planta/masivo/eliminar', [AdminStandingReservationController::class, 'destroyMany'])->name('planta.destroy-many');
+    Route::resource('planta', AdminStandingReservationController::class)->only(['index', 'store', 'update', 'destroy'])->parameters(['planta' => 'standing']);
     Route::get('/guias/crear', [AdminTripGuideController::class, 'create'])->name('guias.create');
     Route::post('/guias', [AdminTripGuideController::class, 'store'])->name('guias.store');
     Route::get('/guias/{guide}', [AdminTripGuideController::class, 'show'])->name('guias.show');
@@ -189,6 +195,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::delete('/guias/{guide}', [AdminTripGuideController::class, 'destroy'])->name('guias.destroy');
     Route::post('/guias/{guide}/reservas', [AdminTripGuideController::class, 'storeReservation'])->name('guias.reservations.store');
     Route::delete('/guias/{guide}/reservas/{reservation}', [AdminTripGuideController::class, 'destroyReservation'])->name('guias.reservations.destroy');
+    Route::post('/guias/{guide}/reservas/{reservation}/reasignar-asiento', [AdminTripGuideController::class, 'reassignSeat'])->name('guias.reservations.reassign-seat');
     // Operator-side QR check-in. The {code?} part is optional so
     // /admin/checkin (no code) lands on the search form, and
     // /admin/checkin/{code} (the QR target) lands straight on the

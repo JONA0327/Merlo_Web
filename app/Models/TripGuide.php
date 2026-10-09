@@ -80,39 +80,165 @@ class TripGuide extends Model
      * still-pending reservation staged for that exact day. Recomputes
      * unit_price/leg from the now-real trip, same as a normal apartado.
      *
-     * @return int number of seats linked
+     * Also checks the REVERSE direction: a return leg staged via
+     * SeatReservation::createReturnLegTicket() lives on the SAME guide as
+     * its outbound ticket (not a separate reversed guide — the user's
+     * call, since it's conceptually "the same trip, just the way back"),
+     * marked by having a source_reservation_id. Those are only ever
+     * destined for a trip going the opposite way, so they're matched
+     * here against THIS trip when this trip is that reverse direction —
+     * never against a same-direction trip, even though they sit in a
+     * same-direction guide.
+     *
+     * The guide's bus unit no longer has to match the trip's exactly —
+     * an admin can open the real trip on a different "plantilla" than the
+     * guide assumed. Matching reservations get remapped by seat LABEL
+     * onto the trip's actual bus (see remapReservationForTrip()); any
+     * that can't be (label doesn't exist on the new bus, or it's already
+     * taken there) still get linked — so they show up in Apartar asientos
+     * for the admin to fix — but are flagged by
+     * SeatReservation::hasSeatMismatch() and never get the automatic
+     * WhatsApp send, and are returned as 'unmatched' so the caller can
+     * warn right away.
+     *
+     * @return array{linked: int, unmatched: array<int, string>}
      */
-    public static function linkTrip(LandingRoute $trip): int
+    public static function linkTrip(LandingRoute $trip): array
     {
         if ($trip->day === null || $trip->bus_unit_id === null) {
-            return 0;
+            return ['linked' => 0, 'unmatched' => []];
         }
 
-        $guides = static::query()
+        $linked = 0;
+        $rootIds = [];
+        $mismatchedRootIds = [];
+        $unmatchedLabels = [];
+
+        $forwardGuides = static::query()
             ->where('from', $trip->from)
             ->where('to', $trip->to)
-            ->where('bus_unit_id', $trip->bus_unit_id)
             ->where('date_from', '<=', $trip->day)
             ->where('date_to', '>=', $trip->day)
             ->get();
 
-        $linked = 0;
-
-        foreach ($guides as $guide) {
+        foreach ($forwardGuides as $guide) {
             $reservations = $guide->pendingSeatReservations()
+                ->whereNull('source_reservation_id')
                 ->whereDate('travel_date', $trip->day)
+                ->with('seat')
                 ->get();
 
             foreach ($reservations as $reservation) {
-                $reservation->update([
-                    'landing_route_id' => $trip->id,
-                    'unit_price' => (float) ($trip->priceFor($reservation->trip_type)?->price ?? 0),
-                ]);
+                $matched = static::remapReservationForTrip($reservation, $trip);
+                $reservation->landing_route_id = $trip->id;
+                if ($matched) {
+                    $reservation->unit_price = (float) ($trip->priceFor($reservation->trip_type)?->price ?? 0);
+                } else {
+                    $unmatchedLabels[] = $reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}";
+                }
+                $reservation->save();
+
+                $rootId = static::rootIdFor($reservation);
+                $rootIds[] = $rootId;
+                if (! $matched) {
+                    $mismatchedRootIds[] = $rootId;
+                }
                 $linked++;
             }
         }
 
-        return $linked;
+        $reverseGuides = static::query()
+            ->where('from', $trip->to)
+            ->where('to', $trip->from)
+            ->where('date_from', '<=', $trip->day)
+            ->where('date_to', '>=', $trip->day)
+            ->get();
+
+        foreach ($reverseGuides as $guide) {
+            $reservations = $guide->pendingSeatReservations()
+                ->whereNotNull('source_reservation_id')
+                ->whereDate('travel_date', $trip->day)
+                ->with('seat')
+                ->get();
+
+            foreach ($reservations as $reservation) {
+                // Price was already fixed when the return was agendado
+                // (free for a round-trip/especial reschedule, or charged
+                // the "De regreso" price for an ida) — don't recompute it
+                // off the now-real trip's own pricing, just the seat.
+                $matched = static::remapReservationForTrip($reservation, $trip);
+                $reservation->landing_route_id = $trip->id;
+                if (! $matched) {
+                    $unmatchedLabels[] = $reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}";
+                }
+                $reservation->save();
+
+                $rootId = static::rootIdFor($reservation);
+                $rootIds[] = $rootId;
+                if (! $matched) {
+                    $mismatchedRootIds[] = $rootId;
+                }
+                $linked++;
+            }
+        }
+
+        // One queued notification per GROUP (not per seat) — a 4-seat
+        // apartado staged in the guide should send one combined ticket,
+        // not four separate WhatsApp messages. Queued rather than sent
+        // here so opening a trip that resolves several groups at once
+        // doesn't fire them all synchronously or back to back. A group
+        // with ANY unmatched seat is skipped entirely — reassigning that
+        // seat from Apartar asientos re-dispatches it (see
+        // AdminSeatReservationController::reassignSeat()).
+        foreach (array_unique($rootIds) as $rootId) {
+            if (in_array($rootId, $mismatchedRootIds, true)) {
+                continue;
+            }
+            \App\Jobs\SendLinkedTicketNotification::dispatch($rootId);
+        }
+
+        return ['linked' => $linked, 'unmatched' => array_values(array_unique($unmatchedLabels))];
+    }
+
+    /**
+     * Makes sure $reservation's bus_unit_seat_id actually belongs to the
+     * trip's bus unit — trivially true when the guide was staged on the
+     * same bus already, otherwise looks up the same-labeled seat on the
+     * trip's bus and re-points to it. Skips the remap (leaves the stale
+     * seat id, flagged by hasSeatMismatch()) when no same-labeled seat
+     * exists on the new bus, or another reservation on this trip already
+     * holds it for the same leg.
+     */
+    private static function remapReservationForTrip(SeatReservation $reservation, LandingRoute $trip): bool
+    {
+        if ($reservation->seat && $reservation->seat->bus_unit_id === $trip->bus_unit_id) {
+            return true;
+        }
+
+        $label = $reservation->seat?->label;
+        $newSeat = $label !== null ? $trip->busUnit->seats()->where('label', $label)->first() : null;
+
+        if (! $newSeat) {
+            return false;
+        }
+
+        $taken = SeatReservation::where('landing_route_id', $trip->id)
+            ->where('bus_unit_seat_id', $newSeat->id)
+            ->where('leg', $reservation->leg)
+            ->exists();
+
+        if ($taken) {
+            return false;
+        }
+
+        $reservation->bus_unit_seat_id = $newSeat->id;
+
+        return true;
+    }
+
+    private static function rootIdFor(SeatReservation $reservation): int
+    {
+        return $reservation->groupRootId();
     }
 
     /**

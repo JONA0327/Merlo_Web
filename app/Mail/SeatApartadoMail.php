@@ -44,12 +44,17 @@ class SeatApartadoMail extends Mailable
         // the trip's outbound day — the "Salida" row on the ticket
         // must reflect that or the passenger shows up on the wrong day.
         $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
-        $tripType = match (true) {
-            $reservation->isReturnLeg() => 'Solo regreso',
-            $reservation->isRoundTrip() => 'Viaje redondo',
-            default => 'Solo ida',
+        // trip_type_label is the single source of truth used everywhere
+        // else (seat picker, manifest, WhatsApp) — the old local match()
+        // here didn't know about "especial" at all and silently mislabeled
+        // it "Solo ida".
+        $tripType = $reservation->trip_type_label;
+        $tripTypeBadge = match ($reservation->trip_type) {
+            \App\Models\TripTicketPrice::TYPE_ONE_WAY => '#0EA5E9',
+            \App\Models\TripTicketPrice::TYPE_REGRESO => '#EF4444',
+            \App\Models\TripTicketPrice::TYPE_ESPECIAL => '#10B981',
+            default => '#F5B301',
         };
-        $tripTypeBadge = $reservation->isRoundTrip() ? '#F5B301' : '#8C1D2B';
         $seats = $reservation->seats ?? collect([$seat]);
         // Fallback when the reservation has no aggregated seats set yet
         $seatsList = $seats->pluck('label')->filter()->all();

@@ -74,6 +74,11 @@
                             Agenda
                         </a>
 
+                        <a href="{{ route('admin.planta.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'planta' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
+                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+                            De planta
+                        </a>
+
                         <a href="{{ route('admin.checkin.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'checkin' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm6-9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3zm6-9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V4zm0 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3zM2 14a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3z" clip-rule="evenodd"/></svg>
                             Check-in
@@ -168,6 +173,7 @@
                                 ['key' => 'precios', 'label' => 'Precios', 'route' => 'admin.precios.index'],
                                 ['key' => 'destinations', 'label' => 'Destinos', 'route' => 'admin.destinations.index'],
                                 ['key' => 'agenda', 'label' => 'Agenda', 'route' => 'admin.agenda.index'],
+                                ['key' => 'planta', 'label' => 'De planta', 'route' => 'admin.planta.index'],
                                 ['key' => 'checkin', 'label' => 'Check-in', 'route' => 'admin.checkin.index'],
                                 ['key' => 'ventas', 'label' => 'Ventas', 'route' => 'admin.ventas'],
                                 ['key' => 'pagos', 'label' => 'Pagos', 'route' => 'admin.pagos.index'],

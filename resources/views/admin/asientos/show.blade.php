@@ -50,6 +50,7 @@
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#A16207] bg-[#FACC15]"></span> Apartado (pendiente)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#1D4ED8] bg-[#3B82F6]"></span> Boleto enviado</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#991B1B] bg-[#EF4444]"></span> Vendido</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#6B21A8] bg-[#A855F7]"></span> Predeterminado (de planta)</span>
             </div>
 
             <div id="admin-seat-canvas" class="overflow-auto rounded-2xl border border-black/10 bg-[#FFFBF6]" style="min-height:560px;"></div>
@@ -155,6 +156,11 @@
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
                         <textarea name="notes" rows="2" maxlength="1000" placeholder="Ej. Pagará en efectivo al abordar" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">{{ old('notes') }}</textarea>
                     </label>
+
+                    <label class="flex items-center gap-2 rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
+                        <input type="checkbox" name="mark_as_standing" value="1" class="h-4 w-4 rounded border-violet-300 text-violet-700 focus:ring-violet-500">
+                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos en cada viaje de esta ruta a partir de ahora</span>
+                    </label>
                 </div>
 
                 <div id="apartado-selected-summary" class="mt-4 rounded-xl bg-[#FFFBF6] p-3 text-xs text-[#2B1113]/60">
@@ -178,27 +184,35 @@
         @if ($reservations->isEmpty())
             <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados para este viaje.</p>
         @else
+            @php $reservationsByCustomer = $reservations->getCollection()->groupBy(fn ($r) => $r->customer_display_name.'|'.$r->customer_phone); @endphp
             <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                @foreach ($reservations as $reservation)
-                    @php
-                        $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
-                        // Color by trip type so the list reads at a glance:
-                        // ida = azul claro, regreso = rojo, especial = verde.
-                        // "redondo" stays neutral (no single leg it maps to).
-                        $tripTypeBadgeClass = match ($reservation->trip_type) {
-                            \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-                            \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
-                            \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
-                            default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
-                        };
-                        $reservation->setRelation('landingRoute', $trip);
-                    @endphp
-                    <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0 flex-1">
-                                <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $reservation->customer_display_name }}</p>
-                                <p class="mt-0.5 text-[11px] text-[#2B1113]/60 break-all">{{ $reservation->customer_display_email ?: '—' }}</p>
-                                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                @foreach ($reservationsByCustomer as $customerReservations)
+                    <li class="rounded-2xl border border-black/5 bg-white p-4 ring-1 ring-black/5">
+                        <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $customerReservations->first()->customer_display_name }}</p>
+                        <p class="mt-0.5 text-[11px] text-[#2B1113]/60 break-all">{{ $customerReservations->first()->customer_display_email ?: '—' }}</p>
+
+                        <ul class="mt-3 space-y-3">
+                        @foreach ($customerReservations as $reservation)
+                            @php
+                                $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
+                                // Color by trip type so the list reads at a glance:
+                                // ida = azul claro, regreso = rojo, especial = verde.
+                                // "redondo" stays neutral (no single leg it maps to).
+                                $tripTypeBadgeClass = match ($reservation->trip_type) {
+                                    \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
+                                    \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+                                    \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+                                    default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
+                                };
+                                $reservation->setRelation('landingRoute', $trip);
+                                $standingAssignment = str_starts_with((string) $reservation->notes, 'Asiento de planta')
+                                    ? $standingBySeat->get($reservation->bus_unit_seat_id)
+                                    : null;
+                            @endphp
+                            <li class="rounded-xl border border-black/5 bg-[#FFFBF6] p-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-1.5">
                                     @foreach ($allSeats as $seatLabel)
                                         <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
                                     @endforeach
@@ -234,6 +248,12 @@
                                 @if ($reservation->canAdminRescheduleReturn())
                                     <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="reschedule-return-{{ $reservation->id }}">Reprogramar regreso</button>
                                 @endif
+                                @if ($standingAssignment && ! $trip->hasEnded())
+                                    <form method="POST" action="{{ route('admin.asientos.release-standing', [$trip, $standingAssignment]) }}" class="inline" onsubmit="return confirm('¿Este pasajero no viaja hoy? El asiento queda libre solo para este viaje — seguirá apartándose solo en los demás.');">
+                                        @csrf
+                                        <button type="submit" class="text-[10px] font-semibold text-violet-700 hover:text-violet-900">No viaja hoy — liberar</button>
+                                    </form>
+                                @endif
                                 @unless ($trip->hasEnded())
                                     <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirmDeleteApartado(this, {{ $allSeats->count() }})">
                                         @csrf
@@ -243,6 +263,26 @@
                                 @endunless
                             </div>
                         </div>
+
+                        @if ($reservation->hasSeatMismatch())
+                            @php
+                                $takenForLeg = $takenSeatIdsByLeg->get($reservation->leg, collect());
+                                $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForLeg->contains($s->id));
+                            @endphp
+                            <div class="mt-3 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                                <p class="text-[10px] font-bold text-amber-800">⚠ Este asiento no corresponde al autobús de este viaje (la guía estaba en otra plantilla) — elige uno disponible:</p>
+                                <form method="POST" action="{{ route('admin.asientos.reassign-seat', [$trip, $reservation]) }}" class="mt-1.5 flex gap-1.5">
+                                    @csrf
+                                    <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
+                                        <option value="">Selecciona un asiento…</option>
+                                        @foreach ($freeSeats as $seatOption)
+                                            <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
+                                </form>
+                            </div>
+                        @endif
 
                         @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
                             <div id="edit-category-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
@@ -326,6 +366,9 @@
                                 <p class="mt-1 text-[10px] text-[#2B1113]/40">Si esa fecha no está en la lista, agéndala aquí — el asiento se asigna solo en cuanto el viaje se abra.</p>
                             </div>
                         @endif
+                            </li>
+                        @endforeach
+                        </ul>
                     </li>
                 @endforeach
             </ul>
@@ -441,6 +484,7 @@
             // flow has been used in this environment.
             takenIds: {!! json_encode($takenIds) !!},
             releasedSeatIds: {!! json_encode($releasedSeatIds) !!},
+            seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
         };
     </script>
     @vite(['resources/js/admin-seat-picker.js'])

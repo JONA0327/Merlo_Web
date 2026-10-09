@@ -52,6 +52,8 @@
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#15803D] bg-white"></span> Disponible</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border-2 border-[#16A34A] bg-white"></span> Seleccionado</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#A16207] bg-[#FACC15]"></span> Apartado en guía (para esta fecha)</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#991B1B] bg-[#EF4444]"></span> Regreso agendado (del mismo viaje)</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#6B21A8] bg-[#A855F7]"></span> Predeterminado (de planta)</span>
             </div>
 
             <div id="admin-seat-canvas" class="overflow-auto rounded-2xl border border-black/10 bg-[#FFFBF6]" style="min-height:560px;"></div>
@@ -118,9 +120,38 @@
                         @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿Pagado?</span>
+                            <select name="paid" id="admin-paid-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                <option value="1" {{ old('paid', '1') === '1' ? 'selected' : '' }}>Sí, ya está pagado</option>
+                                <option value="0" {{ old('paid') === '0' ? 'selected' : '' }}>No, pagará después</option>
+                            </select>
+                            @error('paid') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        </label>
+
+                        <label class="block">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método de pago (todos)</span>
+                            {{-- Not submitted directly — quick default that fills the
+                                 per-seat selects (payment_method[seat_id]), same shared
+                                 mechanism Apartar asientos uses. --}}
+                            <select id="admin-payment-method-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                <option value="transfer">Transferencia</option>
+                                <option value="cash">Efectivo</option>
+                                <option value="tbd">Por definir</option>
+                            </select>
+                            @error('payment_method') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                        </label>
+                    </div>
+
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
                         <textarea name="notes" rows="2" maxlength="1000" placeholder="Ej. Pagará en efectivo al abordar" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">{{ old('notes') }}</textarea>
+                    </label>
+
+                    <label class="flex items-center gap-2 rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
+                        <input type="checkbox" name="mark_as_standing" value="1" class="h-4 w-4 rounded border-violet-300 text-violet-700 focus:ring-violet-500">
+                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos en cada viaje de esta ruta a partir de ahora</span>
                     </label>
                 </div>
 
@@ -142,34 +173,64 @@
     <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados pendientes en esta guía</h3>
 
-        @if ($roots->isEmpty())
+        @if ($rootsByCustomer->isEmpty())
             <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados pendientes en esta guía.</p>
         @else
             <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                @foreach ($roots as $reservation)
-                    @php $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter(); @endphp
+                @foreach ($rootsByCustomer as $customerName => $reservations)
                     <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0 flex-1">
-                                <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $reservation->customer_name }}</p>
-                                <p class="mt-0.5 text-[11px] font-semibold text-[#8C1D2B]">{{ $reservation->travel_date?->format('d/m/Y') }}</p>
-                                <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                                    @foreach ($allSeats as $seatLabel)
-                                        <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
-                                    @endforeach
-                                    <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
-                                </div>
-                                @if ($reservation->notes && ! str_starts_with((string) $reservation->notes, 'group:'))
-                                    <p class="mt-1.5 text-[11px] italic text-[#2B1113]/60">{{ $reservation->notes }}</p>
-                                @endif
-                            </div>
+                        <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $customerName }}</p>
 
-                            <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" onsubmit="return confirmDeleteGuiaApartado()">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
-                            </form>
-                        </div>
+                        <ul class="mt-2 space-y-2">
+                            @foreach ($reservations as $reservation)
+                                @php
+                                    $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
+                                    $seatMismatch = $reservation->hasSeatMismatch();
+                                @endphp
+                                <li class="rounded-xl bg-white p-2.5 ring-1 ring-black/5 @if($seatMismatch) ring-2 ring-amber-300 @endif">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-[11px] font-semibold text-[#8C1D2B]">{{ $reservation->travel_date?->format('d/m/Y') }}</p>
+                                            <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                                                @foreach ($allSeats as $seatLabel)
+                                                    <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
+                                                @endforeach
+                                                <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
+                                            </div>
+                                            @if ($reservation->notes && ! str_starts_with((string) $reservation->notes, 'group:'))
+                                                <p class="mt-1.5 text-[11px] italic text-[#2B1113]/60">{{ $reservation->notes }}</p>
+                                            @endif
+                                        </div>
+
+                                        <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" onsubmit="return confirmDeleteGuiaApartado()">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
+                                        </form>
+                                    </div>
+
+                                    @if ($seatMismatch)
+                                        @php
+                                            $takenForSlot = $takenSeatIdsByDateLeg->get($reservation->travel_date->toDateString().'|'.$reservation->leg, collect());
+                                            $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForSlot->contains($s->id));
+                                        @endphp
+                                        <div class="mt-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                                            <p class="text-[10px] font-bold text-amber-800">⚠ Este asiento no existe en el autobús actual de la guía — elige uno disponible:</p>
+                                            <form method="POST" action="{{ route('admin.guias.reservations.reassign-seat', [$guide, $reservation]) }}" class="mt-1.5 flex gap-1.5">
+                                                @csrf
+                                                <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
+                                                    <option value="">Selecciona un asiento…</option>
+                                                    @foreach ($freeSeats as $seatOption)
+                                                        <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
+                                            </form>
+                                        </div>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
                     </li>
                 @endforeach
             </ul>
@@ -207,8 +268,15 @@
                 'pos_x' => $s->pos_x,
                 'pos_y' => $s->pos_y,
             ])) !!},
-            seatStatuses: {!! json_encode($pendingReservationsForDate->map(fn () => 'pending')) !!},
+            seatStatuses: {!! json_encode($pendingReservationsForDate->map(fn ($r) => $r->status)) !!},
+            // A return leg staged via SeatReservation::createReturnLegTicket()
+            // lives on this SAME guide (not a reversed one — see
+            // TripGuide::linkTrip()), flagged by carrying a
+            // source_reservation_id. Painted red so it reads apart from a
+            // normal forward-staged apartado at a glance.
+            seatIsReturnLeg: {!! json_encode($pendingReservationsForDate->map(fn ($r) => $r->source_reservation_id !== null)) !!},
             takenIds: [],
+            seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
         };
     </script>
     @vite(['resources/js/admin-seat-picker.js'])

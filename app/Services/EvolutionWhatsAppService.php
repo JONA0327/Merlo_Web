@@ -214,6 +214,80 @@ class EvolutionWhatsAppService
     }
 
     /**
+     * Sends a whole apartado group as ONE WhatsApp message: the single-QR
+     * flow for one seat, or TicketImageService's combined multi-ticket
+     * image for several. Single source of truth — was duplicated across
+     * AdminSeatReservationController, AdminPaymentController and (now)
+     * the queued SendLinkedGuideTicket job, all three needing exactly
+     * this "send the real, paid-for ticket(s)" behavior. Returns whether
+     * it actually went out; callers decide what to do on failure (leave
+     * the apartado pending so it can be retried).
+     */
+    public function sendGroupTicket(Collection $group, TicketImageService $ticketImages): bool
+    {
+        if (! $this->isConfigured()) {
+            return false;
+        }
+
+        $first = $group->first();
+
+        if ($group->count() === 1) {
+            try {
+                $this->sendTicket($first);
+
+                return true;
+            } catch (\Throwable $e) {
+                Log::warning('Apartado WhatsApp send failed for reservation '.$first->id.': '.$e->getMessage());
+
+                return false;
+            }
+        }
+
+        $imagePath = null;
+
+        try {
+            $imagePath = $ticketImages->buildCombinedImage($group);
+            $this->sendImageFile(
+                $first->customer_phone,
+                $imagePath,
+                $this->buildGroupCaption($group),
+                'boletos-merlo-'.$first->id.'.jpg'
+            );
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('Combined apartado WhatsApp send failed for group '.$first->id.': '.$e->getMessage());
+
+            return false;
+        } finally {
+            if ($imagePath && file_exists($imagePath)) {
+                @unlink($imagePath);
+            }
+        }
+    }
+
+    /**
+     * Caption for the combined multi-seat ticket image sent by
+     * sendGroupTicket() — every seat in the group shares the same trip
+     * type and trip (store() applies it uniformly), so the first
+     * reservation's legend applies to the whole group.
+     */
+    private function buildGroupCaption(Collection $group): string
+    {
+        $first = $group->first();
+        $trip = $first->landingRoute;
+        $seats = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
+        $legend = collect($first->boardingLegendLines())->map(fn ($line) => "📍 *{$line}*")->implode("\n");
+
+        return "*MERLO Transportes* 🚌\n\n"
+            ."Hola {$first->customer_display_name}, aquí tienen tus {$group->count()} boletos:\n\n"
+            ."*{$trip->from} → {$trip->to}*\n"
+            ."💺 Asientos: {$seats}\n\n"
+            .($legend ? $legend."\n\n" : '')
+            .'Todos tus códigos QR están en esta imagen — muéstrala completa al abordar.';
+    }
+
+    /**
      * Plain-text "your seat is reserved" notice — no QR, no image.
      * Used for apartados with no payment confirmed yet (the QR is only
      * generated when an admin later confirms the payment). Failure mode
@@ -258,6 +332,7 @@ class EvolutionWhatsAppService
             "*{$trip->from} → {$trip->to}*",
             "📅 Salida: *{$departureDate}*",
             "🚍 Unidad: *{$unitName}*",
+            "🏷️ Tipo: {$first->trip_type_label}",
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
             "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];
@@ -360,6 +435,7 @@ class EvolutionWhatsAppService
             "*{$trip->from} → {$trip->to}*",
             "📅 Salida: *{$tripDate}*",
             "🚍 Unidad: *{$unitName}*",
+            "🏷️ Tipo: {$reservation->trip_type_label}",
         ];
 
         if ($reservation->needsBothLegs()) {
