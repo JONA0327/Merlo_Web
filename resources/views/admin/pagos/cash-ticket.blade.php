@@ -95,7 +95,7 @@
                     @endif
                     <div class="flex justify-between">
                         <dt class="font-semibold text-[#8C1D2B]/70">Precio</dt>
-                        <dd class="font-extrabold text-right text-base text-[#8C1D2B]">${{ number_format((float) $reservation->unit_price, 2) }}</dd>
+                        <dd class="font-extrabold text-right text-base text-[#8C1D2B]">{{ $reservation->display_price_label }}</dd>
                     </div>
                     @if ($isMultiSeat)
                         <div class="flex justify-between">

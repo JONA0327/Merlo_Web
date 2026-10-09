@@ -55,7 +55,7 @@
                     <div class="rounded-xl bg-[#FFFBF6] p-3">
                         <dt class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/50">Asiento</dt>
                         <dd class="mt-1 text-sm font-bold text-[#2B1113]">{{ $seat?->label ?? '—' }}</dd>
-                        <dd class="text-[11px] text-[#2B1113]/60">Precio: ${{ number_format((float) ($reservation->unit_price ?? 0), 2) }}</dd>
+                        <dd class="text-[11px] text-[#2B1113]/60">Precio: {{ $reservation->display_price_label }}</dd>
                     </div>
                 </dl>
 

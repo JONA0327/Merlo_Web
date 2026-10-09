@@ -94,7 +94,7 @@ class SeatApartadoMail extends Mailable
         $from = e($trip->from);
         $to = e($trip->to);
         $duration = e($trip->duration);
-        $price = $reservation->unit_price ? '$'.number_format((float) $reservation->unit_price, 2) : '—';
+        $price = $reservation->unit_price ? $reservation->display_price_label : '—';
         $code = e($reservation->ticket_code);
         $seatsHtml = collect($seatsList)
             ->map(fn ($s) => '<span style="display:inline-block;padding:4px 10px;margin:2px;border:1px solid #8C1D2B;border-radius:6px;background:#fff;color:#8C1D2B;font-weight:700;">'.e($s).'</span>')

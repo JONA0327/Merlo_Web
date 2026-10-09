@@ -269,6 +269,13 @@ class AdminSeatReservationController extends Controller
         // Keyed by seat_id — a multi-seat apartado can split across
         // methods (e.g. one seat cash, another transfer).
         $methodsBySeat = $data['payment_method'];
+        // "Especial" is sold per mancuerna with ONE payment method —
+        // never split per seat (that would break the apartado into
+        // separate per-seat notifications). Same rule the picker applies.
+        if ($tripType === TripTicketPrice::TYPE_ESPECIAL) {
+            $sharedMethod = reset($methodsBySeat);
+            $methodsBySeat = array_map(fn () => $sharedMethod, $methodsBySeat);
+        }
         $distinctMethods = array_values(array_unique($methodsBySeat));
         $isCashPending = ! $isPaid;
         $unitPrice = $landingRoute->seatPriceFor($tripType, count($data['seat_ids']));
@@ -829,13 +836,17 @@ class AdminSeatReservationController extends Controller
         // "Especial" is priced per mancuerna across the whole apartado
         // (see LandingRoute::seatPriceFor()), so moving a seat in or out
         // of especial re-splits the price among the apartado's especial
-        // seats. Done before regroupByPayment() can split the apartado.
+        // seats — and the mancuerna has ONE payment method/status, so
+        // editing one of its seats applies to all of them. Done before
+        // regroupByPayment() can split the apartado.
         $especialMembers = $reservation->fresh()->groupMembers()
             ->where('trip_type', TripTicketPrice::TYPE_ESPECIAL);
         if ($especialMembers->isNotEmpty()) {
-            SeatReservation::whereIn('id', $especialMembers->pluck('id'))->update([
-                'unit_price' => $landingRoute->seatPriceFor(TripTicketPrice::TYPE_ESPECIAL, $especialMembers->count()),
-            ]);
+            $mancuerna = ['unit_price' => $landingRoute->seatPriceFor(TripTicketPrice::TYPE_ESPECIAL, $especialMembers->count())];
+            if ($reservation->isEspecial()) {
+                $mancuerna += $reservation->only(['payment_method', 'payment_status', 'paid_at', 'status']);
+            }
+            SeatReservation::whereIn('id', $especialMembers->pluck('id'))->update($mancuerna);
             $reservation->refresh();
         }
 

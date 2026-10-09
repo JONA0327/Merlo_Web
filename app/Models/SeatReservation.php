@@ -222,6 +222,36 @@ class SeatReservation extends Model
         return $this->trip_type === TripTicketPrice::TYPE_ESPECIAL;
     }
 
+    /**
+     * The price to SHOW for this boleto. unit_price splits an especial
+     * mancuerna across its seats (so sums/reports add up), but the
+     * customer and staff should see the mancuerna price itself
+     * ($1,800 for both seats, not $900 each). Everything else shows
+     * its own unit_price.
+     */
+    public function getDisplayPriceAttribute(): float
+    {
+        $price = (float) $this->unit_price;
+        if (! $this->isEspecial()) {
+            return $price;
+        }
+
+        $seatsInMancuerna = min(
+            TripTicketPrice::SEATS_PER_MANCUERNA,
+            $this->groupMembers()->where('trip_type', TripTicketPrice::TYPE_ESPECIAL)->count()
+        );
+
+        return round($price * max(1, $seatsInMancuerna), 2);
+    }
+
+    /**
+     * Formatted display_price, labeled when it's a mancuerna price.
+     */
+    public function getDisplayPriceLabelAttribute(): string
+    {
+        return '$'.number_format($this->display_price, 2).($this->isEspecial() ? ' (mancuerna)' : '');
+    }
+
     public function isRegreso(): bool
     {
         return $this->trip_type === TripTicketPrice::TYPE_REGRESO;

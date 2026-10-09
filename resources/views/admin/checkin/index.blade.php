@@ -203,7 +203,7 @@
                                         </div>
                                         <div class="sm:col-span-4">
                                             <p class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/50">Precio</p>
-                                            <p class="text-sm font-bold text-[#2B1113]">${{ number_format((float) ($r->unit_price ?? 0), 2) }} MXN</p>
+                                            <p class="text-sm font-bold text-[#2B1113]">{{ $r->display_price_label }} MXN</p>
                                             <p class="font-mono text-[10px] text-[#2B1113]/40 break-all">{{ $r->ticket_code }}</p>
                                         </div>
                                         <div class="sm:col-span-4 flex sm:justify-end">

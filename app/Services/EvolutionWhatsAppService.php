@@ -468,7 +468,7 @@ class EvolutionWhatsAppService
         $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
         $unitName = $trip->busUnit->name ?? '—';
         $seat = $reservation->seat?->label ?? '—';
-        $price = $reservation->unit_price ? '$'.number_format((float) $reservation->unit_price, 2) : '—';
+        $price = $reservation->unit_price ? $reservation->display_price_label : '—';
         $legLabel = $reservation->isReturnLeg() ? 'regreso' : ($reservation->needsBothLegs() ? 'salida y tu regreso' : 'subida al autobús');
 
         $lines = [

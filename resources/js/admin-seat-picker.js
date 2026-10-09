@@ -534,8 +534,25 @@ function updateForm() {
         summaryEl.textContent = 'Clic en el plano para seleccionar asientos.';
     } else {
         summaryEl.className = 'mt-4 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 ring-1 ring-emerald-200';
+        // "Especial" is one sale per mancuerna: ONE payment method for
+        // all of its seats (never split per seat), so the apartado stays
+        // a single group and its notification shows the mancuerna total.
+        const sharedMethod = currentTripType === 'especial';
+        let sharedMethodField = '';
+        if (sharedMethod) {
+            const method = seatPaymentMethods.get(seats[0].id) || defaultMethodSelect?.value || 'transfer';
+            seats.forEach((s) => seatPaymentMethods.set(s.id, method));
+            const options = PAYMENT_METHOD_OPTIONS.map(([value, label]) =>
+                `<option value="${value}" ${method === value ? 'selected' : ''}>${label}</option>`
+            ).join('');
+            sharedMethodField = `<div class="mt-1.5 flex items-center justify-between gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-emerald-200">
+                <span class="font-bold">Método de pago de la mancuerna</span>
+                <select data-shared-method class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">${options}</select>
+            </div>`;
+        }
         const header = `<strong>${seats.length}</strong> asiento${seats.length === 1 ? '' : 's'} seleccionado${seats.length === 1 ? '' : 's'}`
-            + (seats.length > 1 ? ' — puedes cambiar el método de pago por asiento:' : ':');
+            + (sharedMethod ? ':' : (seats.length > 1 ? ' — puedes cambiar el método de pago por asiento:' : ':'))
+            + sharedMethodField;
         const showReturnDate = currentTripType !== 'regreso';
         // Only "ida" actually charges for the return leg — for
         // redondo/especial it's always free/already paid, so asking
@@ -557,13 +574,19 @@ function updateForm() {
                 : '';
             return `<div class="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-emerald-200">
                 <span class="font-bold">${s.label}</span>
-                <select name="payment_method[${s.id}]" data-seat-method="${s.id}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">${options}</select>
+                ${sharedMethod
+                    ? `<input type="hidden" name="payment_method[${s.id}]" value="${seatPaymentMethods.get(s.id)}">`
+                    : `<select name="payment_method[${s.id}]" data-seat-method="${s.id}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">${options}</select>`}
                 ${returnDateField}
                 ${returnPaidField}
             </div>`;
         }).join('');
         summaryEl.innerHTML = header + rows;
 
+        summaryEl.querySelector('[data-shared-method]')?.addEventListener('change', (e) => {
+            seats.forEach((s) => seatPaymentMethods.set(s.id, e.target.value));
+            updateForm();
+        });
         summaryEl.querySelectorAll('[data-seat-method]').forEach((select) => {
             select.addEventListener('change', () => {
                 seatPaymentMethods.set(Number(select.dataset.seatMethod), select.value);
