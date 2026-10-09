@@ -173,8 +173,10 @@
     <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados pendientes en esta guía</h3>
 
+        @include('admin.partials.reservation-filters', ['filters' => $filters, 'keep' => ['fecha' => request('fecha')]])
+
         @if ($rootsByCustomer->isEmpty())
-            <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados pendientes en esta guía.</p>
+            <p class="mt-3 text-xs text-[#2B1113]/50">{{ collect($filters)->filter(fn ($v) => filled($v))->isNotEmpty() ? 'Ningún apartado coincide con los filtros.' : 'Aún no hay apartados pendientes en esta guía.' }}</p>
         @else
             <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 @foreach ($rootsByCustomer as $customerName => $reservations)

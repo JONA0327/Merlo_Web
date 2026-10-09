@@ -97,6 +97,16 @@ class AdminTripGuideController extends Controller
             ->get();
 
         $roots = $allPending->filter(fn (SeatReservation $r) => $r->notes === null || ! str_starts_with((string) $r->notes, 'group:'));
+
+        // Apartados list filters (nombre, pagado, categoría, método) —
+        // applied to the roots only, so a matching apartado still shows
+        // all of its seats. The full $allPending set stays untouched for
+        // the seat map and the reassignment dropdowns below.
+        $filters = $request->only(['q', 'paid', 'trip_type', 'payment_method']);
+        if (array_filter($filters, fn ($v) => filled($v))) {
+            $matchingIds = $guide->pendingSeatReservations()->listFilters($filters)->pluck('id')->flip();
+            $roots = $roots->filter(fn (SeatReservation $r) => $matchingIds->has($r->id));
+        }
         $groupSeatsByNote = $allPending->filter(fn (SeatReservation $r) => str_starts_with((string) $r->notes, 'group:'))->groupBy('notes');
         $roots->each(function (SeatReservation $r) use ($groupSeatsByNote) {
             $r->setRelation('groupSeats', $groupSeatsByNote->get('group:'.$r->id, collect()));
@@ -121,6 +131,7 @@ class AdminTripGuideController extends Controller
             'date' => $date,
             'pendingReservationsForDate' => $pendingForDate->keyBy('bus_unit_seat_id'),
             'rootsByCustomer' => $rootsByCustomer,
+            'filters' => $filters,
             // For the "asiento no disponible en este autobús" warning's
             // reassignment dropdown — a plantilla switch (see
             // remapSeatsTo()) can leave an apartado pointing at a seat

@@ -1164,6 +1164,42 @@ class SeatReservation extends Model
     }
 
     /**
+     * Payment methods offered when apartando from the admin — the
+     * options of the "Método de pago" filter on Apartados and Guías.
+     */
+    public static function adminPaymentMethods(): array
+    {
+        return [
+            self::PAYMENT_METHOD_TRANSFER => 'Transferencia',
+            self::PAYMENT_METHOD_CARD => 'Tarjeta',
+            self::PAYMENT_METHOD_CASH => 'Efectivo',
+            self::PAYMENT_METHOD_TBD => 'Por definir',
+        ];
+    }
+
+    /**
+     * The Apartados / Guías list filters (see the
+     * admin.partials.reservation-filters form): name search, pagado
+     * sí/no, categoría and método de pago. Empty values are ignored.
+     */
+    public function scopeListFilters(Builder $query, array $filters): Builder
+    {
+        $search = trim((string) ($filters['q'] ?? ''));
+        $paid = $filters['paid'] ?? '';
+        $tripType = $filters['trip_type'] ?? '';
+        $method = $filters['payment_method'] ?? '';
+
+        return $query
+            ->when($search !== '', fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('customer_name', 'like', '%'.$search.'%')
+                ->orWhere('customer_phone', 'like', '%'.$search.'%')))
+            ->when($paid === 'yes', fn ($q) => $q->where('payment_status', self::PAYMENT_COMPLETED))
+            ->when($paid === 'no', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('payment_status')->orWhere('payment_status', '!=', self::PAYMENT_COMPLETED)))
+            ->when(array_key_exists($tripType, TripTicketPrice::tripTypes()), fn ($q) => $q->where('trip_type', $tripType))
+            ->when(array_key_exists($method, self::adminPaymentMethods()), fn ($q) => $q->where('payment_method', $method));
+    }
+
+    /**
      * Scopes the operator's check-in pages use to filter "needs to
      * be verified" reservations (still pending or only one leg done
      * on a round-trip).

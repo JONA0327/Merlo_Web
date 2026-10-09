@@ -107,10 +107,13 @@ class AdminSeatReservationController extends Controller
         $pendingCount = $roots->where('status', SeatReservation::STATUS_PENDING)->count();
         $sentCount = $roots->where('status', SeatReservation::STATUS_SENT)->count();
 
+        $filters = request()->only(['q', 'paid', 'trip_type', 'payment_method']);
         $reservations = $rootScope($apartadoScope($landingRoute->seatReservations()))
+            ->listFilters($filters)
             ->with(['reservedBy'])
             ->orderBy('created_at')
-            ->paginate(12);
+            ->paginate(12)
+            ->withQueryString();
 
         // Attach each root's other seats (for display only — "3 asientos:
         // A1, A2, A3") without an extra query per row.
@@ -168,6 +171,7 @@ class AdminSeatReservationController extends Controller
         return view('admin.asientos.show', [
             'trip' => $landingRoute,
             'reservations' => $reservations,
+            'filters' => $filters,
             'reservationsBySeat' => $reservationsBySeat,
             'pendingCount' => $pendingCount,
             'sentCount' => $sentCount,

@@ -196,8 +196,10 @@
     <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados</h3>
 
+        @include('admin.partials.reservation-filters', ['filters' => $filters])
+
         @if ($reservations->isEmpty())
-            <p class="mt-3 text-xs text-[#2B1113]/50">Aún no hay apartados para este viaje.</p>
+            <p class="mt-3 text-xs text-[#2B1113]/50">{{ collect($filters)->filter(fn ($v) => filled($v))->isNotEmpty() ? 'Ningún apartado coincide con los filtros.' : 'Aún no hay apartados para este viaje.' }}</p>
         @else
             @php $reservationsByCustomer = $reservations->getCollection()->groupBy(fn ($r) => $r->customer_display_name.'|'.$r->customer_phone); @endphp
             <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
