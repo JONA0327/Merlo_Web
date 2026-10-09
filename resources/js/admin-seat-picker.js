@@ -41,6 +41,9 @@ const takenIds = new Set(config.takenIds ?? []);
 // same-day resale (they're not coming back this day) — available, but
 // only when booking a "regreso" (return-only) apartado on this seat.
 const releasedSeatIds = new Set(config.releasedSeatIds ?? []);
+// Seats sold "solo ida" with no return-leg ticket yet — the bus comes
+// back with them empty, so they're open for a "regreso" apartado too.
+const idaOnlySeatIds = new Set(config.idaOnlySeatIds ?? []);
 
 let currentTripType = 'one_way';
 
@@ -75,27 +78,39 @@ function matchesTripType(seat, type) {
     return allowed === 'both' || allowed === effectiveType;
 }
 
+// "Regreso" on a different day than this trip's own return: it gets
+// staged in the guide for that date (the server checks seats there), so
+// what's taken on THIS trip doesn't matter for it.
+const regresoDateInput = document.querySelector('#admin-regreso-date input[name="regreso_date"]');
+
+function isRegresoOtherDay() {
+    return currentTripType === 'regreso'
+        && !! regresoDateInput?.value
+        && regresoDateInput.value !== (config.tripReturnDate ?? '');
+}
+
 function isReleasedForRegreso(seat) {
-    return currentTripType === 'regreso' && releasedSeatIds.has(seat.id);
+    if (currentTripType !== 'regreso') return false;
+    return isRegresoOtherDay() || releasedSeatIds.has(seat.id) || idaOnlySeatIds.has(seat.id);
 }
 
 function isSeatSelectable(seat) {
     if (config.tripEnded) return false;
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
-    if (takenIds.has(seat.id)) return false;
+    if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return false;
     if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false; // pending or sent
     // A "de planta" seat books itself automatically (StandingReservation::
     // applyToTrip()) — never pick it by hand here, that's how two
     // different apartados would end up fighting over the same seat. If
     // the regular passenger isn't coming, release it from the apartado
     // list below first ("No viaja hoy"); it becomes pickable right after.
-    if (seatIsStanding[seat.id]) return false;
+    if (seatIsStanding[seat.id] && ! isRegresoOtherDay()) return false;
     return matchesTripType(seat, currentTripType);
 }
 
 function isOtherType(seat) {
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
-    if (takenIds.has(seat.id)) return false;
+    if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return false;
     if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false;
     return ! matchesTripType(seat, currentTripType);
 }
@@ -118,7 +133,7 @@ function colorsFor(seat) {
     }
     if (seat.kind === 'object') return OBJECT_COLORS;
     if (seat.type === 'disabled') return DISABLED_COLORS;
-    if (takenIds.has(seat.id)) return SOLD_COLORS;
+    if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return SOLD_COLORS;
     const status = seatStatuses[seat.id];
     if (status && seatIsReturnLeg[seat.id]) return SOLD_COLORS;
     if (status && isReleasedForRegreso(seat)) return AVAILABLE_COLORS;
@@ -504,11 +519,14 @@ function updateForm() {
 // non-matching ones fade to the dimmed color, drops any selection that no
 // longer matches the new type, toggles the zone picker panel, and
 // refreshes the submit-enabled state.
+regresoDateInput?.addEventListener('change', () => setAdminTripType(currentTripType));
+
 function setAdminTripType(type) {
     currentTripType = type;
 
     const zonePicker = document.getElementById('admin-zone-picker');
     if (zonePicker) zonePicker.classList.toggle('hidden', type !== 'especial' && type !== 'regreso');
+    document.getElementById('admin-regreso-date')?.classList.toggle('hidden', type !== 'regreso');
 
     // Drop any selection that's no longer valid for the new type so the
     // form never submits seats that the server would reject.

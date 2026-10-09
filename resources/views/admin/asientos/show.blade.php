@@ -85,6 +85,21 @@
                     </select>
                 </label>
 
+                <div id="admin-regreso-date" class="mt-3 hidden rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+                    <label class="block">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-red-900/70">Fecha de regreso</span>
+                        <input type="date" name="regreso_date" value="{{ old('regreso_date', $trip->return_date?->toDateString()) }}" min="{{ now()->toDateString() }}" class="mt-1 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                    </label>
+                    <p class="mt-1 text-[10px] text-red-900/60">
+                        @if ($trip->return_date)
+                            Este viaje regresa el {{ $trip->return_date->format('d/m/Y') }}. Si el pasajero regresa otro día, se agenda en la guía de esa fecha y se vincula solo cuando se abra el viaje.
+                        @else
+                            Si el pasajero regresa otro día, se agenda en la guía de esa fecha y se vincula solo cuando se abra el viaje.
+                        @endif
+                    </p>
+                    @error('regreso_date') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                </div>
+
                 <div id="admin-zone-picker" class="mt-3 hidden">
                     <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Zonas disponibles</span>
                     <p class="mt-0.5 text-[10px] text-[#2B1113]/40">Clic en una zona para seleccionar sus asientos en el plano.</p>
@@ -348,6 +363,13 @@
                                                         </select>
                                                     </label>
                                                 </div>
+                                                @if ($member->isRegreso())
+                                                    <label class="block">
+                                                        <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Fecha de regreso</span>
+                                                        <input type="date" name="regreso_date" value="{{ $trip->return_date?->toDateString() }}" min="{{ now()->toDateString() }}" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                        <span class="mt-0.5 block text-[10px] text-[#2B1113]/40">Si cambias el día, el asiento sale de este viaje y se agenda en la guía de esa fecha.</span>
+                                                    </label>
+                                                @endif
                                                 <p class="text-[10px] text-[#2B1113]/40">Solo cambia el asiento {{ $member->seat?->label }}. Si ya se había notificado, al guardar se reenvía la información corregida por WhatsApp.</p>
                                                 <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
                                             </form>
@@ -489,6 +511,8 @@
             // flow has been used in this environment.
             takenIds: {!! json_encode($takenIds) !!},
             releasedSeatIds: {!! json_encode($releasedSeatIds) !!},
+            idaOnlySeatIds: {!! json_encode($idaOnlySeatIds) !!},
+            tripReturnDate: @json($trip->return_date?->toDateString()),
             seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
         };
     </script>

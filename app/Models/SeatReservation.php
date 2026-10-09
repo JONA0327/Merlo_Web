@@ -445,6 +445,141 @@ class SeatReservation extends Model
     }
 
     /**
+     * Seats on this trip sold as "solo ida" whose return leg nobody holds
+     * yet — the passenger gets off at the destination, so the bus comes
+     * back with that seat empty and a "regreso" sale can claim it
+     * (leg=return; the unique index is scoped per leg). A seat with any
+     * other row on it — a redondo/especial outbound (released ones are
+     * handled by the resale flow instead) or an existing return-leg
+     * ticket — is never included.
+     */
+    public static function idaOnlySeatIdsFor(LandingRoute $trip): \Illuminate\Support\Collection
+    {
+        return $trip->seatReservations()
+            ->get(['bus_unit_seat_id', 'trip_type', 'leg'])
+            ->groupBy('bus_unit_seat_id')
+            ->filter(fn ($rows) => $rows->every(fn (self $r) => $r->leg === self::LEG_OUTBOUND && $r->isOneWay()))
+            ->keys()
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    /**
+     * Departure day of the trip that comes back on $returnDate, judged
+     * from $trip: a trip here is one bus going out on `day` and back on
+     * `return_date`, so a passenger returning another day rides the
+     * same-route trip that leaves that many days earlier. Guides key
+     * their apartados by that departure day too (TripGuide::linkTrip()
+     * matches travel_date against the real trip's day).
+     */
+    public static function regresoDepartureDay(LandingRoute $trip, Carbon $returnDate): Carbon
+    {
+        $offset = $trip->return_date && $trip->day
+            ? (int) abs($trip->day->diffInDays($trip->return_date))
+            : 0;
+
+        return $returnDate->copy()->startOfDay()->subDays($offset);
+    }
+
+    /**
+     * Where a "regreso" coming back on $returnDate gets staged when it's
+     * not $trip's own return day: the route's guide for that departure
+     * day (see TripGuide::forRouteOnDate()), with $seatIds (seats of
+     * $trip's bus) mapped onto the guide's bus — same ids when it's the
+     * same bus, by label otherwise. Refuses when the real trip for that
+     * day already exists (the regreso goes on that trip's own map) or a
+     * seat's return leg is already staged that day. $ignoreId skips the
+     * reservation being moved itself. Call inside a transaction.
+     *
+     * @param  array<int|string>  $seatIds
+     * @return array{guide: TripGuide, day: Carbon, seat_map: array<int, int>}
+     */
+    public static function regresoGuideSlot(LandingRoute $trip, Carbon $returnDate, array $seatIds, ?int $ignoreId = null): array
+    {
+        $day = self::regresoDepartureDay($trip, $returnDate);
+
+        $existing = LandingRoute::query()
+            ->where('from', $trip->from)
+            ->where('to', $trip->to)
+            ->whereDate('day', $day->toDateString())
+            ->first();
+        abort_if(
+            $existing !== null,
+            422,
+            'Ya existe el viaje del '.$day->format('d/m/Y').' (regreso '.$returnDate->format('d/m/Y').') — aparta el regreso desde ese viaje.'
+        );
+
+        $guide = TripGuide::forRouteOnDate($trip->from, $trip->to, $trip->bus_unit_id, $day, 'Creada automáticamente al agendar un regreso desde el viaje #'.$trip->id);
+
+        $seatMap = [];
+        if ($guide->bus_unit_id === $trip->bus_unit_id) {
+            foreach ($seatIds as $id) {
+                $seatMap[(int) $id] = (int) $id;
+            }
+        } else {
+            $labels = BusUnitSeat::whereIn('id', $seatIds)->pluck('label', 'id');
+            $guideSeats = $guide->busUnit->seats()->bookable()->get()->keyBy('label');
+            foreach ($seatIds as $id) {
+                $match = $guideSeats->get($labels->get((int) $id));
+                abort_if(! $match, 422, 'El asiento '.($labels->get((int) $id) ?? $id).' no existe en la unidad de la guía para esa fecha.');
+                $seatMap[(int) $id] = $match->id;
+            }
+        }
+
+        // Same rule as AdminTripGuideController::storeReservation(): one
+        // return-leg claim per physical seat per date, across guides.
+        $taken = self::whereNull('landing_route_id')
+            ->whereNotNull('trip_guide_id')
+            ->whereIn('bus_unit_seat_id', array_values($seatMap))
+            ->whereDate('travel_date', $day->toDateString())
+            ->where('leg', self::LEG_RETURN)
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->pluck('bus_unit_seat_id');
+
+        if ($taken->isNotEmpty()) {
+            $labels = BusUnitSeat::whereIn('id', $taken)->pluck('label')->implode(', ');
+            abort(409, "Los siguientes asientos ya tienen regreso agendado para esa fecha: {$labels}");
+        }
+
+        return ['guide' => $guide, 'day' => $day, 'seat_map' => $seatMap];
+    }
+
+    /**
+     * Takes this reservation out of its multi-seat apartado (it's moving
+     * somewhere else on its own), handing the root role — free-text note,
+     * transfer reference — to the next seat when it was the root. Same
+     * hand-off AdminSeatReservationController::removeSeat() does.
+     */
+    public function detachFromGroup(): void
+    {
+        $others = $this->groupMembers()->reject(fn (self $r) => $r->id === $this->id)->values();
+        if ($others->isEmpty()) {
+            return;
+        }
+
+        if ($this->groupRootId() !== $this->id) {
+            $this->update(['notes' => null]);
+
+            return;
+        }
+
+        $notes = $this->notes;
+        $reference = $this->transfer_reference;
+        $expiresAt = $this->transfer_expires_at;
+        // transfer_reference is DB-unique — free it before handing it over.
+        $this->update(['notes' => null, 'transfer_reference' => null, 'transfer_expires_at' => null]);
+
+        $newRoot = $others->first();
+        $newRoot->update([
+            'notes' => $notes,
+            'transfer_reference' => $reference,
+            'transfer_expires_at' => $expiresAt,
+            'reserved_by' => $this->reserved_by,
+        ]);
+        self::whereIn('id', $others->skip(1)->pluck('id'))->update(['notes' => 'group:'.$newRoot->id]);
+    }
+
+    /**
      * Every published, open-seat trip on the reverse direction of this
      * reservation's route — the admin's choices when rescheduling a
      * return (see canAdminRescheduleReturn()). Shared by the check-in
@@ -645,50 +780,7 @@ class SeatReservation extends Model
                 'Ya existe un viaje abierto para esa fecha — selecciónalo de la lista en lugar de agendarlo.'
             );
 
-            // Any guide already covering this route wins over creating a
-            // disjoint new one — NOT filtered by bus_unit_id: the
-            // "plantilla" may have changed since the outbound leg was
-            // booked (see AdminTripGuideController::update()), and the
-            // guide that's actually there for this date is still the
-            // right place to stage the return. Only a brand-new guide
-            // (none exists yet) defaults to the outbound's own bus.
-            $routeGuides = TripGuide::query()
-                ->where('from', $guideFrom)
-                ->where('to', $guideTo)
-                ->lockForUpdate()
-                ->get();
-
-            // whereDate()-equivalent in PHP (comparing Carbon values, not
-            // raw SQL strings): a raw where('date_from', '<=', ...) once
-            // silently never matched because the column stores a full
-            // "Y-m-d 00:00:00" datetime that sorts after a bare "Y-m-d".
-            $guide = $routeGuides->first(fn (TripGuide $g) => $g->coversDate($date));
-
-            if (! $guide) {
-                // None covers this exact date — stretch the nearest
-                // existing guide for this route/bus to reach it instead
-                // of starting a new, disjoint one.
-                $guide = $routeGuides->sortBy(fn (TripGuide $g) => min(
-                    abs($g->date_from->diffInDays($date)),
-                    abs($g->date_to->diffInDays($date))
-                ))->first();
-
-                if ($guide) {
-                    $guide->update([
-                        'date_from' => $date->lt($guide->date_from) ? $date->toDateString() : $guide->date_from,
-                        'date_to' => $date->gt($guide->date_to) ? $date->toDateString() : $guide->date_to,
-                    ]);
-                }
-            }
-
-            $guide ??= TripGuide::create([
-                'from' => $guideFrom,
-                'to' => $guideTo,
-                'bus_unit_id' => $busUnitId,
-                'date_from' => $date->toDateString(),
-                'date_to' => $date->toDateString(),
-                'notes' => 'Creada automáticamente al agendar el regreso del boleto #'.$this->id,
-            ]);
+            $guide = TripGuide::forRouteOnDate($guideFrom, $guideTo, $busUnitId, $date, 'Creada automáticamente al agendar el regreso del boleto #'.$this->id);
 
             // Scoped to THIS guide and THIS leg specifically — an
             // unscoped query here would treat a same-numbered seat staged

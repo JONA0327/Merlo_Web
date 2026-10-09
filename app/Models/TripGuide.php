@@ -54,6 +54,55 @@ class TripGuide extends Model
         return $this->seatReservations()->whereNull('landing_route_id');
     }
 
+    /**
+     * The guide a reservation for this route on $date should be staged
+     * in: one already covering the date; else the nearest one for this
+     * route, stretched to reach it; only creating a brand-new one when
+     * the route has none at all — keeps every staged apartado for a
+     * route under ONE guide instead of spawning one per date. Not
+     * filtered by bus_unit_id: the "plantilla" may have changed (see
+     * AdminTripGuideController::update()), and the guide actually there
+     * for this date is still the right place. Only a brand-new guide
+     * defaults to $busUnitId. Call inside a transaction (rows locked).
+     */
+    public static function forRouteOnDate(string $from, string $to, ?int $busUnitId, \Carbon\Carbon $date, string $notes): self
+    {
+        $routeGuides = static::query()
+            ->where('from', $from)
+            ->where('to', $to)
+            ->lockForUpdate()
+            ->get();
+
+        // whereDate()-equivalent in PHP (comparing Carbon values, not
+        // raw SQL strings): a raw where('date_from', '<=', ...) once
+        // silently never matched because the column stores a full
+        // "Y-m-d 00:00:00" datetime that sorts after a bare "Y-m-d".
+        $guide = $routeGuides->first(fn (self $g) => $g->coversDate($date));
+
+        if (! $guide) {
+            $guide = $routeGuides->sortBy(fn (self $g) => min(
+                abs($g->date_from->diffInDays($date)),
+                abs($g->date_to->diffInDays($date))
+            ))->first();
+
+            if ($guide) {
+                $guide->update([
+                    'date_from' => $date->lt($guide->date_from) ? $date->toDateString() : $guide->date_from,
+                    'date_to' => $date->gt($guide->date_to) ? $date->toDateString() : $guide->date_to,
+                ]);
+            }
+        }
+
+        return $guide ?? static::create([
+            'from' => $from,
+            'to' => $to,
+            'bus_unit_id' => $busUnitId,
+            'date_from' => $date->toDateString(),
+            'date_to' => $date->toDateString(),
+            'notes' => $notes,
+        ]);
+    }
+
     public function coversDate(\DateTimeInterface $date): bool
     {
         return $this->date_from->lte($date) && $this->date_to->gte($date);
