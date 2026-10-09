@@ -29,7 +29,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 
-            $table->unique(['from', 'to', 'bus_unit_id', 'bus_unit_seat_id']);
+            $table->unique(['from', 'to', 'bus_unit_id', 'bus_unit_seat_id'], 'standing_unique');
         });
     }
 

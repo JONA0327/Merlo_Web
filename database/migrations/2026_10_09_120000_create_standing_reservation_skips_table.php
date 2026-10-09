@@ -22,7 +22,7 @@ return new class extends Migration
             $table->foreignId('landing_route_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
 
-            $table->unique(['standing_reservation_id', 'landing_route_id']);
+            $table->unique(['standing_reservation_id', 'landing_route_id'], 'standing_skip_unique');
         });
     }
 
