@@ -305,8 +305,17 @@ function toggleSeat(seat) {
     // tagged zone (set in the bus editor) wins when present; otherwise
     // fall back to whichever bookable seat sits right next to it in the
     // same row, on the same side of the aisle — works out of the box
-    // without requiring the admin to tag every pair first.
+    // without requiring the admin to tag every pair first. A mancuerna
+    // whose other seat is already taken can't be sold as especial.
     if (currentTripType === 'especial') {
+        if (! selectedIds.has(seat.id)) {
+            const blocked = blockedPartnersOf(seat);
+            if (blocked.length > 0) {
+                showMancuernaWarning([seat], blocked);
+                return;
+            }
+        }
+        showMancuernaWarning([], []);
         if (seat.zone) {
             toggleZone(seat.zone);
             return;
@@ -391,10 +400,70 @@ function findAdjacentPartner(seat) {
     return gap <= maxPairGap ? nearest : null;
 }
 
+// The other seat(s) of this seat's mancuerna — every other seat sharing
+// its zone tag, or else the adjacent seat beside it in the same row.
+function mancuernaPartnersOf(seat) {
+    if (seat.zone) {
+        return config.seats.filter((s) => s.zone === seat.zone && s.id !== seat.id && s.kind === 'seat' && s.type !== 'disabled');
+    }
+    const partner = findAdjacentPartner(seat);
+    return partner ? [partner] : [];
+}
+
+// Partners already held by another passenger (or otherwise not
+// pickable) — any of these means the mancuerna can't go as especial.
+function blockedPartnersOf(seat) {
+    return mancuernaPartnersOf(seat).filter((s) => ! selectedIds.has(s.id) && ! isSeatSelectable(s));
+}
+
+// Warning banner above the selection summary. Empty lists hide it.
+function showMancuernaWarning(seats, blocked) {
+    const summaryEl = document.getElementById('apartado-selected-summary');
+    if (!summaryEl) return;
+    let warningEl = document.getElementById('apartado-mancuerna-warning');
+    if (blocked.length === 0) {
+        warningEl?.remove();
+        return;
+    }
+    if (!warningEl) {
+        warningEl = document.createElement('div');
+        warningEl.id = 'apartado-mancuerna-warning';
+        warningEl.setAttribute('role', 'alert');
+        warningEl.className = 'mt-4 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-900 ring-1 ring-amber-300';
+        summaryEl.parentNode.insertBefore(warningEl, summaryEl);
+    }
+    const labels = (list) => list.map((s) => s.label).join(', ');
+    const subject = seats.length > 0 ? `La mancuerna del asiento ${labels(seats)}` : 'Esta mancuerna';
+    warningEl.textContent = `⚠️ ${subject} no se puede vender como especial: `
+        + `el asiento ${labels(blocked)} ya está en uso por otro pasajero.`;
+}
+
+// Switching to "especial" with seats already picked: complete each one's
+// mancuerna automatically when the partner is free; when it isn't, drop
+// that seat and warn that its mancuerna is already in use.
+function completeMancuernas() {
+    const rejected = [];
+    const blockedAll = [];
+    Array.from(selectedIds).forEach((id) => {
+        const seat = seatNodesById.get(id)?.seat;
+        if (!seat || ! selectedIds.has(id)) return;
+        const blocked = blockedPartnersOf(seat);
+        if (blocked.length > 0) {
+            selectedIds.delete(id);
+            rejected.push(seat);
+            blocked.forEach((b) => { if (! blockedAll.includes(b)) blockedAll.push(b); });
+            return;
+        }
+        mancuernaPartnersOf(seat).forEach((partner) => selectedIds.add(partner.id));
+    });
+    showMancuernaWarning(rejected, blockedAll);
+}
+
 function clearSelection() {
     if (selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
     selectedIds.clear();
+    showMancuernaWarning([], []);
     ids.forEach(repaintSeat);
     updateForm();
 }
@@ -537,6 +606,12 @@ function setAdminTripType(type) {
     });
     stale.forEach((id) => selectedIds.delete(id));
 
+    if (type === 'especial') {
+        completeMancuernas();
+    } else {
+        showMancuernaWarning([], []);
+    }
+
     config.seats.forEach((seat) => {
         const node = seatNodesById.get(seat.id);
         if (!node) return;
@@ -552,6 +627,15 @@ function setAdminTripType(type) {
 // clearing what's already picked) — lets the admin click a "Mancuerna 1"
 // chip instead of clicking each seat individually.
 function selectZone(zoneName) {
+    if (currentTripType === 'especial') {
+        const zoneSeats = config.seats.filter((seat) => seat.zone === zoneName && seat.kind === 'seat' && seat.type !== 'disabled');
+        const blocked = zoneSeats.filter((seat) => ! selectedIds.has(seat.id) && ! isSeatSelectable(seat));
+        if (blocked.length > 0) {
+            showMancuernaWarning(zoneSeats.filter((seat) => ! blocked.includes(seat)), blocked);
+            return;
+        }
+        showMancuernaWarning([], []);
+    }
     config.seats.forEach((seat) => {
         if (seat.zone !== zoneName) return;
         if (!isSeatSelectable(seat)) return;
