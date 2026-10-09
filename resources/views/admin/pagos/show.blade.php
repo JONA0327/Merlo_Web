@@ -83,7 +83,7 @@
                                         <input type="text" name="reference_confirm" placeholder="Pega aquí el concepto" class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-sm focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                                         <button type="submit" class="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">Marcar como pagada</button>
                                     </form>
-                                    <form method="POST" action="{{ route('admin.pagos.reject-transfer', $r) }}" class="mt-2" onsubmit="return confirm('¿Rechazar esta transferencia? Los asientos volverán a estar disponibles.')">
+                                    <form method="POST" action="{{ route('admin.pagos.reject-transfer', $r) }}" class="mt-2" data-confirm="¿Rechazar esta transferencia? Los asientos volverán a estar disponibles.">
                                         @csrf
                                         <button type="submit" class="text-xs font-semibold text-red-600 hover:text-red-700">Rechazar y liberar asientos</button>
                                     </form>
@@ -104,7 +104,7 @@
 
                             @if ($r->isPaymentPending())
                                 <div class="border-t border-black/5 pt-4">
-                                    <form method="POST" action="{{ route('admin.pagos.confirm-cash', $r) }}" onsubmit="return confirm('¿Confirmar que se recibió el pago? Se generará el boleto con QR y se abrirá la pantalla para imprimirlo.')">
+                                    <form method="POST" action="{{ route('admin.pagos.confirm-cash', $r) }}" data-confirm="¿Confirmar que se recibió el pago? Se generará el boleto con QR y se abrirá la pantalla para imprimirlo.">
                                         @csrf
                                         <button type="submit" class="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">
                                             Confirmar pago
@@ -196,7 +196,7 @@
                         <p class="mt-1 text-sm text-[#2B1113]/60">Liberado {{ $r->return_released_at->diffForHumans() }}. Disponible para reventa hasta {{ $r->return_resale_expires_at->format('d/m/Y H:i') }}.</p>
                     @else
                         <p class="mt-1 text-sm text-[#2B1113]/60">Si el pasajero avisó que no usará el tramo de regreso, puedes liberar ese asiento para venderlo a otro cliente por tiempo limitado.</p>
-                        <form method="POST" action="{{ route('admin.pagos.release-return', $r) }}" class="mt-3" onsubmit="return confirm('¿Liberar el regreso de este boleto para reventa?')">
+                        <form method="POST" action="{{ route('admin.pagos.release-return', $r) }}" class="mt-3" data-confirm="¿Liberar el regreso de este boleto para reventa?">
                             @csrf
                             <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-sm font-bold text-white hover:bg-[#6F1622]">Liberar regreso para reventa</button>
                         </form>

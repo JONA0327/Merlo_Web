@@ -920,10 +920,65 @@ class SeatReservation extends Model
             ->orWhere('notes', 'group:'.$this->id)
             ->get();
 
-        static::whereIn('id', $group->pluck('id'))->update([
+        // Only the seats paid the same way as this row — a group can mix
+        // transfer + cash, and confirming one must not mark the other paid.
+        static::whereIn('id', $group->where('payment_method', $this->payment_method)->pluck('id'))->update([
             'payment_status' => self::PAYMENT_COMPLETED,
             'paid_at' => $this->paid_at ?? now(),
         ]);
+    }
+
+    /**
+     * Payment is per seat (method AND paid/pending can differ inside one
+     * apartado), but everything downstream — Pagos confirmation, the
+     * WhatsApp notice/ticket — works per group. So after creating or
+     * editing, split the group into one group per (method, status): the
+     * partition holding the current root keeps it, every other one gets
+     * its lowest-id seat as a new root (with its own transfer reference
+     * when it's a pending transfer).
+     *
+     * @return \Illuminate\Support\Collection<int, SeatReservation> root of each resulting group
+     */
+    public function regroupByPayment(): \Illuminate\Support\Collection
+    {
+        $members = $this->groupMembers();
+        $root = $members->firstWhere('id', $this->groupRootId()) ?? $members->first();
+        $roots = collect([$root]);
+
+        foreach ($members->groupBy(fn (self $m) => $m->payment_method.'|'.$m->payment_status) as $rows) {
+            if ($rows->contains('id', $root->id)) {
+                continue;
+            }
+
+            $newRoot = $rows->sortBy('id')->first();
+            $newRoot->update([
+                'notes' => null,
+                'reserved_by' => $root->reserved_by,
+                'transfer_reference' => null,
+                'transfer_expires_at' => null,
+            ]);
+            static::whereIn('id', $rows->pluck('id')->reject(fn ($id) => $id === $newRoot->id))
+                ->update(['notes' => 'group:'.$newRoot->id]);
+
+            $roots->push($newRoot);
+        }
+
+        // A pending transfer needs a reference for Pagos to validate
+        // against — a seat switched to transfer after the fact has none.
+        foreach ($roots as $r) {
+            if ($r->isTransfer() && $r->isPaymentPending() && ! $r->transfer_reference) {
+                $r->update([
+                    'transfer_reference' => static::generateTransferReference(
+                        $r->loadMissing('landingRoute')->landingRoute?->day ?? $r->travel_date ?? now(),
+                        $r->groupMembers()->count(),
+                        (string) $r->customer_name
+                    ),
+                    'transfer_expires_at' => now()->addDays(3),
+                ]);
+            }
+        }
+
+        return $roots;
     }
 
     private static function initialsFor(string $name): string
@@ -942,13 +997,11 @@ class SeatReservation extends Model
      */
     public function sendGroupTickets(): void
     {
-        $group = static::query()
-            ->where('id', $this->id)
-            ->orWhere('notes', 'group:'.$this->id)
-            ->get();
+        $group = $this->groupMembers();
 
         foreach ($group as $ticket) {
-            if ($ticket->isSent() || ! $ticket->customer_email) {
+            // Never email a QR for a seat that isn't paid yet.
+            if ($ticket->isSent() || ! $ticket->customer_email || ! $ticket->isPaymentCompleted()) {
                 continue;
             }
 

@@ -58,28 +58,10 @@ class SendLinkedTicketNotification implements ShouldQueue
             return;
         }
 
-        if ($root->isPaymentCompleted()) {
-            $root->sendGroupTickets();
+        // Paid seats get the real ticket (and email), unpaid ones the
+        // reservation notice — decided per seat, not off the root alone.
+        $group->filter->isPaymentCompleted()->first()?->sendGroupTickets();
 
-            $sent = $whatsapp->sendGroupTicket($group, $ticketImages);
-            if ($sent) {
-                SeatReservation::whereIn('id', $group->pluck('id'))->update([
-                    'status' => SeatReservation::STATUS_SENT,
-                    'ticket_sent_at' => now(),
-                ]);
-            }
-
-            return;
-        }
-
-        if (! $whatsapp->isConfigured()) {
-            return;
-        }
-
-        try {
-            $whatsapp->sendReservationNotice($group);
-        } catch (\Throwable $e) {
-            Log::warning('Linked-guide reservation notice failed for reservation '.$root->id.': '.$e->getMessage());
-        }
+        $whatsapp->deliverGroup($group, $ticketImages);
     }
 }

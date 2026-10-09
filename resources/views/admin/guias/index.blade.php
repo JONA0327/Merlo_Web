@@ -65,7 +65,7 @@
                                         </a>
                                         <div class="flex items-center justify-end gap-3">
                                             <a href="{{ route('admin.guias.edit', $guide) }}" class="text-[11px] font-semibold text-[#2B1113]/60 hover:text-[#2B1113]">Editar</a>
-                                            <form method="POST" action="{{ route('admin.guias.destroy', $guide) }}" onsubmit="return confirm('¿Eliminar esta guía? Se cancelarán {{ $guide->pending_count }} apartado(s) pendiente(s) que aún no se hayan vinculado a un viaje real.')">
+                                            <form method="POST" action="{{ route('admin.guias.destroy', $guide) }}" data-confirm="¿Eliminar esta guía? Se cancelarán {{ $guide->pending_count }} apartado(s) pendiente(s) que aún no se hayan vinculado a un viaje real.">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit" class="text-[11px] font-semibold text-red-600 hover:text-red-700">Eliminar</button>

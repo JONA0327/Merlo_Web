@@ -83,7 +83,7 @@
                         Generar código QR
                     </button>
 
-                    <form method="POST" action="{{ route('admin.whatsapp.disconnect') }}" onsubmit="return confirm('¿Desconectar este número de WhatsApp?')">
+                    <form method="POST" action="{{ route('admin.whatsapp.disconnect') }}" data-confirm="¿Desconectar este número de WhatsApp?">
                         @csrf
                         <button type="submit" class="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-[#2B1113]/60 ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                             Desconectar

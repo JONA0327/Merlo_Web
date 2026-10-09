@@ -60,7 +60,7 @@
                             <td class="px-4 py-3 text-right">
                                 <div class="flex items-center justify-end gap-1.5">
                                     <button type="button" class="agenda-edit-toggle rounded-lg bg-[#FFFBF6] px-2.5 py-1 text-[11px] font-bold text-[#8C1D2B] ring-1 ring-black/10 hover:bg-[#8C1D2B]/5" data-target="agenda-edit-{{ $c->id }}">Editar</button>
-                                    <form method="POST" action="{{ route('admin.agenda.destroy', $c) }}" onsubmit="return confirmDeleteCustomer()">
+                                    <form method="POST" action="{{ route('admin.agenda.destroy', $c) }}" data-confirm-delete="Vas a BORRAR este cliente de la agenda.">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100">Borrar</button>
@@ -87,11 +87,6 @@
     </div>
 
     <script>
-        function confirmDeleteCustomer() {
-            const typed = window.prompt('Vas a BORRAR este cliente de la agenda.\n\nEscribe ELIMINAR para confirmar:');
-            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
-        }
-
         document.querySelectorAll('.agenda-edit-toggle').forEach((btn) => {
             btn.addEventListener('click', () => {
                 document.getElementById(btn.getAttribute('data-target'))?.classList.toggle('hidden');

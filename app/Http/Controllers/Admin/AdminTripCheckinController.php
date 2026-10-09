@@ -236,7 +236,7 @@ class AdminTripCheckinController extends Controller
      * see TripGuide::linkTrip()), so this controller doesn't need to care
      * which case it is.
      */
-    public function rescheduleReturn(Request $request, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp): RedirectResponse
+    public function rescheduleReturn(Request $request, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, \App\Services\TicketImageService $ticketImages): RedirectResponse
     {
         if (! $reservation->canAdminRescheduleReturn()) {
             return $this->backToDetail($reservation, 'error', 'Este boleto no puede reprogramar su regreso.');
@@ -300,18 +300,8 @@ class AdminTripCheckinController extends Controller
         // WhatsApp when the customer has a phone on file.
         $newTicket->sendGroupTickets();
 
-        $whatsappSent = false;
-        if ($whatsapp->isConfigured() && $newTicket->customer_phone) {
-            try {
-                $whatsapp->sendTicket($newTicket);
-                $whatsappSent = true;
-            } catch (\Throwable $e) {
-                Log::warning('Return-reschedule WhatsApp send failed for reservation '.$newTicket->id.': '.$e->getMessage());
-            }
-        }
-        if ($whatsappSent) {
-            $newTicket->update(['status' => SeatReservation::STATUS_SENT, 'ticket_sent_at' => now()]);
-        }
+        // Paid -> real QR ticket; unpaid -> only the "reservado" notice.
+        $whatsappSent = $whatsapp->deliverGroup($newTicket->groupMembers()->load(['landingRoute', 'seat']), $ticketImages);
 
         return $this->backToDetail(
             $reservation,

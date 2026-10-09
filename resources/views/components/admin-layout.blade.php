@@ -199,5 +199,83 @@
                 </main>
             </div>
         </div>
+
+        {{-- ===================== Modal de confirmación =====================
+             Reemplaza tanto el window.prompt() como el window.confirm()
+             nativos (sin estilo, inconsistentes entre navegadores) en toda
+             la sección admin. Cualquier <form> queda enganchado solo con
+             un atributo, sin JS por página:
+             - data-confirm-delete="mensaje" → acción irreversible, exige
+               escribir ELIMINAR antes de poder aceptar.
+             - data-confirm="mensaje" → confirmación simple, Aceptar/Cancelar. --}}
+        <div id="admin-confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-[#2B1113]/50 p-4">
+            <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl ring-1 ring-black/5">
+                <p id="admin-confirm-modal-message" class="text-sm text-[#2B1113]"></p>
+                <label id="admin-confirm-modal-input-group" class="mt-4 block">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Escribe ELIMINAR para confirmar</span>
+                    <input type="text" id="admin-confirm-modal-input" autocomplete="off" class="mt-1.5 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                </label>
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" id="admin-confirm-modal-cancel" class="rounded-xl bg-[#FFFBF6] px-4 py-2 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">Cancelar</button>
+                    <button type="button" id="admin-confirm-modal-accept" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-sm font-bold text-white hover:bg-[#6F1622] transition-colors disabled:cursor-not-allowed disabled:opacity-40">Aceptar</button>
+                </div>
+            </div>
+        </div>
+        <script>
+            (function () {
+                const modal = document.getElementById('admin-confirm-modal');
+                const messageEl = document.getElementById('admin-confirm-modal-message');
+                const inputGroup = document.getElementById('admin-confirm-modal-input-group');
+                const input = document.getElementById('admin-confirm-modal-input');
+                const acceptBtn = document.getElementById('admin-confirm-modal-accept');
+                const cancelBtn = document.getElementById('admin-confirm-modal-cancel');
+                let pendingForm = null;
+
+                function closeModal() {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                    input.value = '';
+                    pendingForm = null;
+                }
+
+                input?.addEventListener('input', () => {
+                    acceptBtn.disabled = input.value.trim().toUpperCase() !== 'ELIMINAR';
+                });
+
+                cancelBtn?.addEventListener('click', closeModal);
+
+                acceptBtn?.addEventListener('click', () => {
+                    const form = pendingForm;
+                    closeModal();
+                    // A programmatic form.submit() never re-fires the
+                    // 'submit' event listener below, so this can't loop.
+                    form?.submit();
+                });
+
+                function openModal(form, message, requireTyping) {
+                    pendingForm = form;
+                    messageEl.textContent = message;
+                    inputGroup.classList.toggle('hidden', ! requireTyping);
+                    acceptBtn.disabled = requireTyping;
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    if (requireTyping) input.focus();
+                }
+
+                document.querySelectorAll('form[data-confirm-delete]').forEach((form) => {
+                    form.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        openModal(form, form.dataset.confirmDelete, true);
+                    });
+                });
+
+                document.querySelectorAll('form[data-confirm]').forEach((form) => {
+                    form.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        openModal(form, form.dataset.confirm, false);
+                    });
+                });
+            })();
+        </script>
     </body>
 </html>

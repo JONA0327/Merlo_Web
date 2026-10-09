@@ -166,6 +166,8 @@ class AdminLandingRouteController extends Controller
             $image = null;
         }
 
+        $busChanged = (int) ($validated['bus_unit_id'] ?? 0) !== (int) $landingRoute->bus_unit_id;
+
         $landingRoute->update([
             'from' => $validated['from'],
             'to' => $validated['to'],
@@ -182,9 +184,17 @@ class AdminLandingRouteController extends Controller
         ]);
 
         $freshRoute = $landingRoute->fresh();
+        $message = 'Viaje actualizado correctamente.';
+        // Plantilla changed: existing apartados follow their seat label to
+        // the new bus before anything gets flagged as "no coincide".
+        if ($busChanged && $freshRoute->bus_unit_id) {
+            $moved = TripGuide::remapTripReservations($freshRoute->load('busUnit'));
+            if ($moved) {
+                $message .= ' ⚠ Estos asientos no existen o ya estaban tomados en la nueva plantilla: '.implode(', ', $moved).' — reasígnalos desde Apartar asientos.';
+            }
+        }
         $linkResult = TripGuide::linkTrip($freshRoute);
         $linked = $linkResult['linked'];
-        $message = 'Viaje actualizado correctamente.';
         if ($linked > 0) {
             $message .= " Se vincularon {$linked} asiento".($linked === 1 ? '' : 's').' que ya estaban apartados desde una guía.';
         }

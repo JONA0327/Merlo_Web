@@ -453,19 +453,22 @@ class AdminSeatReservationController extends Controller
                 ->with('error', $e->getMessage() ?: 'No se pudo agendar el regreso para uno de los asientos.');
         }
 
-        $group = $root->groupMembers()->load(['landingRoute', 'seat']);
+        // Payment is per seat: a transfer seat and a cash seat in the same
+        // submission become separate groups so each is confirmed (Pagos)
+        // and notified on its own terms. Paid groups get the real ticket,
+        // unpaid ones the "reservado — método" notice (deliverGroup()).
+        $allSent = true;
+        foreach ($root->regroupByPayment() as $groupRoot) {
+            $group = $groupRoot->groupMembers()->load(['landingRoute', 'seat']);
+            $allSent = $whatsapp->deliverGroup($group, $ticketImages) && $allSent;
+        }
 
-        // Unpaid apartados don't get the QR-bearing ticket image yet (the
-        // QR is only generated once an admin later confirms the payment
-        // in /admin/pagos — see AdminPaymentController::confirmCash() /
-        // validateTransfer()) — they just get a plain-text WhatsApp
-        // notice saying "your seat is reserved, pay [method] to confirm".
+        $seatCount = count($data['seat_ids']);
+        $tripTypeLabel = TripTicketPrice::tripTypes()[$tripType] ?? $tripType;
+        $plural = $seatCount > 1 ? 's' : '';
+        $summary = "{$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}";
+
         if ($isCashPending) {
-            $noticeSent = $this->sendReservationNoticeViaWhatsApp($group, $whatsapp);
-
-            $seatCount = count($data['seat_ids']);
-            $tripTypeLabel = TripTicketPrice::tripTypes()[$tripType] ?? $tripType;
-            $plural = $seatCount > 1 ? 's' : '';
             $methodLabel = implode(' y ', array_map(
                 fn ($m) => (new SeatReservation(['payment_method' => $m]))->payment_method_label,
                 $distinctMethods
@@ -474,63 +477,18 @@ class AdminSeatReservationController extends Controller
                 ? 'Valida la transferencia en Pagos para mandar el boleto con QR.'
                 : 'El boleto se imprime/envía cuando confirmes el pago en Pagos.';
 
-            if ($noticeSent) {
-                return redirect()
-                    ->route('admin.asientos.show', $landingRoute)
-                    ->with('success', "Apartado creado para {$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}, {$methodLabel}). El cliente recibirá un aviso por WhatsApp. {$activationHint}");
-            }
-
             return redirect()
                 ->route('admin.asientos.show', $landingRoute)
-                ->with('error', "Apartado creado para {$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}, {$methodLabel}), pero no se pudo enviar el aviso por WhatsApp automáticamente. {$activationHint}");
-        }
-
-        $sent = $whatsapp->sendGroupTicket($group, $ticketImages);
-
-        if ($sent) {
-            SeatReservation::whereIn('id', $group->pluck('id'))->update([
-                'status' => SeatReservation::STATUS_SENT,
-                'ticket_sent_at' => now(),
-            ]);
-        }
-
-        $seatCount = count($data['seat_ids']);
-        $tripTypeLabel = TripTicketPrice::tripTypes()[$tripType] ?? $tripType;
-        $plural = $seatCount > 1 ? 's' : '';
-
-        if ($sent) {
-            return redirect()
-                ->route('admin.asientos.show', $landingRoute)
-                ->with('success', "Apartado creado y boleto{$plural} enviado{$plural} por WhatsApp a {$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}).");
+                ->with($allSent ? 'success' : 'error', $allSent
+                    ? "Apartado creado para {$summary}, {$methodLabel}). El cliente recibirá un aviso por WhatsApp. {$activationHint}"
+                    : "Apartado creado para {$summary}, {$methodLabel}), pero no se pudo enviar el aviso por WhatsApp automáticamente. {$activationHint}");
         }
 
         return redirect()
             ->route('admin.asientos.show', $landingRoute)
-            ->with('error', "Apartado creado para {$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel}), pero no se pudo enviar el boleto por WhatsApp automáticamente. Usa el botón \"Enviar boleto\" para reintentar.");
-    }
-
-    /**
-     * Send the plain-text "your seat(s) are reserved" notice for an
-     * unpaid apartado — covers the whole group (every seat, e.g. both
-     * halves of a mancuerna), not just the root row. Same failure
-     * semantics as sendGroupViaWhatsApp() — caller decides what to do
-     * when it returns false.
-     */
-    private function sendReservationNoticeViaWhatsApp(Collection $group, EvolutionWhatsAppService $whatsapp): bool
-    {
-        if (! $whatsapp->isConfigured()) {
-            return false;
-        }
-
-        try {
-            $whatsapp->sendReservationNotice($group);
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Apartado cash-pending WhatsApp notice failed for reservation '.$group->first()->id.': '.$e->getMessage());
-
-            return false;
-        }
+            ->with($allSent ? 'success' : 'error', $allSent
+                ? "Apartado creado y boleto{$plural} enviado{$plural} por WhatsApp a {$summary})."
+                : "Apartado creado para {$summary}), pero no se pudo enviar el boleto por WhatsApp automáticamente. Usa el botón \"Enviar boleto\" para reintentar.");
     }
 
     /**
@@ -548,28 +506,24 @@ class AdminSeatReservationController extends Controller
             return back()->with('error', 'Este apartado ya no está pendiente.');
         }
 
-        $group = $reservation->groupMembers()->load(['landingRoute', 'seat'])->filter->isPending()->values();
-        if ($group->isEmpty()) {
-            return back()->with('error', 'Este apartado ya no está pendiente.');
-        }
+        // Whole group, not just the still-"pending" members — a partial
+        // resend (after removeSeat(), say) would leave seats out of the ticket.
+        $group = $reservation->groupMembers()->load(['landingRoute', 'seat']);
 
         // A guide that linked to this trip on a different "plantilla" than
         // it was staged for can leave a seat that doesn't actually belong
         // to this bus (see TripGuide::linkTrip()) — never generate/send a
         // boleto with that stale seat until an admin reasigna it.
         if ($group->contains(fn (SeatReservation $r) => $r->hasSeatMismatch())) {
-            return back()->with('error', 'Uno de estos asientos no corresponde al autobús de este viaje — reasígnalo abajo antes de enviar.');
+            return back()->with('error', 'Uno o más asientos de este apartado no corresponden al autobús de este viaje — reasígnalos abajo antes de enviar.');
         }
 
-        $sent = $whatsapp->sendGroupTicket($group, $ticketImages);
-
-        if ($sent) {
-            SeatReservation::whereIn('id', $group->pluck('id'))->update([
-                'status' => SeatReservation::STATUS_SENT,
-                'ticket_sent_at' => now(),
-            ]);
-
-            return back()->with('success', ($group->count() > 1 ? 'Boletos enviados' : 'Boleto enviado').' por WhatsApp.');
+        // Per seat: paid ones get the QR, unpaid ones only the "reservado"
+        // notice (never a QR before payment is confirmed).
+        if ($whatsapp->deliverGroup($group, $ticketImages)) {
+            return back()->with('success', $group->every->isPaymentCompleted()
+                ? ($group->count() > 1 ? 'Boletos enviados' : 'Boleto enviado').' por WhatsApp.'
+                : 'Aviso de apartado enviado por WhatsApp (el boleto con QR sale al confirmar el pago).');
         }
 
         return back()->with('error', $whatsapp->isConfigured()
@@ -609,7 +563,10 @@ class AdminSeatReservationController extends Controller
 
         $reservation->update(['bus_unit_seat_id' => $data['bus_unit_seat_id']]);
 
-        if (! $reservation->ticket_sent_at) {
+        // The job itself bails while any OTHER seat in the group is still
+        // mismatched, so the dispatch that fires is the last one fixed.
+        $group = $reservation->groupMembers();
+        if ($group->whereNull('ticket_sent_at')->isNotEmpty()) {
             \App\Jobs\SendLinkedTicketNotification::dispatch($reservation->groupRootId());
         }
 
@@ -723,16 +680,7 @@ class AdminSeatReservationController extends Controller
 
         $freshGroup = $remaining->first()->fresh()->groupMembers()->load(['landingRoute', 'seat']);
 
-        $resent = $freshGroup->first()->isPaymentPending()
-            ? $this->sendReservationNoticeViaWhatsApp($freshGroup, $whatsapp)
-            : $whatsapp->sendGroupTicket($freshGroup, $ticketImages);
-
-        if ($resent && ! $freshGroup->first()->isPaymentPending()) {
-            SeatReservation::whereIn('id', $freshGroup->pluck('id'))->update([
-                'status' => SeatReservation::STATUS_SENT,
-                'ticket_sent_at' => now(),
-            ]);
-        }
+        $resent = $whatsapp->deliverGroup($freshGroup, $ticketImages);
 
         $message = "Asiento {$seatLabel} quitado del apartado.";
 
@@ -803,7 +751,7 @@ class AdminSeatReservationController extends Controller
      * Blocked once the trip is over or fully checked-in, for the same
      * reporting/audit reasons as before.
      */
-    public function updateCategory(Request $request, LandingRoute $landingRoute, SeatReservation $reservation): RedirectResponse
+    public function updateCategory(Request $request, LandingRoute $landingRoute, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
         if ($landingRoute->hasEnded()) {
             return back()->with('error', 'Este viaje ya pasó — ya no se puede editar el apartado.');
@@ -815,59 +763,59 @@ class AdminSeatReservationController extends Controller
 
         $data = $request->validate([
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
-            // OpenPay was removed (card/oxxo/spei are no longer offered),
-            // so the only practical methods are transfer (customer paid
-            // via bank transfer) and cash (ventanilla). "card" is
-            // preserved as a value for legacy rows but never offered
-            // on the form.
+            // "card" is preserved as a value for legacy rows but never
+            // offered on the form.
             'payment_method' => ['required', 'string', 'in:transfer,cash,card,tbd'],
             'payment_status' => ['required', 'string', 'in:pending,completed'],
         ]);
 
         $tripType = $data['trip_type'];
-        $unitPrice = (float) ($landingRoute->priceFor($tripType)?->price ?? 0);
-        $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
+        $paid = $data['payment_status'] === SeatReservation::PAYMENT_COMPLETED;
+        $before = $reservation->trip_type.'|'.$reservation->payment_method.'|'.$reservation->payment_status;
 
-        $group = $reservation->groupMembers();
-        $groupIds = $group->pluck('id');
-
-        // Build the update payload for the whole group — every
-        // propiedad a paid customer also pays the siblings, since
-        // they share the same receipt.
-        $update = [
+        // Per ticket: only THIS seat changes — its siblings keep their own
+        // category, price and payment.
+        $reservation->update([
             'trip_type' => $tripType,
-            'leg' => $leg,
-            'unit_price' => $unitPrice,
+            'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
+            'unit_price' => (float) ($landingRoute->priceFor($tripType)?->price ?? 0),
             'payment_method' => $data['payment_method'],
             'payment_status' => $data['payment_status'],
-        ];
+            // paid_at keeps its original timestamp once set; unpaying clears
+            // it so Pagos sees a pending reservation again.
+            'paid_at' => $paid ? ($reservation->paid_at ?? now()) : null,
+            // A seat sent as paid and then corrected to pending is no longer
+            // a "sent ticket" — only the pending notice applies.
+            'status' => $paid ? $reservation->status : SeatReservation::STATUS_PENDING,
+        ]);
 
-        // Setting payment_status=completed without a paid_at would
-        // leave the column NULL and trip the "Ya está pagado?" check
-        // in AdminPaymentController. Fill it the first time the
-        // admin flips the toggle on; leave it alone otherwise so we
-        // preserve the original timestamp.
-        if ($data['payment_status'] === 'completed') {
-            SeatReservation::whereIn('id', $groupIds)
-                ->whereNull('paid_at')
-                ->update(['paid_at' => now()]);
+        // Seats of one apartado can now differ in method/status: keep one
+        // group per (method, status) so Pagos and notifications stay right.
+        $roots = $reservation->regroupByPayment();
+
+        // The correction must reach the customer too: re-send the group this
+        // seat ended up in, if it had been notified before. (Never-notified
+        // groups keep waiting for the manual "Enviar" button.)
+        $changed = $before !== $reservation->trip_type.'|'.$reservation->payment_method.'|'.$reservation->payment_status;
+        $resent = null;
+        if ($changed) {
+            $members = $reservation->fresh()->groupMembers()->load(['landingRoute', 'seat']);
+            if ($members->whereNotNull('ticket_sent_at')->isNotEmpty()) {
+                $resent = $whatsapp->deliverGroup($members, $ticketImages);
+            }
         }
-        // Same symmetry on the "unpaid" flip: clear paid_at so
-        // AdminPaymentController::validateTransfer and friends see a
-        // pending reservation again.
-        if ($data['payment_status'] === 'pending') {
-            SeatReservation::whereIn('id', $groupIds)->update(['paid_at' => null]);
-        }
 
-        SeatReservation::whereIn('id', $groupIds)->update($update);
+        $summary = 'Asiento '.($reservation->seat?->label ?? '—').' → '
+            .(TripTicketPrice::tripTypes()[$tripType] ?? $tripType).' · '
+            .$reservation->fresh()->payment_method_label.' · '.($paid ? 'pagado' : 'pendiente');
 
-        $summary = collect([
-            'Categoría → '.(TripTicketPrice::tripTypes()[$tripType] ?? $tripType),
-            'Método → '.ucfirst($data['payment_method']),
-            'Pago → '.($data['payment_status'] === 'completed' ? 'pagado' : 'pendiente'),
-        ])->implode(' · ');
+        $notice = match ($resent) {
+            true => ' Se reenvió la información actualizada por WhatsApp.',
+            false => ' No se pudo reenviar por WhatsApp — usa "Enviar boleto".',
+            default => '',
+        };
 
-        return back()->with('success', 'Apartado actualizado. '.$summary.'.');
+        return back()->with($resent === false ? 'error' : 'success', 'Boleto actualizado. '.$summary.'.'.$notice);
     }
 
     /**

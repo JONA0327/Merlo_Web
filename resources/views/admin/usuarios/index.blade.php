@@ -107,7 +107,7 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             @if ($user->id !== auth()->id() && ! $user->isSuperAdmin())
-                                <form method="POST" action="{{ route('admin.usuarios.destroy', $user) }}" class="inline" onsubmit="return confirm('¿Eliminar la cuenta de {{ addslashes($user->name) }}? Sus boletos comprados se conservan, pero esta acción no se puede deshacer.');">
+                                <form method="POST" action="{{ route('admin.usuarios.destroy', $user) }}" class="inline" data-confirm="¿Eliminar la cuenta de {{ $user->name }}? Sus boletos comprados se conservan, pero esta acción no se puede deshacer.">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600 ring-1 ring-red-200 hover:bg-red-100 transition-colors">

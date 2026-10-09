@@ -239,7 +239,7 @@ class AdminTripGuideController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
+            $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
                 $root = null;
                 foreach ($data['seat_ids'] as $seatId) {
                     $new = SeatReservation::create([
@@ -308,7 +308,13 @@ class AdminTripGuideController extends Controller
 
                     $root ??= $new;
                 }
+
+                return $root;
             });
+
+            // Payment is per seat: one group per (method, status) so the
+            // notice sent when the trip opens is right for each.
+            $root->regroupByPayment();
         } catch (HttpException $e) {
             return back()
                 ->withInput()

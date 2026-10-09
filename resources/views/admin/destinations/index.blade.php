@@ -63,7 +63,7 @@
                             <td class="px-4 py-3 text-right">
                                 <div class="flex items-center justify-end gap-1.5">
                                     <a href="{{ route('admin.destinations.edit', $d) }}" class="rounded-lg bg-[#FFFBF6] px-2.5 py-1 text-[11px] font-bold text-[#8C1D2B] ring-1 ring-black/10 hover:bg-[#8C1D2B]/5">Editar</a>
-                                    <form method="POST" action="{{ route('admin.destinations.destroy', $d) }}" onsubmit="return confirm('¿Eliminar este destino?');">
+                                    <form method="POST" action="{{ route('admin.destinations.destroy', $d) }}" data-confirm="¿Eliminar este destino?">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100">Eliminar</button>

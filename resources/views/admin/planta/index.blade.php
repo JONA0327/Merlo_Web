@@ -132,7 +132,7 @@
                             <td class="px-4 py-3 text-right">
                                 <div class="flex items-center justify-end gap-1.5">
                                     <button type="button" class="planta-edit-toggle rounded-lg bg-[#FFFBF6] px-2.5 py-1 text-[11px] font-bold text-[#8C1D2B] ring-1 ring-black/10 hover:bg-[#8C1D2B]/5" data-target="planta-edit-{{ $i }}">Editar</button>
-                                    <form method="POST" action="{{ route('admin.planta.destroy-many') }}" onsubmit="return confirmDeletePlanta()">
+                                    <form method="POST" action="{{ route('admin.planta.destroy-many') }}" data-confirm-delete="Vas a BORRAR {{ $g->ids->count() > 1 ? $g->ids->count().' asientos de planta' : 'este asiento de planta' }}. Ya no se asignará{{ $g->ids->count() > 1 ? 'n' : '' }} solo en los próximos viajes.">
                                         @csrf
                                         @method('DELETE')
                                         @foreach ($g->ids as $id)
@@ -190,11 +190,6 @@
 
         plantaBusUnitSelect?.addEventListener('change', refreshPlantaSeats);
         if (plantaBusUnitSelect?.value) refreshPlantaSeats();
-
-        function confirmDeletePlanta() {
-            const typed = window.prompt('Vas a BORRAR este asiento de planta. Ya no se asignará solo en los próximos viajes.\n\nEscribe ELIMINAR para confirmar:');
-            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
-        }
 
         document.querySelectorAll('.planta-edit-toggle').forEach((btn) => {
             btn.addEventListener('click', () => {

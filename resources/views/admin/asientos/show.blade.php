@@ -242,20 +242,14 @@
                                         </button>
                                     </form>
                                 @endif
-                                @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
-                                    <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="edit-category-{{ $reservation->id }}">Editar</button>
-                                @endif
-                                @if ($reservation->canAdminRescheduleReturn())
-                                    <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="reschedule-return-{{ $reservation->id }}">Reprogramar regreso</button>
-                                @endif
                                 @if ($standingAssignment && ! $trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.release-standing', [$trip, $standingAssignment]) }}" class="inline" onsubmit="return confirm('¿Este pasajero no viaja hoy? El asiento queda libre solo para este viaje — seguirá apartándose solo en los demás.');">
+                                    <form method="POST" action="{{ route('admin.asientos.release-standing', [$trip, $standingAssignment]) }}" class="inline" data-confirm="¿Este pasajero no viaja hoy? El asiento queda libre solo para este viaje — seguirá apartándose solo en los demás.">
                                         @csrf
                                         <button type="submit" class="text-[10px] font-semibold text-violet-700 hover:text-violet-900">No viaja hoy — liberar</button>
                                     </form>
                                 @endif
                                 @unless ($trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" onsubmit="return confirmDeleteApartado(this, {{ $allSeats->count() }})">
+                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" data-confirm-delete="Vas a BORRAR este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}. {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
@@ -264,108 +258,132 @@
                             </div>
                         </div>
 
-                        @if ($reservation->hasSeatMismatch())
-                            @php
-                                $takenForLeg = $takenSeatIdsByLeg->get($reservation->leg, collect());
-                                $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForLeg->contains($s->id));
-                            @endphp
-                            <div class="mt-3 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
-                                <p class="text-[10px] font-bold text-amber-800">⚠ Este asiento no corresponde al autobús de este viaje (la guía estaba en otra plantilla) — elige uno disponible:</p>
-                                <form method="POST" action="{{ route('admin.asientos.reassign-seat', [$trip, $reservation]) }}" class="mt-1.5 flex gap-1.5">
-                                    @csrf
-                                    <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
-                                        <option value="">Selecciona un asiento…</option>
-                                        @foreach ($freeSeats as $seatOption)
-                                            <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
-                                        @endforeach
-                                    </select>
-                                    <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
-                                </form>
-                            </div>
-                        @endif
-
-                        @if (! $reservation->isFullyCheckedIn() && ! $trip->hasEnded())
-                            <div id="edit-category-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
-                                <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $reservation]) }}" class="space-y-2">
-                                    @csrf
-                                    @method('PUT')
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <label class="block">
-                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
-                                            <select name="trip_type" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                                @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
-                                                    <option value="{{ $type }}" {{ $reservation->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                        </label>
-                                        <label class="block">
-                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Pago</span>
-                                            <select name="payment_method" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                                <option value="transfer" {{ $reservation->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
-                                                <option value="cash" {{ $reservation->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
-                                                <option value="tbd" {{ $reservation->payment_method === 'tbd' ? 'selected' : '' }}>Por definir</option>
-                                            </select>
-                                        </label>
-                                        <label class="block">
-                                            <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Estado</span>
-                                            <select name="payment_status" class="mt-1 w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                                <option value="pending" {{ $reservation->payment_status !== 'completed' ? 'selected' : '' }}>Pendiente</option>
-                                                <option value="completed" {{ $reservation->payment_status === 'completed' ? 'selected' : '' }}>Pagado</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                    <p class="text-[10px] text-[#2B1113]/40">Cambiar estado a "Pagado" rellena automáticamente <code class="font-mono">paid_at</code>. El envío por WhatsApp sigue siendo manual — toca "Enviar boleto(s)" cuando quieras mandarlo.</p>
-                                    <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
-                                </form>
-
-                                @if ($allSeats->count() > 1)
-                                    @php $groupRows = collect([$reservation])->merge($reservation->groupSeats); @endphp
-                                    <div class="mt-3 border-t border-black/5 pt-3">
-                                        <p class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Quitar un asiento de este apartado</p>
-                                        <p class="mt-1 text-[10px] text-[#2B1113]/40">Deja los demás asientos intactos y reenvía la información actualizada por WhatsApp.</p>
-                                        <div class="mt-2 flex flex-wrap gap-1.5">
-                                            @foreach ($groupRows as $member)
-                                                <form method="POST" action="{{ route('admin.asientos.remove-seat', [$trip, $member]) }}" class="inline" onsubmit="return confirm('¿Quitar el asiento {{ $member->seat?->label }} de este apartado y reenviar la información actualizada?');">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100">
-                                                        {{ $member->seat?->label ?? '—' }} &times;
-                                                    </button>
-                                                </form>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @endif
-                            </div>
-                        @endif
-
-                        @if ($reservation->canAdminRescheduleReturn())
-                            <div id="reschedule-return-{{ $reservation->id }}" class="admin-edit-category-panel mt-3 hidden rounded-xl bg-white p-3 ring-1 ring-black/10">
-                                @php $returnOptions = $reservation->returnRescheduleOptions(); @endphp
-                                <p class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿No regresa el mismo día?</p>
-                                <p class="mt-1 text-[10px] text-[#2B1113]/40">Elige la fecha real de regreso que diga el cliente. Es una sola vez: se genera un boleto nuevo (asiento sujeto a disponibilidad) y no se puede volver a cambiar.</p>
-
-                                @if ($returnOptions->isNotEmpty())
-                                    <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Confirmar la nueva fecha de regreso? Esta acción no se puede deshacer.');">
+                        @foreach (collect([$reservation])->merge($reservation->groupSeats) as $member)
+                            @php $member->setRelation('landingRoute', $trip); @endphp
+                            @if ($member->hasSeatMismatch())
+                                @php
+                                    $takenForLeg = $takenSeatIdsByLeg->get($member->leg, collect());
+                                    $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForLeg->contains($s->id));
+                                @endphp
+                                <div class="mt-3 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                                    <p class="text-[10px] font-bold text-amber-800">⚠ El asiento {{ $member->seat?->label ?? '—' }} no corresponde al autobús de este viaje (la guía estaba en otra plantilla) — elige uno disponible:</p>
+                                    <form method="POST" action="{{ route('admin.asientos.reassign-seat', [$trip, $member]) }}" class="mt-1.5 flex gap-1.5">
                                         @csrf
-                                        <select name="landing_route_id" required class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113]">
-                                            <option value="">Selecciona la fecha de regreso…</option>
-                                            @foreach ($returnOptions as $option)
-                                                <option value="{{ $option->id }}">{{ $option->day?->toSpanishLongDate() }} &middot; {{ $option->available_seats }} disponibles</option>
+                                        <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
+                                            <option value="">Selecciona un asiento…</option>
+                                            @foreach ($freeSeats as $seatOption)
+                                                <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
                                             @endforeach
                                         </select>
-                                        <button type="submit" class="shrink-0 rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Reprogramar</button>
+                                        <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
                                     </form>
-                                @endif
+                                </div>
+                            @endif
+                        @endforeach
 
-                                <form method="POST" action="{{ route('admin.checkin.reschedule-return', $reservation) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" onsubmit="return confirm('¿Agendar esta fecha de regreso? Esta acción no se puede deshacer.');">
-                                    @csrf
-                                    <input type="date" name="travel_date" min="{{ now()->toDateString() }}" required class="flex-1 rounded-lg border border-black/10 bg-[#FFFBF6] px-2 py-1.5 text-xs font-bold text-[#2B1113]">
-                                    <button type="submit" class="shrink-0 rounded-lg bg-[#2B1113]/5 px-3 py-1.5 text-xs font-bold text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">Agendar (sin viaje aún)</button>
-                                </form>
-                                <p class="mt-1 text-[10px] text-[#2B1113]/40">Si esa fecha no está en la lista, agéndala aquí — el asiento se asigna solo en cuanto el viaje se abra.</p>
-                            </div>
-                        @endif
+                        {{-- Editar / reprogramar / quitar: por boleto (asiento), nunca en general --}}
+                        <ul class="mt-3 space-y-2">
+                            @foreach (collect([$reservation])->merge($reservation->groupSeats) as $member)
+                                @php
+                                    $member->setRelation('landingRoute', $trip);
+                                    $memberBadge = match ($member->trip_type) {
+                                        \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
+                                        \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+                                        \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+                                        default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
+                                    };
+                                @endphp
+                                <li class="rounded-lg bg-white p-2 ring-1 ring-black/5">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $member->seat?->label ?? '—' }}</span>
+                                        <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $memberBadge }}">{{ $member->trip_type_label }}</span>
+                                        <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $member->isPaymentCompleted() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ $member->payment_method_label }} · {{ $member->isPaymentCompleted() ? 'pagado' : 'pendiente' }}</span>
+                                        <span class="ml-auto flex flex-wrap items-center gap-2">
+                                            @if (! $member->isFullyCheckedIn() && ! $trip->hasEnded())
+                                                <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="edit-category-{{ $member->id }}">Editar</button>
+                                            @endif
+                                            @if ($member->canAdminRescheduleReturn())
+                                                <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="reschedule-return-{{ $member->id }}">Reprogramar regreso</button>
+                                            @endif
+                                            @if ($allSeats->count() > 1 && ! $member->isFullyCheckedIn() && ! $trip->hasEnded())
+                                                <form method="POST" action="{{ route('admin.asientos.remove-seat', [$trip, $member]) }}" class="inline" data-confirm="¿Quitar el asiento {{ $member->seat?->label }} de este apartado y reenviar la información actualizada?">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Quitar</button>
+                                                </form>
+                                            @endif
+                                        </span>
+                                    </div>
+
+                                    @if (! $member->isFullyCheckedIn() && ! $trip->hasEnded())
+                                        <div id="edit-category-{{ $member->id }}" class="admin-edit-category-panel mt-2 hidden rounded-xl bg-[#FFFBF6] p-3 ring-1 ring-black/10">
+                                            <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $member]) }}" class="space-y-2">
+                                                @csrf
+                                                @method('PUT')
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <label class="block">
+                                                        <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
+                                                        <select name="trip_type" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                            @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
+                                                                <option value="{{ $type }}" {{ $member->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                    <label class="block">
+                                                        <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Pago</span>
+                                                        <select name="payment_method" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                            <option value="transfer" {{ $member->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
+                                                            <option value="cash" {{ $member->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
+                                                            <option value="tbd" {{ $member->payment_method === 'tbd' ? 'selected' : '' }}>Por definir</option>
+                                                            @if ($member->payment_method === 'card')
+                                                                <option value="card" selected>Tarjeta</option>
+                                                            @endif
+                                                        </select>
+                                                    </label>
+                                                    <label class="block">
+                                                        <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Estado</span>
+                                                        <select name="payment_status" class="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                                            <option value="pending" {{ $member->payment_status !== 'completed' ? 'selected' : '' }}>Pendiente</option>
+                                                            <option value="completed" {{ $member->payment_status === 'completed' ? 'selected' : '' }}>Pagado</option>
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                                <p class="text-[10px] text-[#2B1113]/40">Solo cambia el asiento {{ $member->seat?->label }}. Si ya se había notificado, al guardar se reenvía la información corregida por WhatsApp.</p>
+                                                <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
+                                            </form>
+                                        </div>
+                                    @endif
+
+                                    @if ($member->canAdminRescheduleReturn())
+                                        <div id="reschedule-return-{{ $member->id }}" class="admin-edit-category-panel mt-2 hidden rounded-xl bg-[#FFFBF6] p-3 ring-1 ring-black/10">
+                                            @php $returnOptions = $member->returnRescheduleOptions(); @endphp
+                                            <p class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿El asiento {{ $member->seat?->label }} no regresa el mismo día?</p>
+                                            <p class="mt-1 text-[10px] text-[#2B1113]/40">Elige la fecha real de regreso que diga el cliente. Es una sola vez: se genera un boleto nuevo (asiento sujeto a disponibilidad) y no se puede volver a cambiar.</p>
+
+                                            @if ($returnOptions->isNotEmpty())
+                                                <form method="POST" action="{{ route('admin.checkin.reschedule-return', $member) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" data-confirm="¿Confirmar la nueva fecha de regreso? Esta acción no se puede deshacer.">
+                                                    @csrf
+                                                    <select name="landing_route_id" required class="flex-1 rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        <option value="">Selecciona la fecha de regreso…</option>
+                                                        @foreach ($returnOptions as $option)
+                                                            <option value="{{ $option->id }}">{{ $option->day?->toSpanishLongDate() }} &middot; {{ $option->available_seats }} disponibles</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button type="submit" class="shrink-0 rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Reprogramar</button>
+                                                </form>
+                                            @endif
+
+                                            <form method="POST" action="{{ route('admin.checkin.reschedule-return', $member) }}" class="mt-2 flex flex-col gap-2 sm:flex-row" data-confirm="¿Agendar esta fecha de regreso? Esta acción no se puede deshacer.">
+                                                @csrf
+                                                <input type="date" name="travel_date" min="{{ now()->toDateString() }}" required class="flex-1 rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                <button type="submit" class="shrink-0 rounded-lg bg-[#2B1113]/5 px-3 py-1.5 text-xs font-bold text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">Agendar (sin viaje aún)</button>
+                                            </form>
+                                            <p class="mt-1 text-[10px] text-[#2B1113]/40">Si esa fecha no está en la lista, agéndala aquí — el asiento se asigna solo en cuanto el viaje se abra.</p>
+                                        </div>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
                             </li>
                         @endforeach
                         </ul>
@@ -396,19 +414,6 @@
                 }
             });
         })();
-
-        // A plain confirm() was too easy to click through by accident
-        // (an admin reported deleting a real apartado this way), so
-        // deleting now requires typing the word ELIMINAR into a prompt.
-        function confirmDeleteApartado(form, seatCount) {
-            const plural = seatCount > 1 ? 's' : '';
-            const typed = window.prompt(
-                `Vas a BORRAR este apartado${seatCount > 1 ? ` (${seatCount} asientos)` : ''}. `
-                + `El${plural ? '' : ' asiento'}${seatCount > 1 ? 's volverán' : ' volverá'} a estar disponible${plural}.\n\n`
-                + 'Escribe ELIMINAR para confirmar:'
-            );
-            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
-        }
 
         document.querySelectorAll('.admin-edit-category-toggle').forEach((btn) => {
             btn.addEventListener('click', () => {

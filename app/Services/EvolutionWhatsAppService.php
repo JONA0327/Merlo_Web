@@ -267,6 +267,41 @@ class EvolutionWhatsAppService
     }
 
     /**
+     * The one delivery rule for an apartado group: seats already paid get
+     * the real ticket (QR); the rest get the "reservado" notice with their
+     * payment method. Stamps status/ticket_sent_at only on what actually
+     * went out. True when everything that should have gone out did.
+     */
+    public function deliverGroup(Collection $group, TicketImageService $ticketImages): bool
+    {
+        [$paid, $unpaid] = $group->partition(fn (SeatReservation $r) => $r->isPaymentCompleted());
+        $ok = true;
+
+        if ($unpaid->isNotEmpty()) {
+            try {
+                $this->sendReservationNotice($unpaid->values());
+                SeatReservation::whereIn('id', $unpaid->pluck('id'))->update(['ticket_sent_at' => now()]);
+            } catch (\Throwable $e) {
+                Log::warning('Reservation notice failed for reservation '.$unpaid->first()->id.': '.$e->getMessage());
+                $ok = false;
+            }
+        }
+
+        if ($paid->isNotEmpty()) {
+            if ($this->sendGroupTicket($paid->values(), $ticketImages)) {
+                SeatReservation::whereIn('id', $paid->pluck('id'))->update([
+                    'status' => SeatReservation::STATUS_SENT,
+                    'ticket_sent_at' => now(),
+                ]);
+            } else {
+                $ok = false;
+            }
+        }
+
+        return $ok;
+    }
+
+    /**
      * Caption for the combined multi-seat ticket image sent by
      * sendGroupTicket() — every seat in the group shares the same trip
      * type and trip (store() applies it uniformly), so the first
@@ -282,7 +317,8 @@ class EvolutionWhatsAppService
         return "*MERLO Transportes* 🚌\n\n"
             ."Hola {$first->customer_display_name}, aquí tienen tus {$group->count()} boletos:\n\n"
             ."*{$trip->from} → {$trip->to}*\n"
-            ."💺 Asientos: {$seats}\n\n"
+            ."💺 Asientos: {$seats}\n"
+            .'💳 Pago: '.$group->map(fn (SeatReservation $r) => $r->payment_method_label)->unique()->implode(', ')." (pagado)\n\n"
             .($legend ? $legend."\n\n" : '')
             .'Todos tus códigos QR están en esta imagen — muéstrala completa al abordar.';
     }
@@ -322,7 +358,11 @@ class EvolutionWhatsAppService
         // own unit_price — the total owed is the sum across all of them,
         // not just the root row's.
         $total = $group->sum(fn (SeatReservation $r) => (float) $r->unit_price);
-        $methodLabel = $first->payment_method_label;
+        // Payment can differ per seat — name each seat's method when it does.
+        $methodLabels = $group->map(fn (SeatReservation $r) => $r->payment_method_label)->unique();
+        $methodLabel = $methodLabels->count() === 1
+            ? $methodLabels->first()
+            : $group->map(fn (SeatReservation $r) => ($r->seat?->label ?? '—').': '.$r->payment_method_label)->implode(', ');
 
         $lines = [
             '*MERLO Transportes* 🚌',
@@ -332,7 +372,7 @@ class EvolutionWhatsAppService
             "*{$trip->from} → {$trip->to}*",
             "📅 Salida: *{$departureDate}*",
             "🚍 Unidad: *{$unitName}*",
-            "🏷️ Tipo: {$first->trip_type_label}",
+            "🏷️ Tipo: ".$group->map(fn (SeatReservation $r) => $r->trip_type_label)->unique()->implode(', '),
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
             "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];
@@ -345,7 +385,7 @@ class EvolutionWhatsAppService
 
         $lines[] = '';
         $lines[] = "🟡 *RESERVADO — {$methodLabel}*";
-        $lines[] = 'Tu boleto se activa cuando se confirme el pago. Te enviaremos el QR oficial en cuanto lo confirmemos.';
+        $lines[] = 'Una vez pagado, tu boleto se activará.';
 
         $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
             'number' => $number,
@@ -444,6 +484,7 @@ class EvolutionWhatsAppService
 
         $lines[] = "💺 Asiento: {$seat}";
         $lines[] = "💵 Precio: {$price}";
+        $lines[] = "💳 Pago: {$reservation->payment_method_label} (pagado)";
 
         $legendLines = $reservation->boardingLegendLines();
         if (! empty($legendLines)) {

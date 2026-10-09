@@ -185,7 +185,8 @@
                             @foreach ($reservations as $reservation)
                                 @php
                                     $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
-                                    $seatMismatch = $reservation->hasSeatMismatch();
+                                    $members = collect([$reservation])->merge($reservation->groupSeats);
+                                    $seatMismatch = $members->contains(fn ($m) => $m->hasSeatMismatch());
                                 @endphp
                                 <li class="rounded-xl bg-white p-2.5 ring-1 ring-black/5 @if($seatMismatch) ring-2 ring-amber-300 @endif">
                                     <div class="flex items-start justify-between gap-2">
@@ -202,32 +203,34 @@
                                             @endif
                                         </div>
 
-                                        <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" onsubmit="return confirmDeleteGuiaApartado()">
+                                        <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline shrink-0" data-confirm-delete="Vas a BORRAR este apartado de guía.">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
                                         </form>
                                     </div>
 
-                                    @if ($seatMismatch)
-                                        @php
-                                            $takenForSlot = $takenSeatIdsByDateLeg->get($reservation->travel_date->toDateString().'|'.$reservation->leg, collect());
-                                            $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForSlot->contains($s->id));
-                                        @endphp
-                                        <div class="mt-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
-                                            <p class="text-[10px] font-bold text-amber-800">⚠ Este asiento no existe en el autobús actual de la guía — elige uno disponible:</p>
-                                            <form method="POST" action="{{ route('admin.guias.reservations.reassign-seat', [$guide, $reservation]) }}" class="mt-1.5 flex gap-1.5">
-                                                @csrf
-                                                <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
-                                                    <option value="">Selecciona un asiento…</option>
-                                                    @foreach ($freeSeats as $seatOption)
-                                                        <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
-                                                    @endforeach
-                                                </select>
-                                                <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
-                                            </form>
-                                        </div>
-                                    @endif
+                                    @foreach ($members as $member)
+                                        @if ($member->hasSeatMismatch())
+                                            @php
+                                                $takenForSlot = $takenSeatIdsByDateLeg->get($member->travel_date->toDateString().'|'.$member->leg, collect());
+                                                $freeSeats = $currentBusSeats->reject(fn ($s) => $takenForSlot->contains($s->id));
+                                            @endphp
+                                            <div class="mt-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                                                <p class="text-[10px] font-bold text-amber-800">⚠ El asiento {{ $member->seat?->label ?? '—' }} no existe en el autobús actual de la guía — elige uno disponible:</p>
+                                                <form method="POST" action="{{ route('admin.guias.reservations.reassign-seat', [$guide, $member]) }}" class="mt-1.5 flex gap-1.5">
+                                                    @csrf
+                                                    <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
+                                                        <option value="">Selecciona un asiento…</option>
+                                                        @foreach ($freeSeats as $seatOption)
+                                                            <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button type="submit" class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors">Reasignar</button>
+                                                </form>
+                                            </div>
+                                        @endif
+                                    @endforeach
                                 </li>
                             @endforeach
                         </ul>
@@ -238,14 +241,6 @@
     </div>
 
     <script>
-        // Same accidental-click guard as Apartar asientos: a plain
-        // confirm() was too easy to click through, so this now
-        // requires typing ELIMINAR.
-        function confirmDeleteGuiaApartado() {
-            const typed = window.prompt('Vas a BORRAR este apartado de guía.\n\nEscribe ELIMINAR para confirmar:');
-            return typed !== null && typed.trim().toUpperCase() === 'ELIMINAR';
-        }
-
         window.__ADMIN_SEAT_PICKER__ = {
             tripEnded: {{ $date->lt(\Illuminate\Support\Carbon::today()) ? 'true' : 'false' }},
             canvasWidth: {{ $guide->busUnit->canvas_width }},

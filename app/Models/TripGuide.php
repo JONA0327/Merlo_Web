@@ -209,7 +209,7 @@ class TripGuide extends Model
      * exists on the new bus, or another reservation on this trip already
      * holds it for the same leg.
      */
-    private static function remapReservationForTrip(SeatReservation $reservation, LandingRoute $trip): bool
+    public static function remapReservationForTrip(SeatReservation $reservation, LandingRoute $trip): bool
     {
         if ($reservation->seat && $reservation->seat->bus_unit_id === $trip->bus_unit_id) {
             return true;
@@ -234,6 +234,34 @@ class TripGuide extends Model
         $reservation->bus_unit_seat_id = $newSeat->id;
 
         return true;
+    }
+
+    /**
+     * Plantilla switched on a trip that already has reservations: re-point
+     * each one to the same-labeled seat on the new bus (guide-staged
+     * apartados first, then oldest first, so on a clash the earlier booking
+     * keeps the seat). Seats whose
+     * label doesn't exist, or that an earlier booking already took, stay
+     * flagged by hasSeatMismatch() for manual reassignment.
+     *
+     * @return array<int, string> labels that couldn't be remapped
+     */
+    public static function remapTripReservations(LandingRoute $trip): array
+    {
+        $unmatched = [];
+
+        // Guide-staged apartados (trip_guide_id kept after linking) were
+        // booked first, so they win a clash over ones added on the trip.
+        $trip->seatReservations()->with('seat')->orderByRaw('trip_guide_id is null')->orderBy('created_at')->orderBy('id')->get()
+            ->each(function (SeatReservation $r) use ($trip, &$unmatched) {
+                if (! static::remapReservationForTrip($r, $trip)) {
+                    $unmatched[] = $r->seat?->label ?? "#{$r->bus_unit_seat_id}";
+                } elseif ($r->isDirty('bus_unit_seat_id')) {
+                    $r->save();
+                }
+            });
+
+        return array_values(array_unique($unmatched));
     }
 
     private static function rootIdFor(SeatReservation $reservation): int
