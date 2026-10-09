@@ -271,7 +271,7 @@ class AdminSeatReservationController extends Controller
         $methodsBySeat = $data['payment_method'];
         $distinctMethods = array_values(array_unique($methodsBySeat));
         $isCashPending = ! $isPaid;
-        $unitPrice = $landingRoute->seatPriceFor($tripType);
+        $unitPrice = $landingRoute->seatPriceFor($tripType, count($data['seat_ids']));
         $returnDatesBySeat = array_filter($data['return_date'] ?? []);
         $returnPaidBySeat = $data['return_paid'] ?? [];
         // Only meaningful for ida (a brand-new charged sale) and
@@ -825,6 +825,19 @@ class AdminSeatReservationController extends Controller
             // a "sent ticket" — only the pending notice applies.
             'status' => $paid ? $reservation->status : SeatReservation::STATUS_PENDING,
         ]);
+
+        // "Especial" is priced per mancuerna across the whole apartado
+        // (see LandingRoute::seatPriceFor()), so moving a seat in or out
+        // of especial re-splits the price among the apartado's especial
+        // seats. Done before regroupByPayment() can split the apartado.
+        $especialMembers = $reservation->fresh()->groupMembers()
+            ->where('trip_type', TripTicketPrice::TYPE_ESPECIAL);
+        if ($especialMembers->isNotEmpty()) {
+            SeatReservation::whereIn('id', $especialMembers->pluck('id'))->update([
+                'unit_price' => $landingRoute->seatPriceFor(TripTicketPrice::TYPE_ESPECIAL, $especialMembers->count()),
+            ]);
+            $reservation->refresh();
+        }
 
         // Seats of one apartado can now differ in method/status: keep one
         // group per (method, status) so Pagos and notifications stay right.

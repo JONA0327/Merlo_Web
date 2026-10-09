@@ -170,17 +170,24 @@ class LandingRoute extends Model
     /**
      * What ONE seat costs for this trip type — the value stored as a
      * reservation's unit_price. Same as numericPriceFor() except for
-     * "especial", whose configured price is for the whole mancuerna
-     * (e.g. $1,800 for seats 1 y 2 together), so each seat carries its
-     * share and the pair adds back up to the mancuerna price.
+     * "especial", whose configured price is for a whole mancuerna
+     * (e.g. $1,800 for seats 1 y 2 together): an apartado of
+     * $seatCount especial seats is charged one mancuerna per started
+     * pair — 1 or 2 seats = $1,800, 3 or 4 = $3,600 — split evenly so
+     * the seats add back up to that total.
      */
-    public function seatPriceFor(string $tripType): float
+    public function seatPriceFor(string $tripType, int $seatCount = TripTicketPrice::SEATS_PER_MANCUERNA): float
     {
         $price = $this->numericPriceFor($tripType);
 
-        return $tripType === TripTicketPrice::TYPE_ESPECIAL
-            ? round($price / TripTicketPrice::SEATS_PER_MANCUERNA, 2)
-            : $price;
+        if ($tripType !== TripTicketPrice::TYPE_ESPECIAL) {
+            return $price;
+        }
+
+        $seatCount = max(1, $seatCount);
+        $mancuernas = (int) ceil($seatCount / TripTicketPrice::SEATS_PER_MANCUERNA);
+
+        return round($price * $mancuernas / $seatCount, 2);
     }
 
     /**
