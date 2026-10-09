@@ -391,6 +391,7 @@ class EvolutionWhatsAppService
 
         $lines[] = '';
         $lines[] = "🟡 *RESERVADO — {$methodLabel}*";
+        $lines[] = 'Tu pasaje se paga a la hora de abordar.';
 
         $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
             'number' => $number,
