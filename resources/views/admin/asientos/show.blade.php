@@ -234,7 +234,7 @@
 
                             <div class="flex shrink-0 flex-col items-end gap-1.5">
                                 @if (! $reservation->ticket_sent_at && ! $trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline">
+                                    <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline" data-confirm="¿Enviar {{ $allSeats->count() > 1 ? 'los boletos' : 'el boleto' }} a {{ $reservation->customer_display_name }}?">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
                                             <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
