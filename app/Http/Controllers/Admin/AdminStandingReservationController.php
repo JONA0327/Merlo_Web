@@ -68,6 +68,12 @@ class AdminStandingReservationController extends Controller
 
         StandingReservation::create($data);
 
+        // If a Guía already exists for this route/bus, stage this
+        // assignment into every upcoming day it applies to right away
+        // instead of waiting for the next /admin/guias visit or the
+        // daily cron.
+        StandingReservation::provisionForRoute($data['from'], $data['to'], $data['bus_unit_id']);
+
         return redirect()->route('admin.planta.index')->with('success', 'Asiento de planta agregado. Se asignará solo cada vez que se abra un viaje de esa ruta.');
     }
 

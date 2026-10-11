@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\LandingRoute;
+use App\Models\StandingReservation;
 use App\Models\TripGuide;
 use Illuminate\Console\Command;
 
@@ -20,7 +21,7 @@ class ProvisionRecurringGuides extends Command
      *
      * @var string
      */
-    protected $description = 'Keeps every recurring trip\'s guide rolling ~4 weeks ahead, even if nobody opens /admin/guias for a while';
+    protected $description = 'Keeps every recurring trip\'s guide rolling ~4 weeks ahead and every "de planta" assignment staged as a real apartado for each upcoming matching day, even if nobody opens /admin/guias for a while';
 
     /**
      * Execute the console command.
@@ -37,6 +38,11 @@ class ProvisionRecurringGuides extends Command
             }
         }
 
-        $this->info("Provisioned guides for {$trips->count()} recurring trip(s), {$created} newly created.");
+        $staged = 0;
+        foreach (TripGuide::all() as $guide) {
+            $staged += StandingReservation::provisionGuideReservations($guide);
+        }
+
+        $this->info("Provisioned guides for {$trips->count()} recurring trip(s), {$created} newly created. {$staged} standing apartado(s) staged.");
     }
 }

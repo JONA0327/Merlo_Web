@@ -43,6 +43,16 @@ class AdminTripGuideController extends Controller
             TripGuide::ensureForRecurringTrip($trip);
         }
 
+        // Every "de planta" assignment gets a real apartado staged for
+        // each upcoming day it applies to within its guide's window —
+        // not just a purple color on the seat picker (see
+        // provisionGuideReservations()). Runs for every guide, not only
+        // recurring-trip ones — a manually created guide's own standing
+        // assignments work the same way.
+        foreach (TripGuide::all() as $guide) {
+            StandingReservation::provisionGuideReservations($guide);
+        }
+
         $guides = TripGuide::query()
             ->withCount(['pendingSeatReservations as pending_count'])
             ->with('busUnit')
@@ -53,6 +63,18 @@ class AdminTripGuideController extends Controller
         // (Carbon's own dayOfWeek: 0=Dom…6=Sáb). ?inicio= moves the
         // window back/forward a week at a time (see the blade view).
         $weekStart = Carbon::parse($request->query('inicio', now()->toDateString()))->startOfWeek(Carbon::SUNDAY);
+        $weekEnd = $weekStart->copy()->addDays(6);
+
+        // Per-day pending counts for the badges in the week tabs — a
+        // guide's own pending_count (above) spans its whole 4-week
+        // window, so showing that same number on every day's tab made
+        // every tab claim the guide's ENTIRE backlog, not just what's
+        // actually reserved for that one date. Keyed "guideId|Y-m-d".
+        $dayCounts = SeatReservation::whereNull('landing_route_id')
+            ->whereIn('trip_guide_id', $guides->pluck('id'))
+            ->whereBetween('travel_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+            ->get(['trip_guide_id', 'travel_date'])
+            ->countBy(fn (SeatReservation $r) => $r->trip_guide_id.'|'.$r->travel_date->toDateString());
 
         // Every guide that belongs to SOME recurring trip (by from/to/
         // bus_unit_id), computed once — not per day. These must NEVER
@@ -68,7 +90,7 @@ class AdminTripGuideController extends Controller
             ->filter()
             ->pluck('id');
 
-        $days = collect(range(0, 6))->map(function (int $i) use ($weekStart, $recurringTrips, $guides, $recurringGuideIds) {
+        $days = collect(range(0, 6))->map(function (int $i) use ($weekStart, $recurringTrips, $guides, $recurringGuideIds, $dayCounts) {
             $date = $weekStart->copy()->addDays($i);
 
             // EVERY recurring trip shows up every day — not just the ones
@@ -84,13 +106,14 @@ class AdminTripGuideController extends Controller
             // crashes once the items are arrays. Plain Collection::merge()
             // doesn't have that assumption.
             $recurringTabs = collect($recurringTrips->all())
-                ->map(function (LandingRoute $trip) use ($guides, $date) {
+                ->map(function (LandingRoute $trip) use ($guides, $date, $dayCounts) {
                     $guide = $guides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id);
 
                     return $guide ? [
                         'label' => "{$trip->from} → {$trip->to}",
                         'guide' => $guide,
                         'active' => in_array($date->dayOfWeek, $trip->recurring_weekdays ?? [], true),
+                        'pending_count' => $dayCounts->get($guide->id.'|'.$date->toDateString(), 0),
                     ] : null;
                 })
                 ->filter()
@@ -103,7 +126,12 @@ class AdminTripGuideController extends Controller
             // inside their range is simply valid, so they're always active.
             $manualTabs = collect($guides->all())
                 ->filter(fn (TripGuide $g) => ! $recurringGuideIds->contains($g->id) && $g->coversDate($date))
-                ->map(fn (TripGuide $g) => ['label' => "{$g->from} → {$g->to}", 'guide' => $g, 'active' => true])
+                ->map(fn (TripGuide $g) => [
+                    'label' => "{$g->from} → {$g->to}",
+                    'guide' => $g,
+                    'active' => true,
+                    'pending_count' => $dayCounts->get($g->id.'|'.$date->toDateString(), 0),
+                ])
                 ->values();
 
             // Active tabs first, blocked ones trail behind so the usable
@@ -190,13 +218,50 @@ class AdminTripGuideController extends Controller
         // all of its seats. The full $allPending set stays untouched for
         // the seat map and the reassignment dropdowns below.
         $filters = $request->only(['q', 'paid', 'trip_type', 'payment_method']);
-        if (array_filter($filters, fn ($v) => filled($v))) {
+        $hasActiveFilters = (bool) array_filter($filters, fn ($v) => filled($v));
+        if ($hasActiveFilters) {
             $matchingIds = $guide->pendingSeatReservations()->listFilters($filters)->pluck('id')->flip();
             $roots = $roots->filter(fn (SeatReservation $r) => $matchingIds->has($r->id));
+        } else {
+            // No active search — only the currently-selected "Fecha a
+            // apartar" shows here, not the whole guide. A standing
+            // assignment now stages a real apartado for every matching
+            // day across the whole guide window (see
+            // StandingReservation::provisionGuideReservations()), which
+            // used to flood this list with weeks of entries; the week
+            // view's per-day badges already surface what's further out,
+            // and the seat map above already shows this date's own
+            // apartados in context. An explicit search lifts the date
+            // scope, since the admin is looking for something specific
+            // regardless of date.
+            $roots = $roots->filter(fn (SeatReservation $r) => $r->travel_date->isSameDay($date));
         }
         $groupSeatsByNote = $allPending->filter(fn (SeatReservation $r) => str_starts_with((string) $r->notes, 'group:'))->groupBy('notes');
-        $roots->each(function (SeatReservation $r) use ($groupSeatsByNote) {
-            $r->setRelation('groupSeats', $groupSeatsByNote->get('group:'.$r->id, collect()));
+
+        // A standing-sourced apartado (marked "Asiento predeterminado" at
+        // apartar time, see storeReservation()) lists as its own separate
+        // card per seat here — same as a future auto-provisioned one —
+        // instead of the one bundled card a normal multi-seat sale gets.
+        // Payment/WhatsApp grouping (notes="group:<id>", regroupByPayment())
+        // is untouched; this only reshapes what this list shows.
+        $roots = $roots->flatMap(function (SeatReservation $r) use ($groupSeatsByNote) {
+            $members = $groupSeatsByNote->get('group:'.$r->id, collect());
+
+            if (! str_starts_with((string) $r->notes, 'Asiento de planta')) {
+                $r->setRelation('groupSeats', $members);
+
+                return [$r];
+            }
+
+            // Every split-off card shows the "Asiento de planta" label,
+            // not just the one that happened to carry it in the
+            // database — the other seats' actual notes ("group:<id>")
+            // stay in the database untouched (regroupByPayment() still
+            // needs it); this only overrides the in-memory copy used to
+            // render this list.
+            return $members->push($r)->values()->each(
+                fn (SeatReservation $seat) => $seat->setRelation('groupSeats', collect())->setAttribute('notes', $r->notes)
+            );
         });
 
         // Grouped by customer so the same passenger's several boletos
@@ -289,9 +354,11 @@ class AdminTripGuideController extends Controller
         // fall back to the global default (same one a new trip gets
         // seeded with), good enough until the real trip opens and an
         // admin can still correct it from /admin/precios or /admin/pagos.
-        $regresoPrice = $allowsReturnDate
-            ? (float) (Setting::current()->defaultPrices()[TripTicketPrice::TYPE_REGRESO] ?? 0)
-            : 0.0;
+        $regresoPrice = $allowsReturnDate ? TripTicketPrice::estimateUnitPrice(TripTicketPrice::TYPE_REGRESO) : 0.0;
+        // Same reasoning as $regresoPrice above — needed so the immediate
+        // WhatsApp confirmation below can show an actual total instead of
+        // $0 while this apartado waits on a real trip to price off of.
+        $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($data['trip_type'], count($data['seat_ids']));
 
         if ($this->matchingTrip($guide, $date)) {
             return back()->withInput()->with('error', 'Ya existe un viaje abierto para esta fecha — usa Apartar asientos directamente ahí.');
@@ -337,7 +404,7 @@ class AdminTripGuideController extends Controller
         }
 
         try {
-            $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
+            $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice, $estimatedUnitPrice) {
                 $root = null;
                 foreach ($data['seat_ids'] as $seatId) {
                     $new = SeatReservation::create([
@@ -346,9 +413,11 @@ class AdminTripGuideController extends Controller
                         'bus_unit_seat_id' => $seatId,
                         'trip_type' => $tripType,
                         'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
-                        // The real price isn't known until the trip itself
-                        // exists — TripGuide::linkTrip() fills this in.
-                        'unit_price' => 0,
+                        // Estimated off the global default price — the
+                        // real one isn't known until the trip itself
+                        // exists; TripGuide::linkTrip() recomputes it for
+                        // real at that point (see $estimatedUnitPrice above).
+                        'unit_price' => $estimatedUnitPrice,
                         'customer_name' => $data['customer_name'],
                         'customer_email' => $data['customer_email'] ?? null,
                         'customer_phone' => $data['customer_phone'],
@@ -357,7 +426,21 @@ class AdminTripGuideController extends Controller
                         'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
                         'paid_at' => $isCashPending ? null : now(),
                         'reserved_by' => $request->user()?->id,
-                        'notes' => $root ? 'group:'.$root->id : ($data['notes'] ?? null),
+                        // Payment/WhatsApp still treat this apartado as
+                        // one group (group:<root id>, same as any other
+                        // multi-seat sale — see $root below and
+                        // regroupByPayment()) regardless of mark_as_
+                        // standing; the root's own notes just carries the
+                        // "Asiento de planta" marker instead of the free-
+                        // text notes field when it's checked, so show()
+                        // can split it back into one card per seat for
+                        // display, same as a future auto-provisioned one
+                        // (see StandingReservation::provisionGuideReservations()).
+                        'notes' => $root
+                            ? 'group:'.$root->id
+                            : (! empty($data['mark_as_standing'])
+                                ? 'Asiento de planta'.(! empty($data['notes']) ? ' — '.$data['notes'] : '')
+                                : ($data['notes'] ?? null)),
                     ]);
 
                     if (! empty($data['mark_as_standing'])) {
@@ -413,6 +496,14 @@ class AdminTripGuideController extends Controller
             // Payment is per seat: one group per (method, status) so the
             // notice sent when the trip opens is right for each.
             $roots = $root->regroupByPayment();
+
+            // mark_as_standing isn't per seat — a single pass covers
+            // every seat just marked, staging this guide's upcoming
+            // matching days right away instead of waiting for the next
+            // /admin/guias visit or the daily cron.
+            if (! empty($data['mark_as_standing'])) {
+                StandingReservation::provisionGuideReservations($guide);
+            }
         } catch (HttpException $e) {
             return back()
                 ->withInput()

@@ -65,8 +65,8 @@
                                 @elseif ($tab['active'])
                                     <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" class="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:ring-[#8C1D2B]/40 transition-colors">
                                         <span class="truncate">{{ $tab['label'] }}</span>
-                                        @if ($tab['guide']->pending_count > 0)
-                                            <span class="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{{ $tab['guide']->pending_count }}</span>
+                                        @if ($tab['pending_count'] > 0)
+                                            <span class="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{{ $tab['pending_count'] }}</span>
                                         @endif
                                     </a>
                                 @else

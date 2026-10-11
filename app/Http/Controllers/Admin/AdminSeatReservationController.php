@@ -430,6 +430,12 @@ class AdminSeatReservationController extends Controller
                         ],
                         $landingRoute->day->dayOfWeek
                     );
+
+                    // If a Guía already exists for this route/bus, stage
+                    // this standing assignment into every upcoming day it
+                    // applies to right away instead of waiting for the
+                    // next /admin/guias visit or the daily cron.
+                    StandingReservation::provisionForRoute($landingRoute->from, $landingRoute->to, $landingRoute->bus_unit_id);
                 }
 
                 // "Ya sé cuándo regresa" — registered per seat right here
