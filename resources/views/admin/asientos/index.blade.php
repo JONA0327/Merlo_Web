@@ -41,7 +41,7 @@
                             <tr class="hover:bg-[#FFFBF6]/60 transition-colors">
                                 <td class="px-4 py-3">
                                     <p class="font-[Poppins] font-bold text-[#2B1113]">{{ $route->from }} → {{ $route->to }}</p>
-                                    <p class="text-xs text-[#2B1113]/60">{{ $route->duration }} · {{ $route->formatted_price }}</p>
+                                    <p class="text-xs text-[#2B1113]/60">{{ $route->formatted_price }}</p>
                                 </td>
                                 <td class="px-4 py-3 text-[#2B1113]/80">
                                     {{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }}

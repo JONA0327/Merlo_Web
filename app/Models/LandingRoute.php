@@ -20,8 +20,8 @@ class LandingRoute extends Model
     protected $fillable = [
         'from',
         'to',
-        'duration',
         'day',
+        'recurring_weekdays',
         'return_date',
         'departure_time',
         'available_seats',
@@ -39,7 +39,15 @@ class LandingRoute extends Model
         'available_seats' => 'integer',
         'day' => 'date',
         'return_date' => 'date',
+        'recurring_weekdays' => 'array',
     ];
+
+    /**
+     * Spanish weekday abbreviations in week order (Sunday first — matches
+     * Carbon's 0-6 dayOfWeek convention, which is what recurring_weekdays
+     * stores).
+     */
+    private const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
     public function getDepartureTimeFormattedAttribute(): ?string
     {
@@ -73,6 +81,29 @@ class LandingRoute extends Model
     public function hasSeatMap(): bool
     {
         return $this->bus_unit_id !== null;
+    }
+
+    /**
+     * "Días recurrentes" mode (e.g. "corre Dom, Lun, Mar") instead of the
+     * original "fecha específica" mode — set up from Viajes, but not yet
+     * wired into Apartar asientos/guías (next phase). Mutually exclusive
+     * with `day` in practice: store()/update() never set both.
+     */
+    public function isRecurring(): bool
+    {
+        return ! empty($this->recurring_weekdays);
+    }
+
+    public function recurringWeekdaysLabel(): ?string
+    {
+        if (! $this->isRecurring()) {
+            return null;
+        }
+
+        return collect($this->recurring_weekdays)
+            ->sort()
+            ->map(fn ($day) => self::WEEKDAY_LABELS[$day] ?? '?')
+            ->implode(', ');
     }
 
     /**

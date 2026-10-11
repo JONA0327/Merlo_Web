@@ -47,7 +47,21 @@
                     @enderror
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Programación</label>
+                    <div class="flex gap-2">
+                        <label class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                            <input type="radio" name="schedule_mode" value="date" id="schedule-mode-date" class="h-4 w-4 text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ old('schedule_mode', $route->isRecurring() ? 'weekday' : 'date') === 'date' ? 'checked' : '' }}>
+                            Fecha específica
+                        </label>
+                        <label class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                            <input type="radio" name="schedule_mode" value="weekday" id="schedule-mode-weekday" class="h-4 w-4 text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ old('schedule_mode', $route->isRecurring() ? 'weekday' : 'date') === 'weekday' ? 'checked' : '' }}>
+                            Días recurrentes
+                        </label>
+                    </div>
+                </div>
+
+                <div id="schedule-date-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label for="day" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Día del viaje</label>
                         <input id="day" name="day" type="date" value="{{ old('day', $route->day?->format('Y-m-d')) }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
@@ -65,12 +79,20 @@
                     </div>
                 </div>
 
-                <div>
-                    <label for="duration" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Duración</label>
-                    <input id="duration" name="duration" type="text" value="{{ old('duration', $route->duration) }}" placeholder="6h 30m" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                    @error('duration')
+                <div id="schedule-weekday-fields" class="hidden">
+                    <label class="mb-1.5 block text-sm font-semibold text-[#2B1113]">¿Qué días corre este viaje?</label>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach (['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as $i => $label)
+                            <label class="flex items-center gap-1.5 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                                <input type="checkbox" name="recurring_weekdays[]" value="{{ $i }}" class="h-4 w-4 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ in_array($i, old('recurring_weekdays', $route->recurring_weekdays ?? [])) ? 'checked' : '' }}>
+                                {{ $label }}
+                            </label>
+                        @endforeach
+                    </div>
+                    @error('recurring_weekdays')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
+                    <p class="mt-1.5 text-xs text-[#2B1113]/50">La hora de salida de abajo aplica para todos los días seleccionados.</p>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -180,21 +202,24 @@
                     <p class="font-semibold text-[#2B1113]">Ruta</p>
                     <p class="text-[#2B1113]/60">{{ $route->from }} → {{ $route->to }}</p>
                 </div>
-                <div>
-                    <p class="font-semibold text-[#2B1113]">Fecha</p>
-                    <p class="text-[#2B1113]/60">{{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }}</p>
-                </div>
-                <div>
-                    <p class="font-semibold text-[#2B1113]">Fecha de regreso</p>
-                    <p class="text-[#2B1113]/60">{{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
-                </div>
+                @if ($route->isRecurring())
+                    <div>
+                        <p class="font-semibold text-[#2B1113]">Días recurrentes</p>
+                        <p class="text-[#2B1113]/60">{{ $route->recurringWeekdaysLabel() }}</p>
+                    </div>
+                @else
+                    <div>
+                        <p class="font-semibold text-[#2B1113]">Fecha</p>
+                        <p class="text-[#2B1113]/60">{{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }}</p>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-[#2B1113]">Fecha de regreso</p>
+                        <p class="text-[#2B1113]/60">{{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
+                    </div>
+                @endif
                 <div>
                     <p class="font-semibold text-[#2B1113]">Horario</p>
                     <p class="text-[#2B1113]/60">{{ $route->departure_time_formatted ?? 'Sin horario' }}</p>
-                </div>
-                <div>
-                    <p class="font-semibold text-[#2B1113]">Duración</p>
-                    <p class="text-[#2B1113]/60">{{ $route->duration }}</p>
                 </div>
                 <div>
                     <p class="font-semibold text-[#2B1113]">Asientos disponibles</p>
@@ -242,6 +267,24 @@
 
             unitSelect.addEventListener('change', syncAvailableSeats);
             syncAvailableSeats();
+        })();
+
+        (function () {
+            const dateRadio = document.getElementById('schedule-mode-date');
+            const weekdayRadio = document.getElementById('schedule-mode-weekday');
+            const dateFields = document.getElementById('schedule-date-fields');
+            const weekdayFields = document.getElementById('schedule-weekday-fields');
+            if (!dateRadio || !weekdayRadio) return;
+
+            function syncScheduleMode() {
+                const isWeekday = weekdayRadio.checked;
+                dateFields.classList.toggle('hidden', isWeekday);
+                weekdayFields.classList.toggle('hidden', !isWeekday);
+            }
+
+            dateRadio.addEventListener('change', syncScheduleMode);
+            weekdayRadio.addEventListener('change', syncScheduleMode);
+            syncScheduleMode();
         })();
     </script>
 </x-admin-layout>

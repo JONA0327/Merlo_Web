@@ -20,11 +20,7 @@
 </div>
 <p class="font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->to }}</p>
 
-<div class="mt-5 flex items-center justify-between border-t border-black/5 pt-4">
-    <div>
-        <p class="text-xs text-[#2B1113]/50">Duración</p>
-        <p class="text-sm font-semibold">{{ $route->duration }}</p>
-    </div>
+<div class="mt-5 flex items-center justify-end border-t border-black/5 pt-4">
     <div class="text-right space-y-0.5">
         <p class="text-xs text-[#2B1113]/50">Desde</p>
         <p class="font-[Poppins] text-base font-extrabold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }} <span class="text-[10px] font-semibold text-[#2B1113]/40">ida</span></p>

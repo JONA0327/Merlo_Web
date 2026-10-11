@@ -43,7 +43,13 @@ class AdminStandingReservationController extends Controller
                     'notes' => $first->notes,
                     'is_active' => $group->every(fn (StandingReservation $a) => $a->is_active),
                     'ids' => $group->pluck('id'),
-                    'seats' => $group->pluck('seat.label')->filter()->sort(SORT_NATURAL)->values(),
+                    // Each seat carries its own días label — the group
+                    // can mix seats booked on different weekdays (one
+                    // registered driving Mondays, another Thursdays).
+                    'seats' => $group->sortBy(fn (StandingReservation $a) => $a->seat?->label, SORT_NATURAL)
+                        ->map(fn (StandingReservation $a) => ['label' => $a->seat?->label, 'weekdays' => $a->weekdaysLabel()])
+                        ->filter(fn ($s) => $s['label'] !== null)
+                        ->values(),
                 ];
             })
             ->values();
@@ -62,6 +68,12 @@ class AdminStandingReservationController extends Controller
 
         StandingReservation::create($data);
 
+        // If a Guía already exists for this route/bus, stage this
+        // assignment into every upcoming day it applies to right away
+        // instead of waiting for the next /admin/guias visit or the
+        // daily cron.
+        StandingReservation::provisionForRoute($data['from'], $data['to'], $data['bus_unit_id']);
+
         return redirect()->route('admin.planta.index')->with('success', 'Asiento de planta agregado. Se asignará solo cada vez que se abra un viaje de esa ruta.');
     }
 
@@ -75,10 +87,13 @@ class AdminStandingReservationController extends Controller
             'customer_phone' => ['required', 'string', 'max:30'],
             'customer_email' => ['nullable', 'email', 'max:160'],
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            'weekdays' => ['nullable', 'array'],
+            'weekdays.*' => ['integer', 'between:0,6'],
             'notes' => ['nullable', 'string', 'max:500'],
             'is_active' => ['nullable', 'boolean'],
         ]);
         $data['is_active'] = (bool) ($data['is_active'] ?? false);
+        $data['weekdays'] = ! empty($data['weekdays']) ? array_values(array_unique(array_map('intval', $data['weekdays']))) : null;
 
         $standing->update($data);
 
@@ -106,18 +121,32 @@ class AdminStandingReservationController extends Controller
             'customer_phone' => ['required', 'string', 'max:30'],
             'customer_email' => ['nullable', 'email', 'max:160'],
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            // Opt-in: each seat in the group can have its own días (one
+            // registered Mondays, another Thursdays) — leaving this
+            // unchecked keeps every seat's own días untouched, so just
+            // fixing a phone number here can't silently wipe them all
+            // back to "every day".
+            'update_weekdays' => ['nullable', 'boolean'],
+            'weekdays' => ['nullable', 'array'],
+            'weekdays.*' => ['integer', 'between:0,6'],
             'notes' => ['nullable', 'string', 'max:500'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        StandingReservation::whereIn('id', $data['ids'])->update([
+        $updates = [
             'customer_name' => $data['customer_name'],
             'customer_phone' => $data['customer_phone'],
             'customer_email' => $data['customer_email'] ?? null,
             'trip_type' => $data['trip_type'],
             'notes' => $data['notes'] ?? null,
             'is_active' => (bool) ($data['is_active'] ?? false),
-        ]);
+        ];
+
+        if (! empty($data['update_weekdays'])) {
+            $updates['weekdays'] = ! empty($data['weekdays']) ? array_values(array_unique(array_map('intval', $data['weekdays']))) : null;
+        }
+
+        StandingReservation::whereIn('id', $data['ids'])->update($updates);
 
         return redirect()->route('admin.planta.index')->with('success', 'Asientos de planta actualizados.');
     }
@@ -139,7 +168,7 @@ class AdminStandingReservationController extends Controller
      */
     private function validated(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
             'bus_unit_id' => ['required', 'exists:bus_units,id'],
@@ -155,9 +184,15 @@ class AdminStandingReservationController extends Controller
             'customer_phone' => ['required', 'string', 'max:30'],
             'customer_email' => ['nullable', 'email', 'max:160'],
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            'weekdays' => ['nullable', 'array'],
+            'weekdays.*' => ['integer', 'between:0,6'],
             'notes' => ['nullable', 'string', 'max:500'],
         ], [], [
             'bus_unit_seat_id' => 'asiento',
-        ]) + ['is_active' => true];
+        ]);
+
+        $data['weekdays'] = ! empty($data['weekdays']) ? array_values(array_unique(array_map('intval', $data['weekdays']))) : null;
+
+        return $data + ['is_active' => true];
     }
 }

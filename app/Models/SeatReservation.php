@@ -62,6 +62,7 @@ class SeatReservation extends Model
         'status',
         'reserved_by',
         'ticket_sent_at',
+        'reminder_sent_at',
         'notes',
         'ticket_code',
         'outbound_verified_at',
@@ -92,6 +93,7 @@ class SeatReservation extends Model
     protected $casts = [
         'travel_date' => 'date',
         'ticket_sent_at' => 'datetime',
+        'reminder_sent_at' => 'datetime',
         'unit_price' => 'float',
         'outbound_verified_at' => 'datetime',
         'return_verified_at' => 'datetime',

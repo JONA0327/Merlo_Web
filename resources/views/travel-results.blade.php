@@ -56,7 +56,6 @@
                                         @if ($trip->return_date)
                                             <span class="rounded-full bg-[#8C1D2B]/10 px-2.5 py-1 font-semibold text-[#8C1D2B]">Regreso: {{ $trip->return_date->format('d/m/Y') }}</span>
                                         @endif
-                                        <span class="rounded-full bg-[#8C1D2B]/10 px-2.5 py-1 font-semibold text-[#8C1D2B]">{{ $trip->duration }}</span>
                                         <span>Horario: {{ $trip->departure_time_formatted ?? 'Sin horario' }}</span>
                                         <span>Asientos disponibles: {{ $trip->available_seats ?? 0 }}</span>
                                     </div>

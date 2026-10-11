@@ -9,7 +9,6 @@
             <p class="mt-1 text-sm text-[#2B1113]/60">
                 {{ $trip->day ? $trip->day->format('d/m/Y') : 'Sin fecha' }} ·
                 {{ $trip->departure_time_formatted ?? 'Sin horario' }} ·
-                {{ $trip->duration }} ·
                 {{ $trip->formatted_price }}
             </p>
         </div>
@@ -133,12 +132,6 @@
                         @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
-                    <label class="block">
-                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Correo del cliente (opcional)</span>
-                        <input type="email" id="admin-apartado-customer-email" name="customer_email" value="{{ old('customer_email') }}" maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        <p class="mt-1 text-[10px] text-[#2B1113]/40">Solo para tenerlo como referencia — el boleto no se manda por correo.</p>
-                        @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
-                    </label>
 
                     <div class="grid grid-cols-2 gap-3">
                         <label class="block">
@@ -174,7 +167,8 @@
 
                     <label class="flex items-center gap-2 rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
                         <input type="checkbox" name="mark_as_standing" value="1" class="h-4 w-4 rounded border-violet-300 text-violet-700 focus:ring-violet-500">
-                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos en cada viaje de esta ruta a partir de ahora</span>
+                        @php $weekdayFullNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']; @endphp
+                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos cada {{ $trip->day !== null ? $weekdayFullNames[$trip->day->dayOfWeek] : 'día' }} de esta ruta a partir de ahora</span>
                     </label>
                 </div>
 
@@ -421,20 +415,18 @@
 
     <script>
         // Agenda de clientes: pick a name already on file and autofill
-        // phone/email instead of retyping them (the datalist option's
+        // the phone instead of retyping it (the datalist option's
         // visible text is the phone; the value is the name).
         (function () {
-            const customers = @json($customers->map(fn ($c) => ['name' => $c->name, 'phone' => $c->phone, 'email' => $c->email])->values());
+            const customers = @json($customers->map(fn ($c) => ['name' => $c->name, 'phone' => $c->phone])->values());
             const nameInput = document.getElementById('admin-apartado-customer-name');
             const phoneInput = document.getElementById('admin-apartado-customer-phone');
-            const emailInput = document.getElementById('admin-apartado-customer-email');
-            if (!nameInput || !phoneInput || !emailInput) return;
+            if (!nameInput || !phoneInput) return;
 
             nameInput.addEventListener('input', () => {
                 const match = customers.find((c) => c.name === nameInput.value);
                 if (match) {
                     phoneInput.value = match.phone;
-                    emailInput.value = match.email ?? '';
                 }
             });
         })();

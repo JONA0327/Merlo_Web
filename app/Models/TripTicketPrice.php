@@ -56,6 +56,28 @@ class TripTicketPrice extends Model
         return Str::startsWith($value, '$') ? $value : '$'.$value;
     }
 
+    /**
+     * Best-guess per-seat price before a real trip exists to price off
+     * of (a Guía apartado, staged or auto-provisioned from a standing
+     * assignment) — the global default, mancuerna-split the same way
+     * LandingRoute::seatPriceFor() does for "especial". Whoever created
+     * it this way gets corrected for real once an actual trip opens
+     * (TripGuide::linkTrip() / StandingReservation::applyToTrip()).
+     */
+    public static function estimateUnitPrice(string $tripType, int $seatCount = self::SEATS_PER_MANCUERNA): float
+    {
+        $price = (float) (Setting::current()->defaultPrices()[$tripType] ?? 0);
+
+        if ($tripType !== self::TYPE_ESPECIAL) {
+            return $price;
+        }
+
+        $seatCount = max(1, $seatCount);
+        $mancuernas = (int) ceil($seatCount / self::SEATS_PER_MANCUERNA);
+
+        return round($price * $mancuernas / $seatCount, 2);
+    }
+
     public static function tripTypes(): array
     {
         return [

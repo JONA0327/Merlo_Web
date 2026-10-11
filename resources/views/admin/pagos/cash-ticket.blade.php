@@ -69,7 +69,6 @@
             {{-- Route strip --}}
             <div class="px-7 py-4" style="background:#F5B301;">
                 <p class="font-[Poppins] text-2xl font-extrabold tracking-tight text-[#2B1113]">{{ $trip->from }} <span class="opacity-60 font-semibold">→</span> {{ $trip->to }}</p>
-                <p class="mt-0.5 text-xs font-semibold text-[#2B1113]/85">{{ $trip->duration }}</p>
             </div>
 
             {{-- Trip details --}}

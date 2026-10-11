@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BusUnit;
 use App\Models\SeatReservation;
 use App\Models\Setting;
 use Illuminate\Http\Client\PendingRequest;
@@ -351,14 +352,20 @@ class EvolutionWhatsAppService
             throw new RuntimeException('El cliente no tiene un número de WhatsApp registrado.');
         }
 
-        $group->each->loadMissing(['landingRoute', 'seat']);
-        $trip = $first->landingRoute;
+        // outboundRouteInfo() resolves this reservation's own from/to/
+        // bus_unit_id whether it already has a real trip OR is still
+        // staged in a Guía (landing_route_id null) — this notice goes
+        // out the moment a Guía apartado is created, well before any
+        // real trip exists, so $first->landingRoute can't be assumed.
+        $group->each->loadMissing(['landingRoute', 'tripGuide', 'seat']);
+        $route = $first->outboundRouteInfo();
+        $departureDay = $first->landing_route_id !== null ? $first->landingRoute?->day : $first->travel_date;
 
         // Use locals so the double quotes don't have to nest nullsafe +
         // null-coalescing inside an interpolation expression — the parser
         // sometimes gets confused by `?-> ... ??` directly inside `{}`.
-        $departureDate = $trip->day?->toSpanishLongDate() ?? '—';
-        $unitName = $trip->busUnit->name ?? '—';
+        $departureDate = $departureDay?->toSpanishLongDate() ?? '—';
+        $unitName = BusUnit::find($route['bus_unit_id'])?->name ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         // Every seat in a group ("mancuerna" or otherwise) is charged its
         // own unit_price — the total owed is the sum across all of them,
@@ -375,7 +382,7 @@ class EvolutionWhatsAppService
             '',
             "Hola {$first->customer_display_name}, tu apartado fue registrado:",
             '',
-            "*{$trip->from} → {$trip->to}*",
+            "*{$route['from']} → {$route['to']}*",
             "📅 Salida: *{$departureDate}*",
             "🚍 Unidad: *{$unitName}*",
             "🏷️ Tipo: ".$group->map(fn (SeatReservation $r) => $r->trip_type_label)->unique()->implode(', '),

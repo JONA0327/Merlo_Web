@@ -320,10 +320,6 @@
 
                         <div class="mt-6 flex flex-wrap items-end justify-between gap-6 border-t border-black/5 pt-6">
                             <div class="flex gap-8">
-                                <div>
-                                    <p class="text-xs text-[#2B1113]/50">Duración</p>
-                                    <p class="text-sm font-semibold">{{ $route->duration }}</p>
-                                </div>
                                 @if ($route->day)
                                     <div>
                                         <p class="text-xs text-[#2B1113]/50">Salida</p>

@@ -348,4 +348,48 @@ class TripGuide extends Model
 
         return $unmatched->unique()->values();
     }
+
+    /**
+     * Finds (or creates) the one guide for a recurring trip's exact
+     * route+bus, and makes sure it reaches at least $weeksAhead from
+     * today — extending date_to forward, never shrinking it, so the
+     * guide's window keeps "rolling" indefinitely every time this runs
+     * (called from AdminLandingRouteController on save, from this
+     * controller's index(), and from the daily guides:provision-recurring
+     * command — see routes/console.php). Exact match on bus_unit_id
+     * (unlike linkTrip()'s relaxed from/to-only matching for the "the
+     * plantilla changed after booking" case): a recurring trip already
+     * declares its own bus, so there's no ambiguity to resolve here.
+     */
+    public static function ensureForRecurringTrip(LandingRoute $trip, int $weeksAhead = 4): ?self
+    {
+        if (! $trip->isRecurring() || $trip->bus_unit_id === null) {
+            return null;
+        }
+
+        $today = now()->startOfDay();
+        $horizon = $today->copy()->addWeeks($weeksAhead);
+
+        $guide = static::where('from', $trip->from)
+            ->where('to', $trip->to)
+            ->where('bus_unit_id', $trip->bus_unit_id)
+            ->first();
+
+        if ($guide) {
+            if ($horizon->gt($guide->date_to)) {
+                $guide->update(['date_to' => $horizon->toDateString()]);
+            }
+
+            return $guide;
+        }
+
+        return static::create([
+            'from' => $trip->from,
+            'to' => $trip->to,
+            'bus_unit_id' => $trip->bus_unit_id,
+            'date_from' => $today->toDateString(),
+            'date_to' => $horizon->toDateString(),
+            'notes' => 'Creada automáticamente para el viaje recurrente ('.$trip->recurringWeekdaysLabel().').',
+        ]);
+    }
 }
