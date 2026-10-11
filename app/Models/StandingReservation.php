@@ -25,13 +25,59 @@ class StandingReservation extends Model
         'customer_phone',
         'customer_email',
         'trip_type',
+        'weekdays',
         'notes',
         'is_active',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'weekdays' => 'array',
     ];
+
+    /** Sunday-first, same convention as LandingRoute::recurring_weekdays. */
+    private const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+    /**
+     * Whether this assignment is "de planta" on this specific weekday —
+     * empty/null weekdays means every day (the original behavior, kept
+     * as the default so nothing already in the database changes meaning).
+     */
+    public function appliesOnWeekday(int $dayOfWeek): bool
+    {
+        return empty($this->weekdays) || in_array($dayOfWeek, $this->weekdays, true);
+    }
+
+    public function weekdaysLabel(): string
+    {
+        if (empty($this->weekdays)) {
+            return 'Todos los días';
+        }
+
+        return collect($this->weekdays)->sort()->map(fn ($day) => self::WEEKDAY_LABELS[$day] ?? '?')->implode(', ');
+    }
+
+    /**
+     * Marks a seat "de planta" for ONE weekday — merged into whatever
+     * days are already set for this exact seat, not replaced, so
+     * checking "Asiento predeterminado" again for a different day the
+     * same passenger travels (e.g. later on Thursdays too) accumulates
+     * instead of silently dropping Monday. Called from the "mark_as_
+     * standing" checkbox in both Apartar asientos and Guía.
+     *
+     * @param array{from: string, to: string, bus_unit_id: int, bus_unit_seat_id: int} $keys
+     * @param array<string, mixed> $attributes customer_name/customer_phone/customer_email/trip_type/notes
+     */
+    public static function markStanding(array $keys, array $attributes, int $weekday): self
+    {
+        $standing = static::firstOrNew($keys);
+        $weekdays = array_values(array_unique([...($standing->weekdays ?? []), $weekday]));
+
+        $standing->fill($attributes + ['weekdays' => $weekdays, 'is_active' => true]);
+        $standing->save();
+
+        return $standing;
+    }
 
     public function busUnit(): BelongsTo
     {
@@ -56,8 +102,12 @@ class StandingReservation extends Model
      * trip (see releaseStanding()) is left out, so a "no viaja hoy" seat
      * goes back to looking and behaving like any other free seat for
      * this one trip — every other trip still gets it automatically.
+     * $weekday (Carbon's own dayOfWeek, 0=Dom…6=Sáb) additionally scopes
+     * to assignments that actually apply on that specific day — "de
+     * planta" is per-weekday, not "every run of this route" — see
+     * appliesOnWeekday(). Omit it to ignore the day (every assignment).
      */
-    public static function activeSeatIdsFor(string $from, string $to, int $busUnitId, ?int $excludeSkippedForTripId = null): Collection
+    public static function activeSeatIdsFor(string $from, string $to, int $busUnitId, ?int $excludeSkippedForTripId = null, ?int $weekday = null): Collection
     {
         $query = static::query()
             ->where('from', $from)
@@ -69,7 +119,13 @@ class StandingReservation extends Model
             $query->whereDoesntHave('skips', fn ($q) => $q->where('landing_route_id', $excludeSkippedForTripId));
         }
 
-        return $query->pluck('bus_unit_seat_id');
+        $assignments = $query->get(['id', 'bus_unit_seat_id', 'weekdays']);
+
+        if ($weekday !== null) {
+            $assignments = $assignments->filter(fn (self $a) => $a->appliesOnWeekday($weekday));
+        }
+
+        return $assignments->pluck('bus_unit_seat_id');
     }
 
     /**
@@ -145,13 +201,17 @@ class StandingReservation extends Model
             return 0;
         }
 
+        // "De planta" is per-weekday ("todos los lunes"), not "every run
+        // of this route" — only assignments whose own weekdays (or no
+        // restriction at all) cover this trip's actual day apply here.
         $assignments = static::query()
             ->where('from', $trip->from)
             ->where('to', $trip->to)
             ->where('bus_unit_id', $trip->bus_unit_id)
             ->where('is_active', true)
             ->whereDoesntHave('skips', fn ($q) => $q->where('landing_route_id', $trip->id))
-            ->get();
+            ->get()
+            ->filter(fn (self $a) => $a->appliesOnWeekday($trip->day->dayOfWeek));
 
         if ($assignments->isEmpty()) {
             return 0;

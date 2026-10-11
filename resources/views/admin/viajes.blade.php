@@ -45,7 +45,21 @@
                     @enderror
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Programación</label>
+                    <div class="flex gap-2">
+                        <label class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                            <input type="radio" name="schedule_mode" value="date" id="schedule-mode-date" class="h-4 w-4 text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ old('schedule_mode', 'date') === 'date' ? 'checked' : '' }}>
+                            Fecha específica
+                        </label>
+                        <label class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                            <input type="radio" name="schedule_mode" value="weekday" id="schedule-mode-weekday" class="h-4 w-4 text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ old('schedule_mode') === 'weekday' ? 'checked' : '' }}>
+                            Días recurrentes
+                        </label>
+                    </div>
+                </div>
+
+                <div id="schedule-date-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label for="day" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Día del viaje</label>
                         <input id="day" name="day" type="date" value="{{ old('day') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
@@ -63,12 +77,20 @@
                     </div>
                 </div>
 
-                <div>
-                    <label for="duration" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Duración</label>
-                    <input id="duration" name="duration" type="text" value="{{ old('duration') }}" placeholder="6h 30m" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] placeholder:text-[#2B1113]/40 focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                    @error('duration')
+                <div id="schedule-weekday-fields" class="hidden">
+                    <label class="mb-1.5 block text-sm font-semibold text-[#2B1113]">¿Qué días corre este viaje?</label>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach (['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as $i => $label)
+                            <label class="flex items-center gap-1.5 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                                <input type="checkbox" name="recurring_weekdays[]" value="{{ $i }}" class="h-4 w-4 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ in_array($i, old('recurring_weekdays', [])) ? 'checked' : '' }}>
+                                {{ $label }}
+                            </label>
+                        @endforeach
+                    </div>
+                    @error('recurring_weekdays')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
+                    <p class="mt-1.5 text-xs text-[#2B1113]/50">La hora de salida de abajo aplica para todos los días seleccionados.</p>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -158,8 +180,10 @@
                                     @endif
                                     <div>
                                     <p class="font-[Poppins] text-base font-bold text-[#2B1113]">{{ $route->from }} → {{ $route->to }}</p>
-                                    <p class="mt-1 text-sm text-[#2B1113]/60">{{ $route->day ? $route->day->format('d/m/Y') : 'Sin fecha' }} · {{ $route->departure_time_formatted ?? 'Horario no definido' }} · {{ $route->duration }}</p>
-                                    <p class="mt-0.5 text-sm text-[#2B1113]/60">Regreso: {{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
+                                    <p class="mt-1 text-sm text-[#2B1113]/60">{{ $route->isRecurring() ? 'Recurrente: '.$route->recurringWeekdaysLabel() : ($route->day ? $route->day->format('d/m/Y') : 'Sin fecha') }} · {{ $route->departure_time_formatted ?? 'Horario no definido' }}</p>
+                                    @unless ($route->isRecurring())
+                                        <p class="mt-0.5 text-sm text-[#2B1113]/60">Regreso: {{ $route->return_date ? $route->return_date->format('d/m/Y') : 'Sin fecha' }}</p>
+                                    @endunless
                                     <div class="mt-0.5 flex flex-wrap items-center gap-2 text-sm">
                                         <span class="font-semibold text-[#2B1113]/60">Ida:</span>
                                         <span class="font-bold text-[#8C1D2B]">{{ $route->formattedPriceFor(\App\Models\TripTicketPrice::TYPE_ONE_WAY) ?? '—' }}</span>
@@ -229,6 +253,24 @@
 
             unitSelect.addEventListener('change', syncAvailableSeats);
             syncAvailableSeats();
+        })();
+
+        (function () {
+            const dateRadio = document.getElementById('schedule-mode-date');
+            const weekdayRadio = document.getElementById('schedule-mode-weekday');
+            const dateFields = document.getElementById('schedule-date-fields');
+            const weekdayFields = document.getElementById('schedule-weekday-fields');
+            if (!dateRadio || !weekdayRadio) return;
+
+            function syncScheduleMode() {
+                const isWeekday = weekdayRadio.checked;
+                dateFields.classList.toggle('hidden', isWeekday);
+                weekdayFields.classList.toggle('hidden', !isWeekday);
+            }
+
+            dateRadio.addEventListener('change', syncScheduleMode);
+            weekdayRadio.addEventListener('change', syncScheduleMode);
+            syncScheduleMode();
         })();
     </script>
 </x-admin-layout>

@@ -41,7 +41,7 @@
                 </div>
 
                 <h3 class="mt-3 font-[Poppins] text-2xl font-extrabold text-[#2B1113]">{{ $trip->from }} <span class="text-[#2B1113]/40">→</span> {{ $trip->to }}</h3>
-                <p class="text-sm text-[#2B1113]/60">{{ $trip->day?->format('d/m/Y') ?? '—' }} &middot; {{ $trip->departure_time_formatted ?? '—' }} &middot; {{ $trip->duration }}</p>
+                <p class="text-sm text-[#2B1113]/60">{{ $trip->day?->format('d/m/Y') ?? '—' }} &middot; {{ $trip->departure_time_formatted ?? '—' }}</p>
                 @if ($reservation->needsBothLegs() && $trip->return_date)
                     <p class="text-sm text-[#2B1113]/60">Regreso: {{ $trip->return_date->format('d/m/Y') }}</p>
                 @endif

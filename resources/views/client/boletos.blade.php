@@ -21,7 +21,7 @@
                         <p class="font-[Poppins] text-xl font-extrabold text-[#2B1113]">{{ $trip->to }}</p>
                     </div>
                     <p class="mt-2 text-sm text-[#2B1113]/60">
-                        {{ $trip->day ? $trip->day->format('d/m/Y') : 'Sin fecha' }} · {{ $trip->departure_time_formatted ?? 'Sin horario' }} · {{ $trip->duration }}
+                        {{ $trip->day ? $trip->day->format('d/m/Y') : 'Sin fecha' }} · {{ $trip->departure_time_formatted ?? 'Sin horario' }}
                     </p>
                 </div>
 

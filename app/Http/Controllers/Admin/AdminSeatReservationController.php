@@ -156,7 +156,7 @@ class AdminSeatReservationController extends Controller
         // double-books one. Excludes any released "no viaja hoy" for THIS
         // trip (see releaseStanding()) — those go back to looking/acting
         // like a normal free seat for just this one trip.
-        $standingSeatIds = StandingReservation::activeSeatIdsFor($landingRoute->from, $landingRoute->to, $landingRoute->bus_unit_id, $landingRoute->id);
+        $standingSeatIds = StandingReservation::activeSeatIdsFor($landingRoute->from, $landingRoute->to, $landingRoute->bus_unit_id, $landingRoute->id, $landingRoute->day?->dayOfWeek);
 
         // Every active standing assignment for this route/bus, keyed by
         // seat — used to find the matching assignment for the "No viaja
@@ -413,8 +413,8 @@ class AdminSeatReservationController extends Controller
                 // standing assignment for this exact route/bus, so any
                 // FUTURE trip auto-books it too (TODAY's seat is already
                 // booked above, same as always).
-                if (! empty($data['mark_as_standing'])) {
-                    StandingReservation::updateOrCreate(
+                if (! empty($data['mark_as_standing']) && $landingRoute->day !== null) {
+                    StandingReservation::markStanding(
                         [
                             'from' => $landingRoute->from,
                             'to' => $landingRoute->to,
@@ -427,8 +427,8 @@ class AdminSeatReservationController extends Controller
                             'customer_email' => $data['customer_email'] ?? null,
                             'trip_type' => $tripType,
                             'notes' => $data['notes'] ?? null,
-                            'is_active' => true,
-                        ]
+                        ],
+                        $landingRoute->day->dayOfWeek
                     );
                 }
 

@@ -93,7 +93,6 @@ class SeatApartadoMail extends Mailable
         $email = e($reservation->customer_display_email ?? '—');
         $from = e($trip->from);
         $to = e($trip->to);
-        $duration = e($trip->duration);
         $price = $reservation->unit_price ? $reservation->display_price_label : '—';
         $code = e($reservation->ticket_code);
         $seatsHtml = collect($seatsList)
@@ -139,7 +138,6 @@ class SeatApartadoMail extends Mailable
         <tr>
           <td style="background:#F5B301;padding:14px 28px;color:#2B1113;">
             <div style="font-size:22px;font-weight:800;letter-spacing:-0.02em;">$from <span style="opacity:0.6;font-weight:600;">→</span> $to</div>
-            <div style="font-size:12px;font-weight:600;margin-top:2px;opacity:0.85;">$duration</div>
           </td>
         </tr>
 

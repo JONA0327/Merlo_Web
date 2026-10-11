@@ -12,10 +12,12 @@ use App\Models\Setting;
 use App\Models\StandingReservation;
 use App\Models\TripGuide;
 use App\Models\TripTicketPrice;
+use App\Services\EvolutionWhatsAppService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -30,16 +32,101 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  */
 class AdminTripGuideController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
+        // Keeps every recurring trip's guide rolling ~4 weeks ahead just
+        // by visiting this page — see TripGuide::ensureForRecurringTrip()
+        // (also run daily by the guides:provision-recurring command, so
+        // the window stays fresh even if nobody opens this screen).
+        $recurringTrips = LandingRoute::where('is_active', true)->whereNotNull('recurring_weekdays')->get();
+        foreach ($recurringTrips as $trip) {
+            TripGuide::ensureForRecurringTrip($trip);
+        }
+
         $guides = TripGuide::query()
             ->withCount(['pendingSeatReservations as pending_count'])
             ->with('busUnit')
             ->orderByDesc('date_to')
             ->get();
 
+        // Sunday-first week, matching recurring_weekdays' convention
+        // (Carbon's own dayOfWeek: 0=Dom…6=Sáb). ?inicio= moves the
+        // window back/forward a week at a time (see the blade view).
+        $weekStart = Carbon::parse($request->query('inicio', now()->toDateString()))->startOfWeek(Carbon::SUNDAY);
+
+        // Every guide that belongs to SOME recurring trip (by from/to/
+        // bus_unit_id), computed once — not per day. These must NEVER
+        // fall through to the "manual guide" bucket below, on ANY day,
+        // even one their own weekday pattern doesn't cover: a guide's
+        // date_from/date_to is a continuous 4-week span (so coversDate()
+        // is true for every day in it, recurring pattern or not) —
+        // checking "did this guide match TODAY's recurring filter" was
+        // the bug: on a day the trip doesn't run, that's false, so the
+        // guide wrongly looked "manual" and got shown anyway.
+        $recurringGuideIds = collect($recurringTrips->all())
+            ->map(fn (LandingRoute $trip) => $guides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id))
+            ->filter()
+            ->pluck('id');
+
+        $days = collect(range(0, 6))->map(function (int $i) use ($weekStart, $recurringTrips, $guides, $recurringGuideIds) {
+            $date = $weekStart->copy()->addDays($i);
+
+            // EVERY recurring trip shows up every day — not just the ones
+            // that run today — so the admin always sees the full route
+            // list and which ones are "bloqueado" today, not just a
+            // silently shorter list. 'active' says whether this exact
+            // weekday is in the trip's own pattern; the blade renders
+            // inactive ones grayed out and unclickable instead of a link.
+            // collect(...->all()) up front: mapping an Eloquent Collection
+            // to plain arrays still leaves it typed as an Eloquent
+            // Collection (map() does `new static(...)`), and its merge()
+            // override assumes model items (calls ->getKey() on them) —
+            // crashes once the items are arrays. Plain Collection::merge()
+            // doesn't have that assumption.
+            $recurringTabs = collect($recurringTrips->all())
+                ->map(function (LandingRoute $trip) use ($guides, $date) {
+                    $guide = $guides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id);
+
+                    return $guide ? [
+                        'label' => "{$trip->from} → {$trip->to}",
+                        'guide' => $guide,
+                        'active' => in_array($date->dayOfWeek, $trip->recurring_weekdays ?? [], true),
+                    ] : null;
+                })
+                ->filter()
+                ->values();
+
+            // Manually-created guides (non-recurring routes) whose range
+            // covers this date — a recurring trip's own guide is excluded
+            // unconditionally (see $recurringGuideIds above). Manual
+            // guides have no weekday pattern to "block" against — any day
+            // inside their range is simply valid, so they're always active.
+            $manualTabs = collect($guides->all())
+                ->filter(fn (TripGuide $g) => ! $recurringGuideIds->contains($g->id) && $g->coversDate($date))
+                ->map(fn (TripGuide $g) => ['label' => "{$g->from} → {$g->to}", 'guide' => $g, 'active' => true])
+                ->values();
+
+            // Active tabs first, blocked ones trail behind so the usable
+            // links aren't buried under grayed-out routes.
+            return [
+                'date' => $date,
+                // Same cutoff show() itself already uses for its own
+                // "Fecha pasada — solo lectura" notice — today is still
+                // open, only strictly-before-today closes. A closed day
+                // stays a real, clickable link (apartados already made
+                // that day are still there to consult) — show() already
+                // blocks the apartar form and leaves the pending list
+                // visible for a past date, this just surfaces that same
+                // state up in the week view instead of only after clicking in.
+                'isPast' => $date->lt(Carbon::today()),
+                'tabs' => $recurringTabs->merge($manualTabs)->sortByDesc('active')->values(),
+            ];
+        });
+
         return view('admin.guias.index', [
             'guides' => $guides,
+            'days' => $days,
+            'weekStart' => $weekStart,
         ]);
     }
 
@@ -124,7 +211,7 @@ class AdminTripGuideController extends Controller
         // the picker, same as Apartar asientos (StandingReservation
         // never auto-applies to a guide, only a real trip — see
         // applyToTrip() — so there's no per-guide skip concept here).
-        $standingSeatIds = StandingReservation::activeSeatIdsFor($guide->from, $guide->to, $guide->bus_unit_id);
+        $standingSeatIds = StandingReservation::activeSeatIdsFor($guide->from, $guide->to, $guide->bus_unit_id, null, $date->dayOfWeek);
 
         return view('admin.guias.show', [
             'guide' => $guide,
@@ -148,7 +235,7 @@ class AdminTripGuideController extends Controller
         ]);
     }
 
-    public function storeReservation(Request $request, TripGuide $guide): RedirectResponse
+    public function storeReservation(Request $request, TripGuide $guide, EvolutionWhatsAppService $whatsapp): RedirectResponse
     {
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:120'],
@@ -274,7 +361,7 @@ class AdminTripGuideController extends Controller
                     ]);
 
                     if (! empty($data['mark_as_standing'])) {
-                        StandingReservation::updateOrCreate(
+                        StandingReservation::markStanding(
                             [
                                 'from' => $guide->from,
                                 'to' => $guide->to,
@@ -287,8 +374,8 @@ class AdminTripGuideController extends Controller
                                 'customer_email' => $data['customer_email'] ?? null,
                                 'trip_type' => $tripType,
                                 'notes' => $data['notes'] ?? null,
-                                'is_active' => true,
-                            ]
+                            ],
+                            $date->dayOfWeek
                         );
                     }
 
@@ -325,11 +412,27 @@ class AdminTripGuideController extends Controller
 
             // Payment is per seat: one group per (method, status) so the
             // notice sent when the trip opens is right for each.
-            $root->regroupByPayment();
+            $roots = $root->regroupByPayment();
         } catch (HttpException $e) {
             return back()
                 ->withInput()
                 ->with('error', $e->getMessage() ?: 'No se pudo agendar el regreso para uno de los asientos.');
+        }
+
+        // Immediate "quedó reservado" confirmation — every Guía apartado
+        // gets this the moment it's created, regardless of payment status
+        // (unlike a real trip's apartado, which already sends something
+        // right away via Apartar asientos — a Guía one otherwise waits in
+        // silence until the real trip opens and SendLinkedTicketNotification
+        // finally fires, which can be weeks later). One per resulting
+        // group — regroupByPayment() above may have split the original
+        // selection into several if it mixed payment methods/status.
+        foreach ($roots as $groupRoot) {
+            try {
+                $whatsapp->sendReservationNotice($groupRoot->groupMembers());
+            } catch (\Throwable $e) {
+                Log::warning('Guía reservation-confirmation notice failed for reservation '.$groupRoot->id.': '.$e->getMessage());
+            }
         }
 
         $seatCount = count($data['seat_ids']);

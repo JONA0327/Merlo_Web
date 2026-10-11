@@ -39,9 +39,17 @@ class AdminLandingRouteController extends Controller
         $validated = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
-            'duration' => ['nullable', 'string', 'max:50'],
+            // 'schedule_mode' picks which of the two mutually-exclusive
+            // date models this trip uses — 'date' (fecha específica, the
+            // original single-day trip) stays the default so every
+            // existing form submission (no such field) behaves exactly
+            // as before. 'weekday' is the new "corre todos los Dom/Lun/…"
+            // mode — see scheduleFieldsFrom().
+            'schedule_mode' => ['nullable', 'in:date,weekday'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
+            'recurring_weekdays' => ['required_if:schedule_mode,weekday', 'nullable', 'array', 'min:1'],
+            'recurring_weekdays.*' => ['integer', 'between:0,6'],
             // 'numeric', not 'integer': the hour/minute <select>s always
             // submit zero-padded strings ("00".."23" / "00".."55"), and
             // PHP's FILTER_VALIDATE_INT (what the integer rule uses)
@@ -65,12 +73,14 @@ class AdminLandingRouteController extends Controller
             $validated['available_seats'] = BusUnit::find($validated['bus_unit_id'])->bookableSeatsCount();
         }
 
+        $schedule = $this->scheduleFieldsFrom($validated, fn () => now()->toDateString());
+
         $route = LandingRoute::create([
             'from' => $validated['from'],
             'to' => $validated['to'],
-            'duration' => $validated['duration'] ?? null,
-            'day' => $validated['day'] ?? now()->toDateString(),
-            'return_date' => $validated['return_date'] ?? null,
+            'day' => $schedule['day'],
+            'recurring_weekdays' => $schedule['recurring_weekdays'],
+            'return_date' => $schedule['return_date'],
             'departure_time' => $this->departureTimeFrom($validated),
             'available_seats' => $validated['available_seats'] ?? 1,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
@@ -105,6 +115,13 @@ class AdminLandingRouteController extends Controller
             $message .= ' Se copiaron los precios por defecto (modifícalos en "Precios de boleto" si este viaje necesita otros).';
         }
 
+        if ($route->isRecurring()) {
+            $guide = TripGuide::ensureForRecurringTrip($route);
+            if ($guide?->wasRecentlyCreated) {
+                $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
+            }
+        }
+
         return redirect()->route('admin.viajes')->with('success', $message);
     }
 
@@ -129,9 +146,11 @@ class AdminLandingRouteController extends Controller
         $validated = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
-            'duration' => ['nullable', 'string', 'max:50'],
+            'schedule_mode' => ['nullable', 'in:date,weekday'],
             'day' => ['nullable', 'date'],
             'return_date' => ['nullable', 'date'],
+            'recurring_weekdays' => ['required_if:schedule_mode,weekday', 'nullable', 'array', 'min:1'],
+            'recurring_weekdays.*' => ['integer', 'between:0,6'],
             'departure_time_hour' => ['nullable', 'numeric', 'between:0,23'],
             'departure_time_minute' => ['nullable', 'numeric', 'between:0,59'],
             'available_seats' => ['nullable', 'integer', 'min:0'],
@@ -168,12 +187,18 @@ class AdminLandingRouteController extends Controller
 
         $busChanged = (int) ($validated['bus_unit_id'] ?? 0) !== (int) $landingRoute->bus_unit_id;
 
+        $schedule = $this->scheduleFieldsFrom(
+            $validated,
+            fn () => $landingRoute->day,
+            $landingRoute->isRecurring() ? 'weekday' : 'date'
+        );
+
         $landingRoute->update([
             'from' => $validated['from'],
             'to' => $validated['to'],
-            'duration' => $validated['duration'] ?? $landingRoute->duration,
-            'day' => $validated['day'] ?? $landingRoute->day,
-            'return_date' => $validated['return_date'] ?? null,
+            'day' => $schedule['day'],
+            'recurring_weekdays' => $schedule['recurring_weekdays'],
+            'return_date' => $schedule['return_date'],
             'departure_time' => $this->departureTimeFrom($validated, $landingRoute->departure_time),
             'available_seats' => $validated['available_seats'] ?? $landingRoute->available_seats,
             'bus_unit_id' => $validated['bus_unit_id'] ?? null,
@@ -206,6 +231,13 @@ class AdminLandingRouteController extends Controller
             $message .= " Se asignaron {$planta} asiento".($planta === 1 ? '' : 's').' de planta automáticamente.';
         }
 
+        if ($freshRoute->isRecurring()) {
+            $guide = TripGuide::ensureForRecurringTrip($freshRoute);
+            if ($guide?->wasRecentlyCreated) {
+                $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
+            }
+        }
+
         return redirect()->route('admin.viajes')->with('success', $message);
     }
 
@@ -226,6 +258,46 @@ class AdminLandingRouteController extends Controller
         }
 
         return sprintf('%02d:%02d', $hour, $minute);
+    }
+
+    /**
+     * Resolves day / recurring_weekdays / return_date from the
+     * schedule_mode toggle — 'date' (fecha específica, the original
+     * single-day trip, and the default when the field is missing so old
+     * form submissions keep behaving exactly as before) or 'weekday'
+     * (the new "corre todos los Dom/Lun/…" mode, no fecha). The two
+     * modes are mutually exclusive — switching one way clears the
+     * other's fields rather than leaving stale data behind.
+     *
+     * $defaultDay supplies 'day' when schedule_mode is 'date' but no day
+     * was submitted — store() defaults to today, update() keeps the
+     * trip's existing day, same as before this feature existed.
+     * $currentMode is only used when schedule_mode itself is missing
+     * from the request (e.g. a stale cached form) — update() passes the
+     * trip's own current mode so it isn't silently flipped back to
+     * 'date'; store() has no existing trip to infer from, so it just
+     * defaults to 'date'.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{day: mixed, recurring_weekdays: ?array<int>, return_date: ?string}
+     */
+    private function scheduleFieldsFrom(array $validated, \Closure $defaultDay, string $currentMode = 'date'): array
+    {
+        $mode = $validated['schedule_mode'] ?? $currentMode;
+
+        if ($mode === 'weekday') {
+            return [
+                'day' => null,
+                'recurring_weekdays' => array_values(array_unique(array_map('intval', $validated['recurring_weekdays'] ?? []))),
+                'return_date' => null,
+            ];
+        }
+
+        return [
+            'day' => $validated['day'] ?? $defaultDay(),
+            'recurring_weekdays' => null,
+            'return_date' => $validated['return_date'] ?? null,
+        ];
     }
 
     /**

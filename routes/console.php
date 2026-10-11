@@ -11,3 +11,5 @@ Artisan::command('inspire', function () {
 Schedule::command('seat-holds:prune')->everyFiveMinutes();
 Schedule::command('transfer-reservations:prune')->hourly();
 Schedule::command('return-changes:void-expired')->daily();
+Schedule::command('guides:provision-recurring')->daily();
+Schedule::command('reservations:send-day-before-reminders')->dailyAt('09:00');

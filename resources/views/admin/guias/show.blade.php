@@ -114,12 +114,6 @@
                         @error('customer_phone') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                     </label>
 
-                    <label class="block">
-                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Correo del cliente (opcional)</span>
-                        <input type="email" name="customer_email" value="{{ old('customer_email') }}" maxlength="180" placeholder="cliente@correo.com" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                        @error('customer_email') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
-                    </label>
-
                     <div class="grid grid-cols-2 gap-3">
                         <label class="block">
                             <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿Pagado?</span>
@@ -151,7 +145,8 @@
 
                     <label class="flex items-center gap-2 rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
                         <input type="checkbox" name="mark_as_standing" value="1" class="h-4 w-4 rounded border-violet-300 text-violet-700 focus:ring-violet-500">
-                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos en cada viaje de esta ruta a partir de ahora</span>
+                        @php $weekdayFullNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']; @endphp
+                        <span class="text-xs font-semibold text-violet-900">Asiento(s) predeterminado(s) — se apartan solos cada {{ $weekdayFullNames[$date->dayOfWeek] }} de esta ruta a partir de ahora</span>
                     </label>
                 </div>
 

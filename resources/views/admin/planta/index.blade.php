@@ -1,7 +1,7 @@
 <x-admin-layout active="planta" title="De planta">
     <div class="mb-6">
         <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Asientos de planta</h2>
-        <p class="mt-1 text-sm text-[#2B1113]/60">Un asiento fijo para la misma persona en una ruta — se asigna solo cada vez que se abra un viaje de esa ruta (misma unidad), sin tener que registrarla de nuevo. Queda pendiente de pago como cualquier apartado; es solo para no reescribir a clientes recurrentes.</p>
+        <p class="mt-1 text-sm text-[#2B1113]/60">Un asiento fijo para la misma persona en una ruta, en los días de la semana que elijas — se asigna solo cada vez que se abra un viaje de esa ruta ESE día (misma unidad), sin tener que registrarla de nuevo. Sin días marcados, se asigna todos los días que corra la ruta. Queda pendiente de pago como cualquier apartado; es solo para no reescribir a clientes recurrentes.</p>
     </div>
 
     @if (session('success'))
@@ -76,6 +76,18 @@
                 <x-text-input id="planta-email" name="customer_email" type="email" class="block mt-1.5 w-full" value="{{ old('customer_email') }}" />
                 <x-input-error :messages="$errors->get('customer_email')" class="mt-1" />
             </div>
+            <div class="sm:col-span-3">
+                <x-input-label value="Días de la semana (opcional — sin marcar ninguno = todos los días)" />
+                <div class="mt-1.5 flex flex-wrap gap-2">
+                    @foreach (['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as $i => $label)
+                        <label class="flex items-center gap-1.5 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                            <input type="checkbox" name="weekdays[]" value="{{ $i }}" class="h-4 w-4 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ in_array($i, old('weekdays', [])) ? 'checked' : '' }}>
+                            {{ $label }}
+                        </label>
+                    @endforeach
+                </div>
+                <x-input-error :messages="$errors->get('weekdays')" class="mt-1" />
+            </div>
             <div class="sm:col-span-2">
                 <x-input-label for="planta-notes" value="Notas (opcional)" />
                 <x-text-input id="planta-notes" name="notes" type="text" class="block mt-1.5 w-full" value="{{ old('notes') }}" placeholder="Ej. Empleado de la empresa X" />
@@ -112,8 +124,8 @@
                             <td class="px-4 py-3 text-xs text-[#2B1113]/70">
                                 {{ $g->busUnit->name ?? '—' }}
                                 <div class="mt-1 flex flex-wrap gap-1">
-                                    @foreach ($g->seats as $label)
-                                        <span class="rounded-md bg-[#FFFBF6] px-1.5 py-0.5 text-[10px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $label }}</span>
+                                    @foreach ($g->seats as $seat)
+                                        <span class="rounded-md bg-[#FFFBF6] px-1.5 py-0.5 text-[10px] font-bold text-[#2B1113] ring-1 ring-black/10" title="{{ $seat['weekdays'] }}">{{ $seat['label'] }} <span class="font-normal text-[#2B1113]/50">· {{ $seat['weekdays'] }}</span></span>
                                     @endforeach
                                 </div>
                             </td>
@@ -163,6 +175,20 @@
                                         <input type="checkbox" name="is_active" value="1" {{ $g->is_active ? 'checked' : '' }}>
                                         Activo
                                     </label>
+                                    <div class="sm:col-span-6">
+                                        <label class="flex items-center gap-1.5 text-[11px] font-semibold text-[#2B1113]">
+                                            <input type="checkbox" name="update_weekdays" value="1" class="planta-update-weekdays-toggle h-3.5 w-3.5 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]" data-target="planta-weekdays-{{ $i }}">
+                                            Cambiar los días para TODOS los asientos de esta fila (si no lo marcas, cada asiento conserva los suyos)
+                                        </label>
+                                        <div id="planta-weekdays-{{ $i }}" class="mt-1.5 hidden flex-wrap gap-1.5">
+                                            @foreach (['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as $wi => $wlabel)
+                                                <label class="flex items-center gap-1 rounded-lg border border-black/10 bg-white px-2 py-1 text-[11px] font-semibold text-[#2B1113] cursor-pointer has-[:checked]:border-[#8C1D2B] has-[:checked]:bg-[#8C1D2B]/5">
+                                                    <input type="checkbox" name="weekdays[]" value="{{ $wi }}" class="h-3.5 w-3.5 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]">
+                                                    {{ $wlabel }}
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
                                     <x-primary-button type="submit" class="justify-center">Guardar (todos los asientos)</x-primary-button>
                                 </form>
                             </td>
@@ -194,6 +220,12 @@
         document.querySelectorAll('.planta-edit-toggle').forEach((btn) => {
             btn.addEventListener('click', () => {
                 document.getElementById(btn.getAttribute('data-target'))?.classList.toggle('hidden');
+            });
+        });
+
+        document.querySelectorAll('.planta-update-weekdays-toggle').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                document.getElementById(checkbox.getAttribute('data-target'))?.classList.toggle('hidden', ! checkbox.checked);
             });
         });
     </script>

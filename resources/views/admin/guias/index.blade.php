@@ -27,13 +27,70 @@
         </div>
     @endif
 
+    {{-- ===================== Vista semanal — un día por columna, con una
+         pestaña por viaje que corre ese día (recurrentes auto-detectados
+         + guías manuales cuyo rango cubra la fecha). Cada pestaña lleva
+         directo a la pantalla de apartar de siempre, sin cambios. ===================== --}}
+    <div class="mb-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+            <a href="{{ route('admin.guias.index', ['inicio' => $weekStart->copy()->subWeek()->toDateString()]) }}" class="text-sm font-semibold text-[#8C1D2B] hover:text-[#6F1622]">&larr; Semana anterior</a>
+            <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $weekStart->format('d/m/Y') }} – {{ $weekStart->copy()->addDays(6)->format('d/m/Y') }}</p>
+            <a href="{{ route('admin.guias.index', ['inicio' => $weekStart->copy()->addWeek()->toDateString()]) }}" class="text-sm font-semibold text-[#8C1D2B] hover:text-[#6F1622]">Semana siguiente &rarr;</a>
+        </div>
+
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
+            @php $weekdayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; @endphp
+            @foreach ($days as $day)
+                <div class="rounded-2xl border border-black/5 {{ $day['isPast'] ? 'bg-black/[0.02]' : 'bg-[#FFFBF6]' }} p-3">
+                    <div class="flex items-center justify-between gap-1.5">
+                        <p class="text-[11px] font-bold uppercase tracking-wide text-[#2B1113]/50">{{ $weekdayLabels[$day['date']->dayOfWeek] }} {{ $day['date']->format('d/m') }}</p>
+                        @if ($day['isPast'])
+                            <span class="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Cerrado</span>
+                        @endif
+                    </div>
+                    @if ($day['tabs']->isEmpty())
+                        <p class="mt-2 text-xs text-[#2B1113]/40">Sin viajes programados</p>
+                    @else
+                        <div class="mt-2 flex flex-col gap-1.5">
+                            @foreach ($day['tabs'] as $tab)
+                                @if ($tab['active'] && $day['isPast'])
+                                    {{-- Ya pasó: apartar está cerrado, pero el día sigue
+                                         siendo consultable (show() ya deja ver la lista de
+                                         quién viajó, solo bloquea el formulario) — mismo
+                                         link, solo con estilo "solo lectura". --}}
+                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" title="Fecha pasada — solo consulta" class="flex items-center justify-between gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 hover:ring-slate-400 transition-colors">
+                                        <span class="truncate">{{ $tab['label'] }}</span>
+                                        <svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+                                    </a>
+                                @elseif ($tab['active'])
+                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" class="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:ring-[#8C1D2B]/40 transition-colors">
+                                        <span class="truncate">{{ $tab['label'] }}</span>
+                                        @if ($tab['guide']->pending_count > 0)
+                                            <span class="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{{ $tab['guide']->pending_count }}</span>
+                                        @endif
+                                    </a>
+                                @else
+                                    <span title="No corre este día" class="flex items-center justify-between gap-2 rounded-lg bg-black/[0.03] px-2.5 py-1.5 text-[11px] font-bold text-[#2B1113]/30 ring-1 ring-black/5 cursor-not-allowed">
+                                        <span class="truncate line-through decoration-[#2B1113]/20">{{ $tab['label'] }}</span>
+                                        <svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+                                    </span>
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+    </div>
+
     <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Todas las guías</h3>
         @if ($guides->isEmpty())
-            <div class="rounded-2xl border border-dashed border-black/10 bg-[#FFFBF6] px-4 py-8 text-center text-sm text-[#2B1113]/60">
+            <div class="mt-4 rounded-2xl border border-dashed border-black/10 bg-[#FFFBF6] px-4 py-8 text-center text-sm text-[#2B1113]/60">
                 No hay guías todavía. Crea una para empezar a apartar asientos por adelantado.
             </div>
         @else
-            <div class="overflow-x-auto rounded-2xl ring-1 ring-black/5">
+            <div class="mt-4 overflow-x-auto rounded-2xl ring-1 ring-black/5">
                 <table class="min-w-full divide-y divide-black/5 text-sm">
                     <thead class="bg-[#FFFBF6] text-left text-xs font-bold uppercase tracking-wider text-[#2B1113]/60">
                         <tr>

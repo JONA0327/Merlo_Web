@@ -20,7 +20,6 @@
                 <p class="mt-1 text-sm text-[#2B1113]/60">
                     {{ $trip->day?->format('d/m/Y') ?? 'Sin fecha' }}
                     &middot; {{ $trip->departure_time_formatted ?? 'Sin horario' }}
-                    &middot; {{ $trip->duration }}
                     @if ($isShowingToday)
                         <span class="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
                             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
