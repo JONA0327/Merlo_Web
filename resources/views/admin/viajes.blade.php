@@ -144,6 +144,26 @@
                     @enderror
                 </div>
 
+                <div>
+                    <p class="mb-1.5 text-sm font-semibold text-[#2B1113]">Mensaje de abordaje</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="boarding_outbound_legend" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Ida</label>
+                            <input id="boarding_outbound_legend" name="boarding_outbound_legend" type="text" required value="{{ old('boarding_outbound_legend') }}" placeholder="Ej. Preséntate a las 08:00 en la Terminal de San Luis Potosí." class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                            @error('boarding_outbound_legend')
+                                <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="boarding_return_legend" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Regreso</label>
+                            <input id="boarding_return_legend" name="boarding_return_legend" type="text" required value="{{ old('boarding_return_legend') }}" placeholder="Ej. Regreso a las 15:30 desde la misma terminal." class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                            @error('boarding_return_legend')
+                                <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
                 <div class="rounded-xl border border-[#8C1D2B]/20 bg-[#8C1D2B]/5 p-3 text-xs text-[#2B1113]/70">
                     <p>El <strong>costo del boleto</strong> (ida y redondo) se configura en una sección aparte, después de guardar el viaje.</p>
                     <p class="mt-1">

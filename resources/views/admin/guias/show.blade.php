@@ -82,9 +82,11 @@
                     <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
                     <select name="trip_type" id="admin-trip-type-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                         @foreach ($tripTypeLabels as $type => $label)
-                            <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }}</option>
+                            @php $estimatedPrice = \App\Models\TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $type); @endphp
+                            <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }} — {{ $estimatedPrice > 0 ? '$'.number_format($estimatedPrice, 2) : 'sin precio' }}</option>
                         @endforeach
                     </select>
+                    <p class="mt-1 text-[10px] text-[#2B1113]/40">El precio exacto se confirma cuando se abra el viaje real para esta fecha.</p>
                 </label>
 
                 <div id="admin-zone-picker" class="mt-3 hidden">

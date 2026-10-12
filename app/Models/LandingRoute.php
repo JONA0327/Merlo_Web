@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -30,6 +31,8 @@ class LandingRoute extends Model
         'featured',
         'sort_order',
         'image',
+        'boarding_outbound_legend',
+        'boarding_return_legend',
     ];
 
     protected $casts = [
@@ -85,13 +88,46 @@ class LandingRoute extends Model
 
     /**
      * "Días recurrentes" mode (e.g. "corre Dom, Lun, Mar") instead of the
-     * original "fecha específica" mode — set up from Viajes, but not yet
-     * wired into Apartar asientos/guías (next phase). Mutually exclusive
-     * with `day` in practice: store()/update() never set both.
+     * original "fecha específica" mode. A recurring row (day=null) is
+     * only ever the pattern — activateRecurringFor() spawns the real,
+     * dated trip Apartar asientos actually sells seats against. Mutually
+     * exclusive with `day` in practice: store()/update() never set both.
      */
     public function isRecurring(): bool
     {
         return ! empty($this->recurring_weekdays);
+    }
+
+    /**
+     * The other ACTIVE trip, if any, that already commits $busUnitId to
+     * a day this trip would also run on — a physical bus can't run two
+     * DIFFERENT routes the same day, whether both are specific-date
+     * trips, both recurring, or one of each (checked by weekday either
+     * way). Same from+to+bus_unit_id is never a conflict — that's a
+     * recurring template and its own already-activated daily instances
+     * (see activateRecurringFor()), not two routes fighting over a bus.
+     * $excludeId additionally skips the trip being edited so re-saving
+     * it doesn't conflict with itself.
+     */
+    public static function busUnitConflict(string $from, string $to, int $busUnitId, ?string $day, ?array $recurringWeekdays, ?int $excludeId = null): ?self
+    {
+        $weekdays = ! empty($recurringWeekdays) ? $recurringWeekdays : ($day ? [Carbon::parse($day)->dayOfWeek] : []);
+        if (empty($weekdays)) {
+            return null;
+        }
+
+        return static::where('bus_unit_id', $busUnitId)
+            ->where('is_active', true)
+            ->where(fn ($q) => $q->where('from', '!=', $from)->orWhere('to', '!=', $to))
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+            ->get()
+            ->first(function (self $other) use ($weekdays) {
+                $otherWeekdays = $other->isRecurring()
+                    ? $other->recurring_weekdays
+                    : ($other->day ? [$other->day->dayOfWeek] : []);
+
+                return ! empty(array_intersect($weekdays, $otherWeekdays));
+            });
     }
 
     public function recurringWeekdaysLabel(): ?string
@@ -104,6 +140,95 @@ class LandingRoute extends Model
             ->sort()
             ->map(fn ($day) => self::WEEKDAY_LABELS[$day] ?? '?')
             ->implode(', ');
+    }
+
+    /**
+     * The "next phase" isRecurring() used to promise: a recurring row
+     * (day=null) is only ever a pattern — Apartar asientos needs a real,
+     * dated trip to sell seats against, same as any other. For every
+     * active recurring trip whose pattern covers $date's weekday, this
+     * ensures a real same-day instance exists (skips it if one already
+     * does — safe to call repeatedly, same shape as
+     * TripGuide::ensureForRecurringTrip()). Each new instance copies the
+     * template's prices and boarding legends, then runs through the same
+     * TripGuide::linkTrip() / StandingReservation::applyToTrip() a
+     * manually-created trip gets, so apartados already staged in its
+     * guide (and "de planta" seats) attach immediately.
+     *
+     * @return Collection<int, self> newly activated instances
+     */
+    public static function activateRecurringFor(Carbon $date): Collection
+    {
+        $templates = static::where('is_active', true)
+            ->whereNotNull('recurring_weekdays')
+            ->with('prices')
+            ->get()
+            ->filter(fn (self $t) => in_array($date->dayOfWeek, $t->recurring_weekdays ?? [], true));
+
+        $activated = collect();
+
+        foreach ($templates as $template) {
+            $exists = static::where('from', $template->from)
+                ->where('to', $template->to)
+                ->where('bus_unit_id', $template->bus_unit_id)
+                ->whereDate('day', $date->toDateString())
+                ->exists();
+
+            if ($exists) {
+                continue;
+            }
+
+            // Defensive — store()/update() already block saving two
+            // trips that would share a bus on an overlapping day, but
+            // this runs unattended, so a template saved before that
+            // check existed shouldn't silently double-book a bus here.
+            if ($template->bus_unit_id !== null) {
+                $conflict = static::busUnitConflict($template->from, $template->to, $template->bus_unit_id, $date->toDateString(), null);
+                if ($conflict) {
+                    Log::warning('Skipped activating recurring trip — bus unit already committed to another trip the same day.', [
+                        'template_id' => $template->id,
+                        'conflicting_trip_id' => $conflict->id,
+                        'date' => $date->toDateString(),
+                    ]);
+
+                    continue;
+                }
+            }
+
+            $instance = static::create([
+                'from' => $template->from,
+                'to' => $template->to,
+                'day' => $date->toDateString(),
+                'recurring_weekdays' => null,
+                'return_date' => null,
+                'departure_time' => $template->departure_time,
+                'available_seats' => $template->bus_unit_id
+                    ? BusUnit::find($template->bus_unit_id)->bookableSeatsCount()
+                    : $template->available_seats,
+                'bus_unit_id' => $template->bus_unit_id,
+                'is_active' => true,
+                'featured' => $template->featured,
+                'sort_order' => $template->sort_order,
+                'image' => $template->image,
+                'boarding_outbound_legend' => $template->boarding_outbound_legend,
+                'boarding_return_legend' => $template->boarding_return_legend,
+            ]);
+
+            foreach ($template->prices as $price) {
+                $instance->prices()->create([
+                    'trip_type' => $price->trip_type,
+                    'price' => $price->price,
+                    'is_active' => $price->is_active,
+                ]);
+            }
+
+            TripGuide::linkTrip($instance);
+            StandingReservation::applyToTrip($instance);
+
+            $activated->push($instance);
+        }
+
+        return $activated;
     }
 
     /**
@@ -141,32 +266,29 @@ class LandingRoute extends Model
 
     public function priceFor(string $tripType): ?TripTicketPrice
     {
-        // Per-trip override (active) wins; fall back to the global
-        // default when the admin never gave this trip its own row, or
-        // when the only existing row was turned off ("Visible=false").
-        $override = $this->activePrices()->get($tripType);
-        if ($override) {
-            return $override;
-        }
+        // Every trip prices itself — no global fallback (a shared
+        // default masked a wrong price on routes that never got their
+        // own). null means "not configured yet"; callers already show
+        // "sin precio" for that case.
+        return $this->activePrices()->get($tripType);
+    }
 
-        $default = Setting::current()->defaultPriceFor($tripType);
-        if ($default === null) {
-            return null;
-        }
+    /**
+     * Boarding-point instructions for this trip, set when it's created
+     * (or later from Editar viaje) — no shared global to fall back on,
+     * same reasoning as priceFor(): a shared default sent the wrong
+     * meeting point on routes that never got their own set. Empty
+     * string when this trip never got one; boardingLegendLines() skips
+     * the line rather than show something wrong.
+     */
+    public function outboundMeetingPoint(): string
+    {
+        return (string) $this->boarding_outbound_legend;
+    }
 
-        // Synthesize a TripTicketPrice-like row so callers don't have to
-        // branch on "is this an override or the default?". Carries
-        // enough info for the accessors below; nothing else in the
-        // app calls methods beyond `->price` / `->trip_type` on it.
-        $synthetic = new TripTicketPrice();
-        $synthetic->setRawAttributes([
-            'landing_route_id' => $this->id,
-            'trip_type' => $tripType,
-            'price' => $default,
-            'is_active' => true,
-        ], true);
-
-        return $synthetic;
+    public function returnMeetingPoint(): string
+    {
+        return (string) $this->boarding_return_legend;
     }
 
     public function formattedPriceFor(string $tripType): ?string

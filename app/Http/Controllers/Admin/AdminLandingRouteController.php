@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
 use App\Models\Destination;
 use App\Models\LandingRoute;
-use App\Models\Setting;
 use App\Models\StandingReservation;
 use App\Models\TripGuide;
 use App\Models\TripTicketPrice;
@@ -63,6 +62,12 @@ class AdminLandingRouteController extends Controller
             'featured' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'max:4096'],
+            // Required here (unlike update()) — every new trip gets its
+            // own boarding legend from the start; an existing trip
+            // missing one gets prompted to fill it in from Editar viaje
+            // instead of being blocked retroactively.
+            'boarding_outbound_legend' => ['required', 'string', 'max:500'],
+            'boarding_return_legend' => ['required', 'string', 'max:500'],
         ]);
 
         // A trip with a seat map doesn't get to have a made-up seat count —
@@ -74,6 +79,13 @@ class AdminLandingRouteController extends Controller
         }
 
         $schedule = $this->scheduleFieldsFrom($validated, fn () => now()->toDateString());
+
+        if (! empty($validated['bus_unit_id'])) {
+            $conflict = LandingRoute::busUnitConflict($validated['from'], $validated['to'], $validated['bus_unit_id'], $schedule['day'], $schedule['recurring_weekdays']);
+            if ($conflict) {
+                return back()->withInput()->with('error', "Esa unidad ya está asignada a \"{$conflict->from} → {$conflict->to}\" en un día que se empalma con este viaje — elige otra unidad o ajusta los días.");
+            }
+        }
 
         $route = LandingRoute::create([
             'from' => $validated['from'],
@@ -88,14 +100,9 @@ class AdminLandingRouteController extends Controller
             'featured' => $validated['featured'] ?? false,
             'sort_order' => $validated['sort_order'] ?? 0,
             'image' => $request->hasFile('image') ? $request->file('image')->store('landing-routes', 'public') : null,
+            'boarding_outbound_legend' => $validated['boarding_outbound_legend'] ?? null,
+            'boarding_return_legend' => $validated['boarding_return_legend'] ?? null,
         ]);
-
-        // Seed every type with the global default so the new trip shows up
-        // in /admin/precios with a row for each ticket type right away.
-        // If no defaults are configured yet, no rows are created — the
-        // LandingRoute::priceFor fallback will surface "—" in the UI
-        // until the admin sets a default in /admin/precios.
-        $this->seedDefaultPrices($route);
 
         $linkResult = TripGuide::linkTrip($route);
         $linked = $linkResult['linked'];
@@ -110,10 +117,7 @@ class AdminLandingRouteController extends Controller
         if ($planta > 0) {
             $message .= " Se asignaron {$planta} asiento".($planta === 1 ? '' : 's').' de planta automáticamente.';
         }
-        $defaults = Setting::current()->defaultPrices();
-        if (! empty($defaults)) {
-            $message .= ' Se copiaron los precios por defecto (modifícalos en "Precios de boleto" si este viaje necesita otros).';
-        }
+        $message .= ' Configúrale su precio en "Precios de boleto" antes de ofrecerlo.';
 
         if ($route->isRecurring()) {
             $guide = TripGuide::ensureForRecurringTrip($route);
@@ -160,6 +164,8 @@ class AdminLandingRouteController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'max:4096'],
             'remove_image' => ['nullable', 'boolean'],
+            'boarding_outbound_legend' => ['nullable', 'string', 'max:500'],
+            'boarding_return_legend' => ['nullable', 'string', 'max:500'],
         ]);
 
         // Same rule as store(): a seat-mapped trip's available count is
@@ -193,6 +199,13 @@ class AdminLandingRouteController extends Controller
             $landingRoute->isRecurring() ? 'weekday' : 'date'
         );
 
+        if (! empty($validated['bus_unit_id'])) {
+            $conflict = LandingRoute::busUnitConflict($validated['from'], $validated['to'], $validated['bus_unit_id'], $schedule['day'], $schedule['recurring_weekdays'], $landingRoute->id);
+            if ($conflict) {
+                return back()->withInput()->with('error', "Esa unidad ya está asignada a \"{$conflict->from} → {$conflict->to}\" en un día que se empalma con este viaje — elige otra unidad o ajusta los días.");
+            }
+        }
+
         $landingRoute->update([
             'from' => $validated['from'],
             'to' => $validated['to'],
@@ -206,6 +219,8 @@ class AdminLandingRouteController extends Controller
             'featured' => $validated['featured'] ?? $landingRoute->featured,
             'sort_order' => $validated['sort_order'] ?? $landingRoute->sort_order,
             'image' => $image,
+            'boarding_outbound_legend' => $validated['boarding_outbound_legend'] ?? null,
+            'boarding_return_legend' => $validated['boarding_return_legend'] ?? null,
         ]);
 
         $freshRoute = $landingRoute->fresh();
@@ -298,35 +313,6 @@ class AdminLandingRouteController extends Controller
             'recurring_weekdays' => null,
             'return_date' => $validated['return_date'] ?? null,
         ];
-    }
-
-    /**
-     * Copy the global default prices onto this trip as active overrides —
-     * the admin can still edit any cell in /admin/precios if this trip
-     * needs a special price. Skipped types (no default set yet) just
-     * don't get a row, and priceFor() will surface the missing value
-     * consistently with the rest of the UI.
-     */
-    private function seedDefaultPrices(LandingRoute $route): void
-    {
-        $defaults = Setting::current()->defaultPrices();
-
-        foreach ($defaults as $type => $price) {
-            // Never overwrite an admin-set override on this trip
-            // (defensive — store() runs on a freshly created trip so
-            // there shouldn't be any rows, but this future-proofs the
-            // helper if we ever call it elsewhere).
-            $existing = $route->prices()->where('trip_type', $type)->first();
-            if ($existing) {
-                continue;
-            }
-
-            $route->prices()->create([
-                'trip_type' => $type,
-                'price' => $price,
-                'is_active' => true,
-            ]);
-        }
     }
 
     public function toggleFeatured(LandingRoute $landingRoute): RedirectResponse

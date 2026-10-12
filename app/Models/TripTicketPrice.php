@@ -59,23 +59,25 @@ class TripTicketPrice extends Model
     /**
      * Best-guess per-seat price before a real trip exists to price off
      * of (a Guía apartado, staged or auto-provisioned from a standing
-     * assignment) — the global default, mancuerna-split the same way
-     * LandingRoute::seatPriceFor() does for "especial". Whoever created
-     * it this way gets corrected for real once an actual trip opens
-     * (TripGuide::linkTrip() / StandingReservation::applyToTrip()).
+     * assignment) — no global default to fall back on (every trip prices
+     * itself), so this looks for any OTHER trip already run on this
+     * exact route/bus that has its own price configured and borrows
+     * that, mancuerna-split the same way LandingRoute::seatPriceFor()
+     * does for "especial". Returns 0 when nothing matches — callers show
+     * "sin precio configurado" rather than invent a number. Whoever
+     * created it this way gets corrected for real once an actual trip
+     * opens (TripGuide::linkTrip() / StandingReservation::applyToTrip()).
      */
-    public static function estimateUnitPrice(string $tripType, int $seatCount = self::SEATS_PER_MANCUERNA): float
+    public static function estimateUnitPrice(string $from, string $to, int $busUnitId, string $tripType, int $seatCount = self::SEATS_PER_MANCUERNA): float
     {
-        $price = (float) (Setting::current()->defaultPrices()[$tripType] ?? 0);
+        $trip = LandingRoute::where('from', $from)
+            ->where('to', $to)
+            ->where('bus_unit_id', $busUnitId)
+            ->whereHas('prices', fn ($q) => $q->where('trip_type', $tripType)->where('is_active', true))
+            ->latest('id')
+            ->first();
 
-        if ($tripType !== self::TYPE_ESPECIAL) {
-            return $price;
-        }
-
-        $seatCount = max(1, $seatCount);
-        $mancuernas = (int) ceil($seatCount / self::SEATS_PER_MANCUERNA);
-
-        return round($price * $mancuernas / $seatCount, 2);
+        return $trip ? $trip->seatPriceFor($tripType, $seatCount) : 0.0;
     }
 
     public static function tripTypes(): array

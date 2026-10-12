@@ -351,14 +351,16 @@ class AdminTripGuideController extends Controller
             TripTicketPrice::TYPE_ESPECIAL,
         ], true);
         // No real trip exists yet to price the "regreso" leg off of —
-        // fall back to the global default (same one a new trip gets
-        // seeded with), good enough until the real trip opens and an
-        // admin can still correct it from /admin/precios or /admin/pagos.
-        $regresoPrice = $allowsReturnDate ? TripTicketPrice::estimateUnitPrice(TripTicketPrice::TYPE_REGRESO) : 0.0;
+        // borrow whatever this exact route/bus is already charging on
+        // another trip, if any (see estimateUnitPrice()); otherwise 0,
+        // same as an unconfigured trip shows "sin precio" elsewhere.
+        $regresoPrice = $allowsReturnDate
+            ? TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, TripTicketPrice::TYPE_REGRESO)
+            : 0.0;
         // Same reasoning as $regresoPrice above — needed so the immediate
         // WhatsApp confirmation below can show an actual total instead of
         // $0 while this apartado waits on a real trip to price off of.
-        $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($data['trip_type'], count($data['seat_ids']));
+        $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $data['trip_type'], count($data['seat_ids']));
 
         if ($this->matchingTrip($guide, $date)) {
             return back()->withInput()->with('error', 'Ya existe un viaje abierto para esta fecha — usa Apartar asientos directamente ahí.');
