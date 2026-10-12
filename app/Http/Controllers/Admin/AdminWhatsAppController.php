@@ -28,11 +28,12 @@ class AdminWhatsAppController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'evolution_api_url' => ['required', 'string', 'max:255'],
+            'evolution_api_url' => ['required', 'string', 'max:255', 'url:http,https'],
             'evolution_api_key' => ['required', 'string', 'max:255'],
             'evolution_instance' => ['required', 'string', 'max:100', 'regex:/^[a-zA-Z0-9_-]+$/'],
         ], [
             'evolution_instance.regex' => 'El nombre de instancia solo puede tener letras, números, guiones y guiones bajos.',
+            'evolution_api_url.url' => 'La URL debe empezar con http:// o https:// y ser una dirección válida (ejemplo: https://api.evolution.com o http://31.220.63.78:8080).',
         ]);
 
         Setting::current()->update($validated);

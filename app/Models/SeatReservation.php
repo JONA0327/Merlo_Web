@@ -276,7 +276,9 @@ class SeatReservation extends Model
         // real trip yet) has nothing of its own to check at all. Either
         // way, an unset legend just skips the line rather than show
         // something wrong for this route.
-        $trip = $this->landingRoute;
+        // Guide-staged ones borrow the legend of the recurring trip the
+        // guide belongs to.
+        $trip = $this->landingRoute ?? $this->tripGuide?->recurringTrip();
 
         if (! $this->isReturnLeg() && filled($trip?->outboundMeetingPoint())) {
             $lines[] = $trip->outboundMeetingPoint();

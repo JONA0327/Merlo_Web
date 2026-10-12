@@ -68,6 +68,7 @@ class AdminLandingRouteController extends Controller
             // instead of being blocked retroactively.
             'boarding_outbound_legend' => ['required', 'string', 'max:500'],
             'boarding_return_legend' => ['required', 'string', 'max:500'],
+            'color' => ['nullable', 'in:'.implode(',', array_keys(LandingRoute::COLORS))],
         ]);
 
         // A trip with a seat map doesn't get to have a made-up seat count —
@@ -102,6 +103,7 @@ class AdminLandingRouteController extends Controller
             'image' => $request->hasFile('image') ? $request->file('image')->store('landing-routes', 'public') : null,
             'boarding_outbound_legend' => $validated['boarding_outbound_legend'] ?? null,
             'boarding_return_legend' => $validated['boarding_return_legend'] ?? null,
+            'color' => $validated['color'] ?? null,
         ]);
 
         $linkResult = TripGuide::linkTrip($route);
@@ -166,6 +168,7 @@ class AdminLandingRouteController extends Controller
             'remove_image' => ['nullable', 'boolean'],
             'boarding_outbound_legend' => ['nullable', 'string', 'max:500'],
             'boarding_return_legend' => ['nullable', 'string', 'max:500'],
+            'color' => ['nullable', 'in:'.implode(',', array_keys(LandingRoute::COLORS))],
         ]);
 
         // Same rule as store(): a seat-mapped trip's available count is
@@ -221,6 +224,7 @@ class AdminLandingRouteController extends Controller
             'image' => $image,
             'boarding_outbound_legend' => $validated['boarding_outbound_legend'] ?? null,
             'boarding_return_legend' => $validated['boarding_return_legend'] ?? null,
+            'color' => $validated['color'] ?? null,
         ]);
 
         $freshRoute = $landingRoute->fresh();

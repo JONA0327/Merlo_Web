@@ -112,6 +112,7 @@ class AdminTripGuideController extends Controller
                     return $guide ? [
                         'label' => "{$trip->from} → {$trip->to}",
                         'guide' => $guide,
+                        'color' => $trip->color,
                         'active' => in_array($date->dayOfWeek, $trip->recurring_weekdays ?? [], true),
                         'pending_count' => $dayCounts->get($guide->id.'|'.$date->toDateString(), 0),
                     ] : null;
@@ -147,7 +148,7 @@ class AdminTripGuideController extends Controller
                 // visible for a past date, this just surfaces that same
                 // state up in the week view instead of only after clicking in.
                 'isPast' => $date->lt(Carbon::today()),
-                'tabs' => $recurringTabs->merge($manualTabs)->sortByDesc('active')->values(),
+                'tabs' => $recurringTabs->merge($manualTabs)->where('active', true)->values(),
             ];
         });
 

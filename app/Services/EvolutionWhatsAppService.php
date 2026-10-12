@@ -313,7 +313,7 @@ class EvolutionWhatsAppService
         $first = $group->first();
         $trip = $first->landingRoute;
         $seats = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
-        $legend = collect($first->boardingLegendLines())->map(fn ($line) => "📍 *{$line}*")->implode("\n");
+        $legend = $group->flatMap(fn (SeatReservation $r) => $r->boardingLegendLines())->unique()->map(fn ($line) => "📍 *{$line}*")->implode("\n");
         // Total across every seat — for an "especial" mancuerna that's
         // the mancuerna price (each seat only carries its share).
         $total = $group->sum(fn (SeatReservation $r) => (float) $r->unit_price);
@@ -392,7 +392,7 @@ class EvolutionWhatsAppService
 
         // Boarding-point instructions — the customer should know where
         // to show up even before the real ticket (with QR) exists.
-        foreach ($first->boardingLegendLines() as $legendLine) {
+        foreach ($group->flatMap(fn (SeatReservation $r) => $r->boardingLegendLines())->unique() as $legendLine) {
             $lines[] = "📍 *{$legendLine}*";
         }
 

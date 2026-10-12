@@ -33,6 +33,7 @@ class LandingRoute extends Model
         'image',
         'boarding_outbound_legend',
         'boarding_return_legend',
+        'color',
     ];
 
     protected $casts = [
@@ -212,6 +213,7 @@ class LandingRoute extends Model
                 'image' => $template->image,
                 'boarding_outbound_legend' => $template->boarding_outbound_legend,
                 'boarding_return_legend' => $template->boarding_return_legend,
+                'color' => $template->color,
             ]);
 
             foreach ($template->prices as $price) {
@@ -281,6 +283,16 @@ class LandingRoute extends Model
      * string when this trip never got one; boardingLegendLines() skips
      * the line rather than show something wrong.
      */
+    /** Optional highlight colors for the guides week view (key => label). */
+    public const COLORS = [
+        'orange' => 'Naranja',
+        'blue' => 'Azul',
+        'green' => 'Verde',
+        'purple' => 'Morado',
+        'pink' => 'Rosa',
+        'red' => 'Rojo',
+    ];
+
     public function outboundMeetingPoint(): string
     {
         return (string) $this->boarding_outbound_legend;

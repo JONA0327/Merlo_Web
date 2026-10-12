@@ -103,6 +103,17 @@ class TripGuide extends Model
         ]);
     }
 
+    /** The active recurring trip this guide was provisioned for (holds its boarding legends). */
+    public function recurringTrip(): ?LandingRoute
+    {
+        return LandingRoute::where('is_active', true)
+            ->whereNotNull('recurring_weekdays')
+            ->where('from', $this->from)
+            ->where('to', $this->to)
+            ->where('bus_unit_id', $this->bus_unit_id)
+            ->first();
+    }
+
     public function coversDate(\DateTimeInterface $date): bool
     {
         return $this->date_from->lte($date) && $this->date_to->gte($date);

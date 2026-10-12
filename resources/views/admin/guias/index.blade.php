@@ -53,24 +53,36 @@
                     @else
                         <div class="mt-2 flex flex-col gap-1.5">
                             @foreach ($day['tabs'] as $tab)
+                                @php
+                                    // Per-trip optional color (Viajes → Color en Guías).
+                                    $tabColors = [
+                                        'orange' => ['past' => 'bg-orange-50 text-orange-700 ring-1 ring-orange-300 hover:ring-orange-500', 'open' => 'bg-orange-100 text-orange-900 ring-1 ring-orange-400 hover:ring-orange-600'],
+                                        'blue' => ['past' => 'bg-sky-50 text-sky-700 ring-1 ring-sky-300 hover:ring-sky-500', 'open' => 'bg-sky-100 text-sky-900 ring-1 ring-sky-400 hover:ring-sky-600'],
+                                        'green' => ['past' => 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300 hover:ring-emerald-500', 'open' => 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-400 hover:ring-emerald-600'],
+                                        'purple' => ['past' => 'bg-purple-50 text-purple-700 ring-1 ring-purple-300 hover:ring-purple-500', 'open' => 'bg-purple-100 text-purple-900 ring-1 ring-purple-400 hover:ring-purple-600'],
+                                        'pink' => ['past' => 'bg-pink-50 text-pink-700 ring-1 ring-pink-300 hover:ring-pink-500', 'open' => 'bg-pink-100 text-pink-900 ring-1 ring-pink-400 hover:ring-pink-600'],
+                                        'red' => ['past' => 'bg-red-50 text-red-700 ring-1 ring-red-300 hover:ring-red-500', 'open' => 'bg-red-100 text-red-900 ring-1 ring-red-400 hover:ring-red-600'],
+                                    ];
+                                    $tabColor = $tabColors[$tab['color'] ?? ''] ?? null;
+                                @endphp
                                 @if ($tab['active'] && $day['isPast'])
                                     {{-- Ya pasó: apartar está cerrado, pero el día sigue
                                          siendo consultable (show() ya deja ver la lista de
                                          quién viajó, solo bloquea el formulario) — mismo
                                          link, solo con estilo "solo lectura". --}}
-                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" title="Fecha pasada — solo consulta" class="flex items-center justify-between gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 hover:ring-slate-400 transition-colors">
+                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" title="Fecha pasada — solo consulta" class="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors {{ $tabColor ? $tabColor['past'] : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200 hover:ring-slate-400' }}">
                                         <span class="truncate">{{ $tab['label'] }}</span>
                                         <svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
                                     </a>
                                 @elseif ($tab['active'])
-                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" class="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:ring-[#8C1D2B]/40 transition-colors">
+                                    <a href="{{ route('admin.guias.show', $tab['guide']) }}?fecha={{ $day['date']->toDateString() }}" class="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors {{ $tabColor ? $tabColor['open'] : 'bg-white text-[#2B1113] ring-1 ring-black/10 hover:ring-[#8C1D2B]/40' }}">
                                         <span class="truncate">{{ $tab['label'] }}</span>
                                         @if ($tab['pending_count'] > 0)
                                             <span class="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{{ $tab['pending_count'] }}</span>
                                         @endif
                                     </a>
                                 @else
-                                    <span title="No corre este día" class="flex items-center justify-between gap-2 rounded-lg bg-black/[0.03] px-2.5 py-1.5 text-[11px] font-bold text-[#2B1113]/30 ring-1 ring-black/5 cursor-not-allowed">
+                                    <span title="No corre este día" class="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[11px] font-bold cursor-not-allowed bg-black/[0.03] text-[#2B1113]/30 ring-1 ring-black/5">
                                         <span class="truncate line-through decoration-[#2B1113]/20">{{ $tab['label'] }}</span>
                                         <svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
                                     </span>
