@@ -18,6 +18,8 @@ class AdminLandingRouteController extends Controller
 {
     public function index(): View
     {
+        LandingRoute::pruneExpired();
+
         $routes = LandingRoute::query()
             ->orderBy('sort_order')
             ->orderBy('id')

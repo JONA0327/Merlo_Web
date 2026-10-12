@@ -161,6 +161,11 @@
                     <p id="admin-payment-hint" class="text-[10px] text-[#2B1113]/40"></p>
 
                     <label class="block">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Abono (opcional)</span>
+                        <input type="number" name="abono" min="0" step="0.01" value="{{ old('abono') }}" placeholder="Ej. 500 — solo se le cobrará lo que reste" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                    </label>
+
+                    <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
                         <textarea name="notes" rows="2" maxlength="1000" placeholder="Ej. Pagará en efectivo al abordar" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">{{ old('notes') }}</textarea>
                     </label>

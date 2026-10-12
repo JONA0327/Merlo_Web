@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class LandingRoute extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'landing_routes';
 
@@ -158,6 +159,20 @@ class LandingRoute extends Model
      *
      * @return Collection<int, self> newly activated instances
      */
+    /**
+     * Removes (soft-deletes) dated trips whose day already passed from
+     * the Viajes list. Their reservations stay untouched, so Apartar
+     * asientos keeps the history. Recurring templates (day=null) are
+     * never touched.
+     */
+    public static function pruneExpired(): int
+    {
+        return static::whereNull('recurring_weekdays')
+            ->whereNotNull('day')
+            ->whereDate('day', '<', now()->toDateString())
+            ->delete();
+    }
+
     public static function activateRecurringFor(Carbon $date): Collection
     {
         $templates = static::where('is_active', true)

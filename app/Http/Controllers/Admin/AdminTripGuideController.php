@@ -336,6 +336,8 @@ class AdminTripGuideController extends Controller
             // every seat in this apartado as a standing "de planta"
             // assignment for this route/bus (see StandingReservation).
             'mark_as_standing' => ['nullable', 'boolean'],
+            // Abono: partial payment for the whole apartado (stored on the root seat only).
+            'abono' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
         $date = Carbon::parse($data['travel_date'])->startOfDay();
@@ -409,7 +411,15 @@ class AdminTripGuideController extends Controller
         try {
             $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice, $estimatedUnitPrice) {
                 $root = null;
+                    $abonoLeft = (float) ($data['abono'] ?? 0);
                 foreach ($data['seat_ids'] as $seatId) {
+                    // Abono: covers seats in order as far as it reaches; a seat it covers
+                    // fully is paid, the first one it can't is pending but keeps what was abonado.
+                    $seatPrice = (float) $estimatedUnitPrice;
+                    $seatAbono = min($abonoLeft, $seatPrice);
+                    $abonoLeft -= $seatAbono;
+                    $seatCovered = $isCashPending && $seatPrice > 0 && $seatAbono >= $seatPrice;
+                    $seatPending = $isCashPending && ! $seatCovered;
                     $new = SeatReservation::create([
                         'trip_guide_id' => $guide->id,
                         'travel_date' => $date->toDateString(),
@@ -421,13 +431,14 @@ class AdminTripGuideController extends Controller
                         // exists; TripGuide::linkTrip() recomputes it for
                         // real at that point (see $estimatedUnitPrice above).
                         'unit_price' => $estimatedUnitPrice,
+                        'abono' => $seatAbono,
                         'customer_name' => $data['customer_name'],
                         'customer_email' => $data['customer_email'] ?? null,
                         'customer_phone' => $data['customer_phone'],
                         'status' => SeatReservation::STATUS_PENDING,
                         'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
-                        'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
-                        'paid_at' => $isCashPending ? null : now(),
+                        'payment_status' => $seatPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                        'paid_at' => $seatPending ? null : now(),
                         'reserved_by' => $request->user()?->id,
                         // Payment/WhatsApp still treat this apartado as
                         // one group (group:<root id>, same as any other

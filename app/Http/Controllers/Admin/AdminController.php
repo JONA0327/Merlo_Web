@@ -25,6 +25,8 @@ class AdminController extends Controller
 
     public function viajes(): View
     {
+        LandingRoute::pruneExpired();
+
         return view('admin.viajes', [
             'routes' => LandingRoute::query()
                 ->with(['prices'])

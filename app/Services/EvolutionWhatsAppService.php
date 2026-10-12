@@ -387,8 +387,17 @@ class EvolutionWhatsAppService
             "🚍 Unidad: *{$unitName}*",
             "🏷️ Tipo: ".$group->map(fn (SeatReservation $r) => $r->trip_type_label)->unique()->implode(', '),
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
-            "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];
+
+        // Abono: the customer already paid part of it — only send what's left.
+        $abono = min($total, (float) $group->sum(fn (SeatReservation $r) => (float) $r->abono));
+        if ($abono > 0) {
+            $lines[] = "💵 Total: \$".number_format($total, 2)." MXN";
+            $lines[] = "✅ Abonado: \$".number_format($abono, 2)." MXN";
+            $lines[] = "💵 Resta por pagar: \$".number_format($total - $abono, 2)." MXN";
+        } else {
+            $lines[] = "💵 A pagar: \$".number_format($total, 2)." MXN";
+        }
 
         // Boarding-point instructions — the customer should know where
         // to show up even before the real ticket (with QR) exists.

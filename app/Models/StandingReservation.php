@@ -70,7 +70,26 @@ class StandingReservation extends Model
      */
     public static function markStanding(array $keys, array $attributes, int $weekday): self
     {
-        $standing = static::firstOrNew($keys);
+        // Same seat can be "de planta" for different people on different
+        // days, so the passenger (name — phones are often shared) is part of the identity — only the
+        // same person's days get merged.
+        $standing = static::firstOrNew($keys + ['customer_name' => $attributes['customer_name']]);
+
+        // Someone else holding this seat on this weekday gives it up.
+        static::where($keys)
+            ->where('customer_name', '!=', $attributes['customer_name'])
+            ->get()
+            ->each(function (self $other) use ($weekday) {
+                $days = $other->weekdays ?: range(0, 6);
+                $rest = array_values(array_diff($days, [$weekday]));
+                if ($rest === $days) {
+                    return;
+                }
+                $other->weekdays = $rest;
+                $other->is_active = $rest !== [];
+                $other->save();
+            });
+
         $weekdays = array_values(array_unique([...($standing->weekdays ?? []), $weekday]));
 
         $standing->fill($attributes + ['weekdays' => $weekdays, 'is_active' => true]);

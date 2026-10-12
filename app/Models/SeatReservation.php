@@ -47,6 +47,7 @@ class SeatReservation extends Model
         'trip_type',
         'leg',
         'unit_price',
+        'abono',
         'customer_name',
         'customer_email',
         'status',
@@ -85,6 +86,7 @@ class SeatReservation extends Model
         'ticket_sent_at' => 'datetime',
         'reminder_sent_at' => 'datetime',
         'unit_price' => 'float',
+        'abono' => 'float',
         'outbound_verified_at' => 'datetime',
         'return_verified_at' => 'datetime',
         'return_released_at' => 'datetime',
@@ -108,7 +110,7 @@ class SeatReservation extends Model
 
     public function landingRoute(): BelongsTo
     {
-        return $this->belongsTo(LandingRoute::class);
+        return $this->belongsTo(LandingRoute::class)->withTrashed();
     }
 
     public function tripGuide(): BelongsTo

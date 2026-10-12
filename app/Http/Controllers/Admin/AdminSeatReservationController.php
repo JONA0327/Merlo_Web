@@ -43,7 +43,8 @@ class AdminSeatReservationController extends Controller
         LandingRoute::activateRecurringFor(now());
         LandingRoute::activateRecurringFor(now()->addDay());
 
-        $routes = LandingRoute::query()
+        // withTrashed: past trips are removed from Viajes but stay here as history.
+        $routes = LandingRoute::withTrashed()
             ->withCount([
                 // Counter rows are filtered to admin-created apartados only
                 // (have customer_name or customer_email) so legacy
@@ -271,6 +272,8 @@ class AdminSeatReservationController extends Controller
             // this exact route/bus (see StandingReservation), so every
             // future matching trip auto-books it from now on.
             'mark_as_standing' => ['nullable', 'boolean'],
+            // Abono: partial payment for the whole apartado (stored on the root seat only).
+            'abono' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
         // Grows the Agenda de clientes automatically — once a name/phone
@@ -397,7 +400,15 @@ class AdminSeatReservationController extends Controller
         try {
             $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
             $root = null;
+                $abonoLeft = (float) ($data['abono'] ?? 0);
             foreach ($data['seat_ids'] as $seatId) {
+                // Abono: covers seats in order as far as it reaches; a seat it covers
+                // fully is paid, the first one it can't is pending but keeps what was abonado.
+                $seatPrice = (float) $unitPrice;
+                $seatAbono = min($abonoLeft, $seatPrice);
+                $abonoLeft -= $seatAbono;
+                $seatCovered = $isCashPending && $seatPrice > 0 && $seatAbono >= $seatPrice;
+                $seatPending = $isCashPending && ! $seatCovered;
                 $new = SeatReservation::create([
                     'landing_route_id' => $landingRoute->id,
                     'bus_unit_seat_id' => $seatId,
@@ -405,13 +416,14 @@ class AdminSeatReservationController extends Controller
                     'trip_type' => $tripType,
                     'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
                     'unit_price' => $unitPrice,
+                    'abono' => $seatAbono,
                     'customer_name' => $data['customer_name'],
                     'customer_email' => $data['customer_email'] ?? null,
                     'customer_phone' => $data['customer_phone'],
                     'status' => SeatReservation::STATUS_PENDING,
                     'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
-                    'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
-                    'paid_at' => $isCashPending ? null : now(),
+                    'payment_status' => $seatPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                    'paid_at' => $seatPending ? null : now(),
                     // transfer_reference is DB-unique, and only the ROOT
                     // row of a multi-seat group should carry it anyway
                     // (same convention as the online purchase flow) —
@@ -767,7 +779,7 @@ class AdminSeatReservationController extends Controller
                 SeatReservation::PAYMENT_REFUNDED,
                 SeatReservation::PAYMENT_CHARGEBACK,
             ]))
-            ->with(['user'])
+            ->with(['user', 'seat'])
             ->get()
             ->groupBy('bus_unit_seat_id');
 
