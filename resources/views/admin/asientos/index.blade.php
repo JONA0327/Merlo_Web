@@ -1,9 +1,20 @@
-<x-admin-layout active="asientos" title="Apartar asientos">
+<x-admin-layout active="asientos" :title="$isHistorico ? 'Histórico de viajes' : 'Apartar asientos'">
     <div class="mb-8 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-            <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Apartar asientos</h2>
-            <p class="mt-1 text-sm text-[#2B1113]/60">Reserva asientos en nombre de un cliente desde la ventanilla o por teléfono. Quedan como "Pendientes" hasta que se paguen; cuando los liberes al cliente, pulsa <strong>Enviar boleto</strong>.</p>
+            <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">{{ $isHistorico ? 'Histórico de viajes' : 'Apartar asientos' }}</h2>
+            <p class="mt-1 text-sm text-[#2B1113]/60">
+                @if ($isHistorico)
+                    Viajes que ya pasaron — consulta sus apartados o reimprime una lista. Los viajes activos están en <a href="{{ route('admin.asientos.index') }}" class="font-semibold text-[#8C1D2B] hover:underline">Apartar asientos</a>.
+                @else
+                    Reserva asientos en nombre de un cliente desde la ventanilla o por teléfono. Quedan como "Pendientes" hasta que se paguen; cuando los liberes al cliente, pulsa <strong>Enviar boleto</strong>.
+                @endif
+            </p>
         </div>
+        @unless ($isHistorico)
+            <a href="{{ route('admin.asientos.historico') }}" class="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
+                Ver histórico
+            </a>
+        @endunless
     </div>
 
     @if (session('success'))
@@ -19,11 +30,11 @@
     @endif
 
     <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-        <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Viajes disponibles</h3>
+        <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">{{ $isHistorico ? 'Viajes pasados' : 'Viajes disponibles' }}</h3>
 
         @if ($routes->isEmpty())
             <div class="mt-6 rounded-2xl border border-dashed border-black/10 bg-[#FFFBF6] px-4 py-8 text-center text-sm text-[#2B1113]/60">
-                No hay viajes activos con mapa de asientos configurado todavía.
+                {{ $isHistorico ? 'Todavía no hay viajes pasados.' : 'No hay viajes activos con mapa de asientos configurado todavía.' }}
             </div>
         @else
             <div class="mt-6 overflow-x-auto rounded-2xl ring-1 ring-black/5">

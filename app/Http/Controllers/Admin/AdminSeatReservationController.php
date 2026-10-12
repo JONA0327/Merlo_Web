@@ -43,7 +43,44 @@ class AdminSeatReservationController extends Controller
         LandingRoute::activateRecurringFor(now());
         LandingRoute::activateRecurringFor(now()->addDay());
 
-        $routes = LandingRoute::query()
+        $routes = $this->bookableRoutesQuery()
+            ->where('is_active', true)
+            ->get()
+            // hasEnded() depends on return_date/day, which don't translate
+            // cleanly into one SQL condition worth maintaining twice —
+            // filtered in PHP here and in historico() instead.
+            ->reject(fn (LandingRoute $r) => $r->hasEnded())
+            ->values();
+
+        return view('admin.asientos.index', [
+            'routes' => $routes,
+            'isHistorico' => false,
+        ]);
+    }
+
+    /**
+     * Every trip that's already come and gone — kept out of the main
+     * "Viajes disponibles" list (see index()) so months of closed trips
+     * don't bury what's actually bookable today, but still consultable
+     * here (payment history, resending a ticket, etc.).
+     */
+    public function historico(): View
+    {
+        $routes = $this->bookableRoutesQuery()
+            ->get()
+            ->filter(fn (LandingRoute $r) => $r->hasEnded())
+            ->sortByDesc(fn (LandingRoute $r) => $r->return_date ?? $r->day)
+            ->values();
+
+        return view('admin.asientos.index', [
+            'routes' => $routes,
+            'isHistorico' => true,
+        ]);
+    }
+
+    private function bookableRoutesQuery()
+    {
+        return LandingRoute::query()
             ->withCount([
                 // Counter rows are filtered to admin-created apartados only
                 // (have customer_name or customer_email) so legacy
@@ -55,17 +92,11 @@ class AdminSeatReservationController extends Controller
                     ->where('status', SeatReservation::STATUS_SENT)
                     ->where(fn ($q2) => $q2->whereNotNull('customer_name')->orWhereNotNull('customer_email')),
             ])
-            ->where('is_active', true)
             // The recurring template itself (day=null) isn't bookable —
             // only its real, dated instances are.
             ->whereNull('recurring_weekdays')
             ->orderBy('day')
-            ->orderBy('departure_time')
-            ->get();
-
-        return view('admin.asientos.index', [
-            'routes' => $routes,
-        ]);
+            ->orderBy('departure_time');
     }
 
     /**

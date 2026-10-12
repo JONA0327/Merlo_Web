@@ -164,6 +164,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/pagos/{reservation}/boleto-efectivo', [AdminPaymentController::class, 'cashTicket'])->name('pagos.cash-ticket');
     Route::get('/pagos/{reservation}/boleto-efectivo/imagen', [AdminPaymentController::class, 'cashTicketImage'])->name('pagos.cash-ticket-image');
     Route::get('/asientos', [AdminSeatReservationController::class, 'index'])->name('asientos.index');
+    Route::get('/asientos/historico', [AdminSeatReservationController::class, 'historico'])->name('asientos.historico');
     Route::get('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'show'])->name('asientos.show');
     Route::post('/asientos/{landingRoute}', [AdminSeatReservationController::class, 'store'])->name('asientos.store');
     Route::post('/asientos/{landingRoute}/reservas/{reservation}/enviar', [AdminSeatReservationController::class, 'sendTicket'])->name('asientos.send');
