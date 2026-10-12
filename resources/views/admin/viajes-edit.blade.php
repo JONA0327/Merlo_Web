@@ -173,6 +173,31 @@
                     @enderror
                 </div>
 
+                <div>
+                    <p class="mb-1.5 text-sm font-semibold text-[#2B1113]">Mensaje de abordaje</p>
+                    @if (! $route->boarding_outbound_legend || ! $route->boarding_return_legend)
+                        <p class="mb-2 text-xs font-semibold text-amber-600">⚠ Este viaje todavía no tiene su mensaje de abordaje — complétalo.</p>
+                    @else
+                        <p class="mb-2 text-xs text-[#2B1113]/50">Se muestra en el boleto, el PDF y el aviso de WhatsApp.</p>
+                    @endif
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="boarding_outbound_legend" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Ida</label>
+                            <input id="boarding_outbound_legend" name="boarding_outbound_legend" type="text" value="{{ old('boarding_outbound_legend', $route->boarding_outbound_legend) }}" placeholder="Ej. Preséntate a las 00:30 en la Alameda, frente a Salud Digna." class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                            @error('boarding_outbound_legend')
+                                <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="boarding_return_legend" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Regreso</label>
+                            <input id="boarding_return_legend" name="boarding_return_legend" type="text" value="{{ old('boarding_return_legend', $route->boarding_return_legend) }}" placeholder="Ej. Regreso a las 15:30 desde Joaquín Herrera." class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                            @error('boarding_return_legend')
+                                <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="flex items-end">
                         <label class="flex w-full items-center justify-between rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm font-semibold text-[#2B1113]">

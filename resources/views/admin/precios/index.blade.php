@@ -3,8 +3,7 @@
         <div>
             <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Precios de boleto</h2>
             <p class="mt-1 text-sm text-[#2B1113]/60">
-                Define los <strong>precios generales</strong> arriba (se aplican a cada viaje nuevo y a los que no tengan un precio específico).
-                Más abajo puedes modificar un viaje puntual cuando hay un cambio — las celdas vacías heredan el general.
+                Cada viaje tiene su propio precio por categoría — una celda vacía significa que ese viaje aún no tiene precio configurado para ese tipo de boleto (se muestra "sin precio" en vez de un número inventado).
             </p>
         </div>
     </div>
@@ -18,47 +17,13 @@
     <form method="POST" action="{{ route('admin.precios.update') }}">
         @csrf
 
-        {{-- ===== Precios generales (defaults globales) ===== --}}
-        <div class="mb-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-            <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Precios generales</h3>
-                    <p class="mt-1 text-xs text-[#2B1113]/50">
-                        Un único set que aplica por defecto a todos los viajes. Cuando creas un viaje nuevo, estos precios se copian como punto de partida — solo los tocas aquí si cambias la tarifa general.
-                    </p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                @foreach ($tripTypes as $type => $label)
-                    <label class="block">
-                        <span class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/60">{{ $label }}</span>
-                        <div class="mt-1 flex items-center gap-2">
-                            <span class="text-[#2B1113]/40">$</span>
-                            <input
-                                type="text"
-                                inputmode="decimal"
-                                name="defaults[{{ $type }}]"
-                                value="{{ $defaults[$type] !== null ? number_format((float) $defaults[$type], 2, '.', '') : '' }}"
-                                placeholder="0.00"
-                                class="w-full rounded-lg border border-black/10 bg-[#FFFBF6] px-2.5 py-1.5 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none"
-                            >
-                        </div>
-                    </label>
-                @endforeach
-            </div>
-            <p class="mt-3 text-[11px] text-[#2B1113]/40">
-                Déjalo vacío para no ofrecer ese tipo de boleto por defecto (los viajes que ya tienen precio específico siguen mostrándolo).
-            </p>
-        </div>
-
-        {{-- ===== Precios por viaje (overrides individuales) ===== --}}
+        {{-- ===== Precios por viaje ===== --}}
         <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Precios por viaje</h3>
                     <p class="mt-1 text-xs text-[#2B1113]/50">
-                        Solo llena una celda cuando este viaje necesite un precio distinto al general. Una celda vacía hereda el precio general de su tipo.
+                        Una celda vacía significa que ese viaje no ofrece ese tipo de boleto todavía.
                     </p>
                 </div>
             </div>
@@ -75,16 +40,7 @@
                                 <th class="px-4 py-3">Viaje</th>
                                 <th class="px-4 py-3">Fecha</th>
                                 @foreach ($tripTypes as $type => $label)
-                                    <th class="px-4 py-3">
-                                        <div>{{ $label }}</div>
-                                        <div class="mt-0.5 text-[10px] font-medium normal-case tracking-normal text-[#2B1113]/40">
-                                            @if (! empty($defaults[$type]))
-                                                General: ${{ number_format((float) $defaults[$type], 2) }}
-                                            @else
-                                                Sin general
-                                            @endif
-                                        </div>
-                                    </th>
+                                    <th class="px-4 py-3">{{ $label }}</th>
                                 @endforeach
                             </tr>
                         </thead>
@@ -108,7 +64,7 @@
                                                     inputmode="decimal"
                                                     name="prices[{{ $route->id }}][{{ $type }}]"
                                                     value="{{ $existing && (float) $existing->price > 0 ? number_format((float) $existing->price, 2, '.', '') : '' }}"
-                                                    placeholder="{{ ! empty($defaults[$type]) ? number_format((float) $defaults[$type], 2, '.', '') : '—' }}"
+                                                    placeholder="—"
                                                     class="w-28 rounded-lg border border-black/10 bg-[#FFFBF6] px-2.5 py-1.5 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none"
                                                 >
                                                 <label class="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-[#2B1113]/60">
@@ -122,20 +78,9 @@
                                                     Visible
                                                 </label>
                                             </div>
-                                            @if ($existing)
-                                                <label class="mt-1 inline-flex cursor-pointer items-center gap-1 text-[10px] font-semibold text-[#2B1113]/40 hover:text-red-600">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="prices[{{ $route->id }}][reset][{{ $type }}]"
-                                                        value="1"
-                                                        class="h-3 w-3 rounded border-black/20 text-red-600 focus:ring-red-600"
-                                                        onclick="if(this.checked) document.querySelector('input[name=&quot;prices[{{ $route->id }}][{{ $type }}]&quot;]').value=''"
-                                                    >
-                                                    Restablecer al general
-                                                </label>
-                                            @elseif (! empty($defaults[$type]))
-                                                <p class="mt-1 text-[10px] text-[#2B1113]/40">Hereda general</p>
-                                            @endif
+                                            @unless ($existing && (float) $existing->price > 0)
+                                                <p class="mt-1 text-[10px] font-semibold text-amber-600">Sin precio configurado</p>
+                                            @endunless
                                         </td>
                                     @endforeach
                                 </tr>

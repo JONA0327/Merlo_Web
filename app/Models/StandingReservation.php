@@ -160,7 +160,7 @@ class StandingReservation extends Model
                     'bus_unit_seat_id' => $assignment->bus_unit_seat_id,
                     'trip_type' => $assignment->trip_type,
                     'leg' => SeatReservation::LEG_OUTBOUND,
-                    'unit_price' => TripTicketPrice::estimateUnitPrice($assignment->trip_type),
+                    'unit_price' => TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $assignment->trip_type),
                     'customer_name' => $assignment->customer_name,
                     'customer_email' => $assignment->customer_email,
                     'customer_phone' => $assignment->customer_phone,

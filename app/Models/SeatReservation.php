@@ -38,16 +38,6 @@ class SeatReservation extends Model
     public const LEG_OUTBOUND = 'outbound';
     public const LEG_RETURN = 'return';
 
-    // Fixed boarding-point instructions printed on every ticket — the
-    // company boards from the same two spots regardless of route, so
-    // this isn't modeled as a per-trip field (yet). Written in
-    // unambiguous 24h notation: 00:30 (12:30 AM) and 15:30 (3:30 PM) —
-    // plain "12:30"/"3:30" reads as noon/3 AM without a meridiem marker.
-    // Fallback text used only when the admin hasn't set a custom legend
-    // in Configuraciones (Setting::outboundMeetingPoint()/returnMeetingPoint()).
-    public const DEFAULT_OUTBOUND_MEETING_POINT = 'Preséntate a las 00:30 en la Alameda, frente a Salud Digna.';
-    public const DEFAULT_RETURN_MEETING_POINT = 'Regreso a las 15:30 desde Joaquín Herrera.';
-
     protected $fillable = [
         'landing_route_id',
         'trip_guide_id',
@@ -281,13 +271,19 @@ class SeatReservation extends Model
     public function boardingLegendLines(): array
     {
         $lines = [];
+        // Set per trip (at creation or later from Editar viaje) — no
+        // shared global to fall back on. A still guide-staged ticket (no
+        // real trip yet) has nothing of its own to check at all. Either
+        // way, an unset legend just skips the line rather than show
+        // something wrong for this route.
+        $trip = $this->landingRoute;
 
-        if (! $this->isReturnLeg()) {
-            $lines[] = Setting::current()->outboundMeetingPoint();
+        if (! $this->isReturnLeg() && filled($trip?->outboundMeetingPoint())) {
+            $lines[] = $trip->outboundMeetingPoint();
         }
 
-        if ($this->isReturnLeg() || $this->needsBothLegs()) {
-            $lines[] = Setting::current()->returnMeetingPoint();
+        if (($this->isReturnLeg() || $this->needsBothLegs()) && filled($trip?->returnMeetingPoint())) {
+            $lines[] = $trip->returnMeetingPoint();
         }
 
         return $lines;

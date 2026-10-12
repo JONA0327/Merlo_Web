@@ -32,6 +32,17 @@ class AdminSeatReservationController extends Controller
      */
     public function index(): View
     {
+        // A recurring trip (day=null) is only ever a pattern — ensures
+        // today's AND tomorrow's actual dated runs exist before listing
+        // what's apartable, same as visiting /admin/guias keeps its
+        // window rolling. Tomorrow matters too: a trip departing just
+        // after midnight needs to exist before today's day-before
+        // reminder run, not wait until its own day arrives (also run
+        // daily by the trips:activate-recurring command, so this doesn't
+        // depend on someone opening this page).
+        LandingRoute::activateRecurringFor(now());
+        LandingRoute::activateRecurringFor(now()->addDay());
+
         $routes = LandingRoute::query()
             ->withCount([
                 // Counter rows are filtered to admin-created apartados only
@@ -45,6 +56,9 @@ class AdminSeatReservationController extends Controller
                     ->where(fn ($q2) => $q2->whereNotNull('customer_name')->orWhereNotNull('customer_email')),
             ])
             ->where('is_active', true)
+            // The recurring template itself (day=null) isn't bookable —
+            // only its real, dated instances are.
+            ->whereNull('recurring_weekdays')
             ->orderBy('day')
             ->orderBy('departure_time')
             ->get();

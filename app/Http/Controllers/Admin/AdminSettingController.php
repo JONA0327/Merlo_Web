@@ -24,8 +24,6 @@ class AdminSettingController extends Controller
             'facebook_url' => ['nullable', 'url', 'max:255'],
             'instagram_url' => ['nullable', 'url', 'max:255'],
             'return_resale_validity_hours' => ['required', 'integer', 'min:1', 'max:720'],
-            'boarding_outbound_legend' => ['nullable', 'string', 'max:255'],
-            'boarding_return_legend' => ['nullable', 'string', 'max:255'],
         ]);
 
         Setting::current()->update($validated);
