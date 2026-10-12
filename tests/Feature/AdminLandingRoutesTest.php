@@ -51,6 +51,8 @@ test('the hour and minute selects are stored as a 24h time', function () {
         'duration' => '6h 30m',
         'departure_time_hour' => 14,
         'departure_time_minute' => 5,
+        'boarding_outbound_legend' => 'Preséntate 30 min antes.',
+        'boarding_return_legend' => 'Preséntate 30 min antes.',
     ]);
 
     $response->assertRedirect(route('admin.viajes'));
@@ -132,6 +134,8 @@ test('zero-padded hour and minute strings from the real <select> markup are acce
         'duration' => '6h 30m',
         'departure_time_hour' => '09',
         'departure_time_minute' => '05',
+        'boarding_outbound_legend' => 'Preséntate 30 min antes.',
+        'boarding_return_legend' => 'Preséntate 30 min antes.',
     ]);
 
     $response->assertRedirect(route('admin.viajes'));
@@ -168,6 +172,8 @@ test('a trip with a bus unit gets its available seats from the seat map, not the
         'price' => '$650',
         'bus_unit_id' => $busUnit->id,
         'available_seats' => 999,
+        'boarding_outbound_legend' => 'Preséntate 30 min antes.',
+        'boarding_return_legend' => 'Preséntate 30 min antes.',
     ]);
 
     $response->assertRedirect(route('admin.viajes'));
