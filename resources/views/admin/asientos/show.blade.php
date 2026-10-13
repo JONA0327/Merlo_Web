@@ -1,9 +1,9 @@
 <x-admin-layout :active="'asientos'" :title="'Apartar asientos — '.$trip->from.' → '.$trip->to">
     <div class="mb-6 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
-            <a href="{{ route('admin.asientos.index') }}" class="inline-flex items-center gap-1 text-xs font-semibold text-[#8C1D2B] hover:text-[#6F1622]">
+            <a href="{{ route('admin.guias.index') }}" class="inline-flex items-center gap-1 text-xs font-semibold text-[#8C1D2B] hover:text-[#6F1622]">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M17.5 10a.75.75 0 01-.75.75H5.56l3.22 3.22a.75.75 0 11-1.06 1.06l-4.5-4.5a.75.75 0 010-1.06l4.5-4.5a.75.75 0 111.06 1.06L5.56 9.25h11.19A.75.75 0 0117.5 10z" clip-rule="evenodd"/></svg>
-                Volver a la lista de viajes
+                Volver a Guías
             </a>
             <h2 class="mt-2 font-[Poppins] text-2xl font-bold text-[#2B1113]">{{ $trip->from }} → {{ $trip->to }}</h2>
             <p class="mt-1 text-sm text-[#2B1113]/60">
@@ -21,7 +21,7 @@
                 <span class="h-1.5 w-1.5 rounded-full bg-blue-600"></span>
                 {{ $sentCount }} enviado{{ $sentCount === 1 ? '' : 's' }}
             </span>
-            <a href="{{ route('admin.asientos.manifest', $trip) }}" target="_blank" class="inline-flex items-center gap-1.5 rounded-full bg-[#2B1113]/5 px-3 py-1.5 text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">
+            <a href="{{ route('admin.guias.manifest', [$guide, 'fecha' => $trip->day->toDateString()]) }}" target="_blank" class="inline-flex items-center gap-1.5 rounded-full bg-[#2B1113]/5 px-3 py-1.5 text-[#2B1113] hover:bg-[#2B1113]/10 transition-colors">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 2.75C5 1.784 5.784 1 6.75 1h6.5c.966 0 1.75.784 1.75 1.75v3.552c.377.046.752.097 1.126.153A2.212 2.212 0 0118 8.653v4.097A2.25 2.25 0 0115.75 15h-.241l.305 1.984A1.75 1.75 0 0113.84 19H6.16a1.75 1.75 0 01-1.973-2.016L4.491 15H4.25A2.25 2.25 0 012 12.75V8.653c0-1.082.775-2.034 1.874-2.198.374-.056.75-.107 1.126-.153V2.75zm8.5 3.397V2.75a.25.25 0 00-.25-.25h-6.5a.25.25 0 00-.25.25v3.397c1.126-.1 2.264-.148 3.5-.148s2.374.049 3.5.148zm-7 9.853l.414-2.691c1.364-.1 2.73-.15 4.086-.15 1.356 0 2.722.05 4.086.15l.414 2.691a.25.25 0 01-.247.287H6.747a.25.25 0 01-.247-.287z" clip-rule="evenodd"/></svg>
                 Imprimir lista
             </a>
@@ -65,8 +65,9 @@
                 </div>
             @else
             {{-- Form para crear apartado --}}
-            <form method="POST" action="{{ route('admin.asientos.store', $trip) }}" id="apartado-form" class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+            <form method="POST" action="{{ route('admin.guias.reservations.store', $guide) }}" id="apartado-form" class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
                 @csrf
+                <input type="hidden" name="travel_date" value="{{ $trip->day->toDateString() }}">
 
                 <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartar para un cliente</h3>
                 <p class="mt-1 text-xs text-[#2B1113]/60">Selecciona uno o varios asientos en el plano y captura los datos del cliente. Al guardar, el boleto se envía <strong>automáticamente por WhatsApp</strong>.</p>
@@ -251,7 +252,7 @@
 
                             <div class="flex shrink-0 flex-col items-end gap-1.5">
                                 @if (! $reservation->ticket_sent_at && ! $trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.send', [$trip, $reservation]) }}" class="inline" data-confirm="¿Enviar {{ $allSeats->count() > 1 ? 'los boletos' : 'el boleto' }} a {{ $reservation->customer_display_name }}?">
+                                    <form method="POST" action="{{ route('admin.guias.reservations.send', [$guide, $reservation]) }}" class="inline" data-confirm="¿Enviar {{ $allSeats->count() > 1 ? 'los boletos' : 'el boleto' }} a {{ $reservation->customer_display_name }}?">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors">
                                             <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
@@ -260,13 +261,13 @@
                                     </form>
                                 @endif
                                 @if ($standingAssignment && ! $trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.release-standing', [$trip, $standingAssignment]) }}" class="inline" data-confirm="¿Este pasajero no viaja hoy? El asiento queda libre solo para este viaje — seguirá apartándose solo en los demás.">
+                                    <form method="POST" action="{{ route('admin.guias.release-standing', [$guide, $standingAssignment, 'fecha' => $trip->day->toDateString()]) }}" class="inline" data-confirm="¿Este pasajero no viaja hoy? El asiento queda libre solo para este viaje — seguirá apartándose solo en los demás.">
                                         @csrf
                                         <button type="submit" class="text-[10px] font-semibold text-violet-700 hover:text-violet-900">No viaja hoy — liberar</button>
                                     </form>
                                 @endif
                                 @unless ($trip->hasEnded())
-                                    <form method="POST" action="{{ route('admin.asientos.destroy', [$trip, $reservation]) }}" class="inline" data-confirm-delete="Vas a BORRAR este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}. {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.">
+                                    <form method="POST" action="{{ route('admin.guias.reservations.destroy', [$guide, $reservation]) }}" class="inline" data-confirm-delete="Vas a BORRAR este apartado{{ $allSeats->count() > 1 ? ' ('.$allSeats->count().' asientos)' : '' }}. {{ $allSeats->count() > 1 ? 'Los asientos volverán' : 'El asiento volverá' }} a estar disponible{{ $allSeats->count() > 1 ? 's' : '' }}.">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Borrar</button>
@@ -284,7 +285,7 @@
                                 @endphp
                                 <div class="mt-3 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
                                     <p class="text-[10px] font-bold text-amber-800">⚠ El asiento {{ $member->seat?->label ?? '—' }} no corresponde al autobús de este viaje (la guía estaba en otra plantilla) — elige uno disponible:</p>
-                                    <form method="POST" action="{{ route('admin.asientos.reassign-seat', [$trip, $member]) }}" class="mt-1.5 flex gap-1.5">
+                                    <form method="POST" action="{{ route('admin.guias.reservations.reassign-seat', [$guide, $member]) }}" class="mt-1.5 flex gap-1.5">
                                         @csrf
                                         <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-[#2B1113]">
                                             <option value="">Selecciona un asiento…</option>
@@ -323,7 +324,7 @@
                                                 <button type="button" class="admin-edit-category-toggle text-[10px] font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-target="reschedule-return-{{ $member->id }}">Reprogramar regreso</button>
                                             @endif
                                             @if ($allSeats->count() > 1 && ! $member->isFullyCheckedIn() && ! $trip->hasEnded())
-                                                <form method="POST" action="{{ route('admin.asientos.remove-seat', [$trip, $member]) }}" class="inline" data-confirm="¿Quitar el asiento {{ $member->seat?->label }} de este apartado y reenviar la información actualizada?">
+                                                <form method="POST" action="{{ route('admin.guias.reservations.remove-seat', [$guide, $member]) }}" class="inline" data-confirm="¿Quitar el asiento {{ $member->seat?->label }} de este apartado y reenviar la información actualizada?">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Quitar</button>
@@ -334,7 +335,7 @@
 
                                     @if (! $member->isFullyCheckedIn() && ! $trip->hasEnded())
                                         <div id="edit-category-{{ $member->id }}" class="admin-edit-category-panel mt-2 hidden rounded-xl bg-[#FFFBF6] p-3 ring-1 ring-black/10">
-                                            <form method="POST" action="{{ route('admin.asientos.update-category', [$trip, $member]) }}" class="space-y-2">
+                                            <form method="POST" action="{{ route('admin.guias.reservations.update-category', [$guide, $member]) }}" class="space-y-2">
                                                 @csrf
                                                 @method('PUT')
                                                 <div class="grid grid-cols-3 gap-2">

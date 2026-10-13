@@ -198,6 +198,17 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/guias/{guide}/reservas', [AdminTripGuideController::class, 'storeReservation'])->name('guias.reservations.store');
     Route::delete('/guias/{guide}/reservas/{reservation}', [AdminTripGuideController::class, 'destroyReservation'])->name('guias.reservations.destroy');
     Route::post('/guias/{guide}/reservas/{reservation}/reasignar-asiento', [AdminTripGuideController::class, 'reassignSeat'])->name('guias.reservations.reassign-seat');
+    // The rest only ever apply once a real trip exists for the date (see
+    // AdminTripGuideController::showOpenTrip()) — enviar/categoria/quitar
+    // operate on one reservation, liberar on a "de planta" seat for one
+    // date, lista/disponibilidad on the whole trip for that date.
+    Route::post('/guias/{guide}/reservas/{reservation}/enviar', [AdminTripGuideController::class, 'sendTicket'])->name('guias.reservations.send');
+    Route::put('/guias/{guide}/reservas/{reservation}/categoria', [AdminTripGuideController::class, 'updateCategory'])->name('guias.reservations.update-category');
+    Route::delete('/guias/{guide}/reservas/{reservation}/asiento', [AdminTripGuideController::class, 'removeSeat'])->name('guias.reservations.remove-seat');
+    Route::post('/guias/{guide}/planta/{standing}/liberar', [AdminTripGuideController::class, 'releaseStanding'])->name('guias.release-standing');
+    Route::get('/guias/{guide}/lista', [AdminTripGuideController::class, 'manifest'])->name('guias.manifest');
+    Route::get('/guias/{guide}/disponibilidad', [AdminTripGuideController::class, 'availability'])->name('guias.availability');
+    Route::put('/guias/{guide}/disponibilidad', [AdminTripGuideController::class, 'updateAvailability'])->name('guias.availability.update');
     // Operator-side QR check-in. The {code?} part is optional so
     // /admin/checkin (no code) lands on the search form, and
     // /admin/checkin/{code} (the QR target) lands straight on the
