@@ -196,10 +196,22 @@ class AdminTripGuideController extends Controller
         // guide has already done its job for that day — send the admin
         // to the normal Apartar screen instead of letting two parallel
         // booking paths fight over the same seats.
-        $syncedForDate = $guide->seatReservations()
-            ->whereNotNull('landing_route_id')
-            ->whereDate('travel_date', $date->toDateString())
+        // Everything already on the real trip for that day — both what
+        // was staged here and linked, AND apartados made directly on the
+        // trip (no trip_guide_id), so the guide shows the full picture.
+        $openTrip = $this->matchingTrip($guide, $date);
+        $syncedForDate = SeatReservation::query()
+            ->where('status', '!=', SeatReservation::STATUS_CANCELLED)
+            ->where(function ($q) use ($guide, $date, $openTrip) {
+                $q->where(fn ($g) => $g->where('trip_guide_id', $guide->id)
+                    ->whereNotNull('landing_route_id')
+                    ->whereDate('travel_date', $date->toDateString()));
+                if ($openTrip) {
+                    $q->orWhere('landing_route_id', $openTrip->id);
+                }
+            })
             ->with('seat')
+            ->orderBy('customer_name')
             ->get();
 
         // Already-synced apartados keep the guide viewable (read-only

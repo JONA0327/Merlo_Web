@@ -305,7 +305,9 @@
             // source_reservation_id. Painted red so it reads apart from a
             // normal forward-staged apartado at a glance.
             seatIsReturnLeg: {!! json_encode($pendingReservationsForDate->map(fn ($r) => $r->source_reservation_id !== null)) !!},
-            takenIds: [],
+            // Already-synced apartados (now on the real trip) still occupy their
+            // seat on this date — painted as taken so they stay visible.
+            takenIds: {!! json_encode($syncedForDate->pluck('bus_unit_seat_id')->unique()->values()) !!},
             seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
         };
     </script>
