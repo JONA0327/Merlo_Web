@@ -49,11 +49,6 @@
                             Distribución de Asientos
                         </a>
 
-                        <a href="{{ route('admin.asientos.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'asientos' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
-                            <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
-                            Apartar asientos
-                        </a>
-
                         <a href="{{ route('admin.guias.index') }}" class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors {{ $active === 'guias' ? 'bg-[#8C1D2B] text-white' : 'text-white/70 hover:bg-white/5 hover:text-white' }}">
                             <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zM3.5 8.5v6.75c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V8.5h-13z" clip-rule="evenodd"/></svg>
                             Guías
@@ -168,7 +163,6 @@
                                 ['key' => 'viajes', 'label' => 'Viajes', 'route' => 'admin.viajes'],
                                 ['key' => 'paqueteria', 'label' => 'Paquetería', 'route' => 'admin.paqueteria'],
                                 ['key' => 'unidades', 'label' => 'Plantilla', 'route' => 'admin.unidades'],
-                                ['key' => 'asientos', 'label' => 'Apartar', 'route' => 'admin.asientos.index'],
                                 ['key' => 'guias', 'label' => 'Guías', 'route' => 'admin.guias.index'],
                                 ['key' => 'precios', 'label' => 'Precios', 'route' => 'admin.precios.index'],
                                 ['key' => 'destinations', 'label' => 'Destinos', 'route' => 'admin.destinations.index'],

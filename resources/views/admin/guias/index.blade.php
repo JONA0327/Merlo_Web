@@ -4,9 +4,14 @@
             <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Guías</h2>
             <p class="mt-1 text-sm text-[#2B1113]/60">Aparta asientos por fecha antes de que el viaje exista en el sistema. En cuanto se abra el viaje real para esa fecha, los asientos apartados aquí se vinculan automáticamente.</p>
         </div>
-        <a href="{{ route('admin.guias.create') }}" class="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-sm shadow-[#8C1D2B]/20 hover:bg-[#6F1622] transition-colors">
-            Nueva guía
-        </a>
+        <div class="flex items-center gap-2">
+            <a href="{{ route('admin.guias.historico') }}" class="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
+                Ver histórico
+            </a>
+            <a href="{{ route('admin.guias.create') }}" class="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-sm shadow-[#8C1D2B]/20 hover:bg-[#6F1622] transition-colors">
+                Nueva guía
+            </a>
+        </div>
     </div>
 
     @if (session('success'))

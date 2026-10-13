@@ -1,4 +1,4 @@
-<x-admin-layout :active="'asientos'" :title="'Disponibilidad — '.$trip->from.' → '.$trip->to">
+<x-admin-layout :active="'guias'" :title="'Disponibilidad — '.$trip->from.' → '.$trip->to">
     <div class="mb-6 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
             <a href="{{ route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]) }}" class="inline-flex items-center gap-1 text-xs font-semibold text-[#8C1D2B] hover:text-[#6F1622]">

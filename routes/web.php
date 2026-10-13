@@ -179,6 +179,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/precios', [AdminTripTicketPriceController::class, 'index'])->name('precios.index');
     Route::post('/precios', [AdminTripTicketPriceController::class, 'update'])->name('precios.update');
     Route::get('/guias', [AdminTripGuideController::class, 'index'])->name('guias.index');
+    Route::get('/guias/historico', [AdminTripGuideController::class, 'historico'])->name('guias.historico');
 
     // Master list of cities the company serves — powers the from/to
     // <select> in the trip create/edit form so the operator doesn't

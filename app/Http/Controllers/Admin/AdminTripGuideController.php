@@ -163,6 +163,38 @@ class AdminTripGuideController extends Controller
         ]);
     }
 
+    /**
+     * Every trip that's already come and gone — soft-deleted by
+     * trips:prune-expired, so it drops off index() and the weekly view,
+     * but still consultable here (payment history, resending a ticket,
+     * reprinting the manifest). Ported from
+     * AdminSeatReservationController::historico(); each row is a real
+     * LandingRoute instance, matched back to its guide via matchesTrip()
+     * so the action links can go through admin.guias.show/manifest.
+     */
+    public function historico(): View
+    {
+        $routes = LandingRoute::onlyTrashed()
+            ->withCount([
+                'seatReservations as pending_reservations_count' => fn ($q) => $q
+                    ->where('status', SeatReservation::STATUS_PENDING)
+                    ->where(fn ($q2) => $q2->whereNotNull('customer_name')->orWhereNotNull('customer_email')),
+                'seatReservations as sent_reservations_count' => fn ($q) => $q
+                    ->where('status', SeatReservation::STATUS_SENT)
+                    ->where(fn ($q2) => $q2->whereNotNull('customer_name')->orWhereNotNull('customer_email')),
+            ])
+            ->whereNull('recurring_weekdays')
+            ->get()
+            ->sortByDesc(fn (LandingRoute $r) => $r->return_date ?? $r->day);
+
+        $guides = TripGuide::all();
+        $routes->each(function (LandingRoute $route) use ($guides) {
+            $route->setAttribute('guide', $guides->first(fn (TripGuide $g) => $g->matchesTrip($route)));
+        });
+
+        return view('admin.guias.historico', ['routes' => $routes]);
+    }
+
     public function create(): View
     {
         return view('admin.guias.create', [
@@ -1541,7 +1573,11 @@ class AdminTripGuideController extends Controller
 
     private function matchingTrip(TripGuide $guide, Carbon $date): ?LandingRoute
     {
-        return LandingRoute::query()
+        // withTrashed(): an ended trip is soft-deleted by trips:prune-
+        // expired (see LandingRoute::pruneExpired()) so it drops off the
+        // bookable lists, but its reservations are untouched and still
+        // need to be consultable here — hasEnded() is what blocks writes.
+        return LandingRoute::withTrashed()
             ->where('from', $guide->from)
             ->where('to', $guide->to)
             ->where('bus_unit_id', $guide->bus_unit_id)

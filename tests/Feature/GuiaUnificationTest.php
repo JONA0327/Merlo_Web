@@ -63,6 +63,34 @@ test('show renders the real trip through the guide without redirecting', functio
         ->assertSee('SLP');
 });
 
+test('the histórico listing shows an ended trip linked back to its guide', function () {
+    [$trip, , $guide] = guiaOpenTrip();
+    $trip->delete();
+
+    $this->actingAs(guiaAdmin())
+        ->get(route('admin.guias.historico'))
+        ->assertOk()
+        ->assertSee('SLP')
+        ->assertSee(route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]), false);
+});
+
+test('an ended (soft-deleted) trip stays consultable through its guide — histórico', function () {
+    [$trip, $seats, $guide] = guiaOpenTrip();
+    $reservation = SeatReservation::create([
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[0]->id, 'trip_type' => 'one_way',
+        'leg' => 'outbound', 'unit_price' => 100, 'customer_name' => 'Pasado', 'customer_phone' => '4444416578',
+        'status' => 'sent', 'payment_method' => 'cash', 'payment_status' => 'completed',
+    ]);
+    $trip->delete();
+
+    $this->actingAs(guiaAdmin())
+        ->get(route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]))
+        ->assertOk()
+        ->assertSee('Pasado');
+
+    expect($reservation->fresh())->not->toBeNull();
+});
+
 test('storing a reservation on an open trip via the guide creates it against the real trip and sends only the reservation notice', function () {
     [$trip, $seats, $guide] = guiaOpenTrip();
 
