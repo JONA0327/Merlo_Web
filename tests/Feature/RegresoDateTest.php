@@ -18,8 +18,9 @@ function regresoTrip(): array
         'bus_unit_id' => $bus->id, 'is_active' => true,
         'day' => now()->addDay()->toDateString(), 'return_date' => now()->addDays(2)->toDateString(),
     ]);
+    $guide = TripGuide::ensureForTrip($trip);
 
-    return [$trip, $seats];
+    return [$trip, $seats, $guide];
 }
 
 function regresoRow(LandingRoute $trip, BusUnitSeat $seat, array $extra = []): SeatReservation
@@ -47,10 +48,11 @@ test('a solo-ida seat with no return ticket is open for a regreso', function () 
 });
 
 test('a regreso on another day is staged in the guide for the trip that comes back that day', function () {
-    [$trip, $seats] = regresoTrip();
+    [$trip, $seats, $guide] = regresoTrip();
     $returnDate = now()->addDays(5)->startOfDay();
 
-    $this->actingAs(regresoAdmin())->post(route('admin.asientos.store', $trip), [
+    $this->actingAs(regresoAdmin())->post(route('admin.guias.reservations.store', $guide), [
+        'travel_date' => $trip->day->toDateString(),
         'customer_name' => 'Luis', 'customer_phone' => '4441234567', 'trip_type' => 'regreso',
         'paid' => '0', 'payment_method' => [$seats[1]->id => 'cash'], 'seat_ids' => [$seats[1]->id],
         'regreso_date' => $returnDate->toDateString(),
@@ -68,12 +70,12 @@ test('a regreso on another day is staged in the guide for the trip that comes ba
 });
 
 test('editing a regreso to another day moves it off the trip into the guide', function () {
-    [$trip, $seats] = regresoTrip();
+    [$trip, $seats, $guide] = regresoTrip();
     $root = regresoRow($trip, $seats[0], ['trip_type' => 'regreso', 'leg' => 'return', 'notes' => 'nota']);
     $other = regresoRow($trip, $seats[1], ['trip_type' => 'regreso', 'leg' => 'return', 'notes' => 'group:'.$root->id]);
     $returnDate = now()->addDays(4)->startOfDay();
 
-    $this->actingAs(regresoAdmin())->put(route('admin.asientos.update-category', [$trip, $root]), [
+    $this->actingAs(regresoAdmin())->put(route('admin.guias.reservations.update-category', [$guide, $root]), [
         'trip_type' => 'regreso', 'payment_method' => 'cash', 'payment_status' => 'completed',
         'regreso_date' => $returnDate->toDateString(),
     ])->assertRedirect()->assertSessionHas('success');
@@ -88,14 +90,15 @@ test('editing a regreso to another day moves it off the trip into the guide', fu
 });
 
 test('a regreso on a day whose trip already exists is refused', function () {
-    [$trip, $seats] = regresoTrip();
+    [$trip, $seats, $guide] = regresoTrip();
     LandingRoute::create([
         'from' => 'SLP', 'to' => 'CDMX', 'duration' => '1h', 'price' => '$1', 'available_seats' => 9,
         'bus_unit_id' => $trip->bus_unit_id, 'is_active' => true,
         'day' => now()->addDays(3)->toDateString(), 'return_date' => now()->addDays(4)->toDateString(),
     ]);
 
-    $this->actingAs(regresoAdmin())->post(route('admin.asientos.store', $trip), [
+    $this->actingAs(regresoAdmin())->post(route('admin.guias.reservations.store', $guide), [
+        'travel_date' => $trip->day->toDateString(),
         'customer_name' => 'Luis', 'customer_phone' => '4441234567', 'trip_type' => 'regreso',
         'paid' => '0', 'payment_method' => [$seats[1]->id => 'cash'], 'seat_ids' => [$seats[1]->id],
         'regreso_date' => now()->addDays(4)->toDateString(),
@@ -106,9 +109,10 @@ test('a regreso on a day whose trip already exists is refused', function () {
 
 test('a staged regreso links to the trip once it opens', function () {
     \Illuminate\Support\Facades\Queue::fake();
-    [$trip, $seats] = regresoTrip();
+    [$trip, $seats, $guide] = regresoTrip();
 
-    $this->actingAs(regresoAdmin())->post(route('admin.asientos.store', $trip), [
+    $this->actingAs(regresoAdmin())->post(route('admin.guias.reservations.store', $guide), [
+        'travel_date' => $trip->day->toDateString(),
         'customer_name' => 'Luis', 'customer_phone' => '4441234567', 'trip_type' => 'regreso',
         'paid' => '1', 'payment_method' => [$seats[1]->id => 'cash'], 'seat_ids' => [$seats[1]->id],
         'regreso_date' => now()->addDays(6)->toDateString(),
