@@ -401,6 +401,35 @@ class TripGuide extends Model
      * plantilla changed after booking" case): a recurring trip already
      * declares its own bus, so there's no ambiguity to resolve here.
      */
+    /**
+     * Every trip — recurring or a one-off specific date — gets exactly
+     * one guide from the moment it's created, so Apartar asientos/Guías
+     * is a single unified screen with no "this route never had a guide"
+     * edge case: a recurring trip rolls ensureForRecurringTrip()'s 4-week
+     * window as always; a dated trip gets (or stretches) the guide that
+     * already covers its own day, via forRouteOnDate() — the exact same
+     * find-or-stretch-or-create mechanism manual staging already used.
+     * For a dated trip, the guide's job is mostly organizational (the
+     * trip is real from day one, there's no staging phase) — it just
+     * means every route always has a guide to land on.
+     */
+    public static function ensureForTrip(LandingRoute $trip): ?self
+    {
+        if ($trip->bus_unit_id === null) {
+            return null;
+        }
+
+        if ($trip->isRecurring()) {
+            return static::ensureForRecurringTrip($trip);
+        }
+
+        if ($trip->day === null) {
+            return null;
+        }
+
+        return static::forRouteOnDate($trip->from, $trip->to, $trip->bus_unit_id, $trip->day, 'Creada automáticamente para el viaje del '.$trip->day->format('d/m/Y').'.');
+    }
+
     public static function ensureForRecurringTrip(LandingRoute $trip, int $weeksAhead = 4): ?self
     {
         if (! $trip->isRecurring() || $trip->bus_unit_id === null) {

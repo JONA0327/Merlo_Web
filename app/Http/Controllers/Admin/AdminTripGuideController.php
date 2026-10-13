@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
 use App\Models\BusUnitSeat;
+use App\Models\Customer;
 use App\Models\Destination;
 use App\Models\LandingRoute;
 use App\Models\SeatReservation;
@@ -183,43 +184,19 @@ class AdminTripGuideController extends Controller
         return redirect()->route('admin.guias.show', $guide)->with('success', 'Guía creada. Ya puedes apartar asientos por fecha.');
     }
 
-    public function show(Request $request, TripGuide $guide): View|RedirectResponse
+    public function show(Request $request, TripGuide $guide): View
     {
         $guide->load('busUnit.seats');
 
         $date = $this->resolveDate($request, $guide);
 
-        // If a real trip already matching this route/bus/date exists AND
-        // nothing is left pending for it (see isDateResolved() — pending
-        // RETURN legs don't count as "resolved", they're waiting on a
-        // trip going the OPPOSITE direction that this never checks), the
-        // guide has already done its job for that day — send the admin
-        // to the normal Apartar screen instead of letting two parallel
-        // booking paths fight over the same seats.
-        // Everything already on the real trip for that day — both what
-        // was staged here and linked, AND apartados made directly on the
-        // trip (no trip_guide_id), so the guide shows the full picture.
-        $openTrip = $this->matchingTrip($guide, $date);
-        $syncedForDate = SeatReservation::query()
-            ->where('status', '!=', SeatReservation::STATUS_CANCELLED)
-            ->where(function ($q) use ($guide, $date, $openTrip) {
-                $q->where(fn ($g) => $g->where('trip_guide_id', $guide->id)
-                    ->whereNotNull('landing_route_id')
-                    ->whereDate('travel_date', $date->toDateString()));
-                if ($openTrip) {
-                    $q->orWhere('landing_route_id', $openTrip->id);
-                }
-            })
-            ->with('seat')
-            ->orderBy('customer_name')
-            ->get();
-
-        // Already-synced apartados keep the guide viewable (read-only
-        // "Sincronizados" list) instead of bouncing away.
-        if ($syncedForDate->isEmpty() && $this->isDateResolved($guide, $date)) {
-            return redirect()
-                ->route('admin.asientos.show', $this->matchingTrip($guide, $date))
-                ->with('success', 'Ya existe un viaje abierto para esta fecha — los asientos se apartan ahí directamente.');
+        // Once a real trip exists for this date, THIS is where seats
+        // actually get sold/managed — no more bouncing to a separate
+        // "Apartar asientos" screen (the old redirect here was the exact
+        // source of "en guía aparecen otros pero al activarse ya no
+        // aparecen"). Renders the real-trip screen directly, same URL.
+        if ($openTrip = $this->matchingTrip($guide, $date)) {
+            return $this->showOpenTrip($openTrip);
         }
 
         $pendingForDate = $guide->pendingSeatReservations()
@@ -318,8 +295,105 @@ class AdminTripGuideController extends Controller
             'takenSeatIdsByDateLeg' => $allPending->groupBy(fn (SeatReservation $r) => $r->travel_date->toDateString().'|'.$r->leg)
                 ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
             'standingSeatIds' => $standingSeatIds,
-            'syncedForDate' => $syncedForDate,
+            // This branch only ever runs when NO real trip exists yet for
+            // $date (see the showOpenTrip() branch above) — so there's
+            // never anything "already synced" to show here anymore.
+            'syncedForDate' => collect(),
             'hasPendingForDate' => $pendingForDate->isNotEmpty(),
+        ]);
+    }
+
+    /**
+     * Seat picker for a date whose real trip already exists — ported
+     * verbatim from AdminSeatReservationController::show() (kept alive
+     * in parallel during the Apartar-asientos/Guías unification), just
+     * reached from the guide's own URL instead of a separate screen.
+     * Renders the SAME admin.asientos.show view used today — unifying
+     * the two templates into one is a later, lower-risk pass once every
+     * action (store, sendTicket, etc.) has moved over too.
+     */
+    private function showOpenTrip(LandingRoute $landingRoute): View
+    {
+        $landingRoute->load('busUnit.seats', 'prices');
+
+        if (! $landingRoute->hasEnded()) {
+            StandingReservation::applyToTrip($landingRoute);
+        }
+
+        $apartadoScope = fn ($q) => $q
+            ->whereIn('status', [SeatReservation::STATUS_PENDING, SeatReservation::STATUS_SENT])
+            ->where(fn ($q2) => $q2->whereNotNull('customer_name')->orWhereNotNull('customer_email'));
+
+        $rootScope = fn ($q) => $q->where(fn ($q3) => $q3->whereNull('notes')->orWhere('notes', 'not like', 'group:%'));
+
+        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type', 'leg']);
+        $reservationsBySeat = $allReservations->groupBy('bus_unit_seat_id');
+        $returnLegSeatIds = $allReservations->where('leg', SeatReservation::LEG_RETURN)->pluck('bus_unit_seat_id')->unique()->values();
+        $outboundBySeat = $allReservations->where('leg', '!=', SeatReservation::LEG_RETURN)->groupBy('bus_unit_seat_id');
+        $roots = $allReservations->filter(fn (SeatReservation $r) => $r->notes === null || ! str_starts_with((string) $r->notes, 'group:'));
+        $pendingCount = $roots->where('status', SeatReservation::STATUS_PENDING)->count();
+        $sentCount = $roots->where('status', SeatReservation::STATUS_SENT)->count();
+
+        $filters = request()->only(['q', 'paid', 'trip_type', 'payment_method']);
+        $reservations = $rootScope($apartadoScope($landingRoute->seatReservations()))
+            ->listFilters($filters)
+            ->with(['reservedBy'])
+            ->orderBy('created_at')
+            ->paginate(12)
+            ->withQueryString();
+
+        $groupSeatsByNote = $apartadoScope($landingRoute->seatReservations())
+            ->whereIn('notes', $reservations->map(fn (SeatReservation $r) => 'group:'.$r->id))
+            ->with('seat')
+            ->get()
+            ->groupBy('notes');
+        $reservations->getCollection()->each(function (SeatReservation $r) use ($groupSeatsByNote) {
+            $r->setRelation('groupSeats', $groupSeatsByNote->get('group:'.$r->id, collect()));
+        });
+
+        $takenIds = $landingRoute->seatReservations()
+            ->whereNull('customer_name')
+            ->whereNull('customer_email')
+            ->whereNotNull('user_id')
+            ->pluck('bus_unit_seat_id');
+
+        $releasedSeatIds = $landingRoute->seatReservations()
+            ->whereNotNull('return_released_at')
+            ->whereNull('resold_return_reservation_id')
+            ->where('return_resale_expires_at', '>', now())
+            ->pluck('bus_unit_seat_id');
+
+        $idaOnlySeatIds = SeatReservation::idaOnlySeatIdsFor($landingRoute);
+
+        $standingSeatIds = StandingReservation::activeSeatIdsFor($landingRoute->from, $landingRoute->to, $landingRoute->bus_unit_id, $landingRoute->id, $landingRoute->day?->dayOfWeek);
+
+        $standingBySeat = StandingReservation::where('from', $landingRoute->from)
+            ->where('to', $landingRoute->to)
+            ->where('bus_unit_id', $landingRoute->bus_unit_id)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('bus_unit_seat_id');
+
+        return view('admin.asientos.show', [
+            'trip' => $landingRoute,
+            'reservations' => $reservations,
+            'filters' => $filters,
+            'reservationsBySeat' => $reservationsBySeat,
+            'pendingCount' => $pendingCount,
+            'sentCount' => $sentCount,
+            'takenIds' => $takenIds,
+            'returnLegSeatIds' => $returnLegSeatIds,
+            'outboundBySeat' => $outboundBySeat,
+            'releasedSeatIds' => $releasedSeatIds,
+            'idaOnlySeatIds' => $idaOnlySeatIds,
+            'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
+            'currentBusSeats' => $landingRoute->busUnit->seats()->bookable()->get()->sortBy('label', SORT_NATURAL)->values(),
+            'takenSeatIdsByLeg' => $landingRoute->seatReservations()
+                ->get(['bus_unit_seat_id', 'leg'])
+                ->groupBy('leg')
+                ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
+            'standingSeatIds' => $standingSeatIds,
+            'standingBySeat' => $standingBySeat,
         ]);
     }
 
@@ -717,24 +791,13 @@ class AdminTripGuideController extends Controller
             }
         }
 
-        // Default to the first date in range that ISN'T already resolved
-        // (a real trip open for it with nothing left pending) — otherwise
-        // the admin lands straight on the "ya existe un viaje" redirect
-        // for whichever date happens to be date_from, with no way to
-        // reach the OTHER dates still waiting in this same guide (the
-        // date picker on the page never even renders before the redirect
-        // fires).
-        $cursor = $guide->date_from->copy()->startOfDay();
-        $end = $guide->date_to->copy()->startOfDay();
+        // Default to today when it's in range — show() itself now
+        // handles "today already has a real trip" by rendering that
+        // trip's own screen rather than redirecting away, so there's no
+        // reason to skip ahead to the next unresolved date anymore.
+        $today = now()->startOfDay();
 
-        while ($cursor->lte($end)) {
-            if (! $this->isDateResolved($guide, $cursor)) {
-                return $cursor->copy();
-            }
-            $cursor->addDay();
-        }
-
-        return $guide->date_from->copy()->startOfDay();
+        return $guide->coversDate($today) ? $today : $guide->date_from->copy()->startOfDay();
     }
 
     private function matchingTrip(TripGuide $guide, Carbon $date): ?LandingRoute

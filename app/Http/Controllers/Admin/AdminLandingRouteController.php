@@ -123,11 +123,13 @@ class AdminLandingRouteController extends Controller
         }
         $message .= ' Configúrale su precio en "Precios de boleto" antes de ofrecerlo.';
 
-        if ($route->isRecurring()) {
-            $guide = TripGuide::ensureForRecurringTrip($route);
-            if ($guide?->wasRecentlyCreated) {
-                $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
-            }
+        // Every trip — recurring or a one-off specific date — gets its
+        // own guide from day one (see TripGuide::ensureForTrip()), so
+        // /admin/guias is the single screen for any route regardless of
+        // whether it's still staging or already a real open trip.
+        $guide = TripGuide::ensureForTrip($route);
+        if ($guide?->wasRecentlyCreated) {
+            $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
         }
 
         return redirect()->route('admin.viajes')->with('success', $message);
@@ -252,11 +254,9 @@ class AdminLandingRouteController extends Controller
             $message .= " Se asignaron {$planta} asiento".($planta === 1 ? '' : 's').' de planta automáticamente.';
         }
 
-        if ($freshRoute->isRecurring()) {
-            $guide = TripGuide::ensureForRecurringTrip($freshRoute);
-            if ($guide?->wasRecentlyCreated) {
-                $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
-            }
+        $guide = TripGuide::ensureForTrip($freshRoute);
+        if ($guide?->wasRecentlyCreated) {
+            $message .= ' Se creó su guía automática — ya puedes apartar asientos por adelantado para este viaje.';
         }
 
         return redirect()->route('admin.viajes')->with('success', $message);
