@@ -49,6 +49,7 @@
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#A16207] bg-[#FACC15]"></span> Apartado (pendiente)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#1D4ED8] bg-[#3B82F6]"></span> Boleto enviado</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#991B1B] bg-[#EF4444]"></span> Vendido</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#C2410C] bg-[#FB923C]"></span> Tiene viaje de regreso (no disponible en redondo/especial)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#6B21A8] bg-[#A855F7]"></span> Predeterminado (de planta)</span>
             </div>
 
@@ -496,13 +497,14 @@
             // Map of seat_id → status (pending | sent | null when free).
             // The admin can still pick "free" seats only — pending/sent
             // show as already taken.
-            seatStatuses: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
+            seatStatuses: {!! json_encode($outboundBySeat->mapWithKeys(fn ($items, $seatId) => [
                 $seatId => $items->last()->status,
             ])) !!},
+            returnLegSeatIds: {!! json_encode($returnLegSeatIds) !!},
             // Whoever most recently claimed the seat — lets the picker
             // paint a "regreso" claim red (matching the manifest's color
             // scheme) instead of the generic pending/sent colors.
-            seatTripTypes: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
+            seatTripTypes: {!! json_encode($outboundBySeat->mapWithKeys(fn ($items, $seatId) => [
                 $seatId => $items->last()->trip_type,
             ])) !!},
             // The set of seats already taken by a real client purchase

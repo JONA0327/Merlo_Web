@@ -181,18 +181,33 @@ class TripGuide extends Model
             ->where('date_to', '>=', $trip->day)
             ->get();
 
+        // Return legs staged in a same-direction guide belong to this
+        // same trip's manifest (ida y regreso viajan juntos) unless a
+        // real reverse-direction trip exists that day to take them.
+        $reverseTripExists = LandingRoute::query()
+            ->where('from', $trip->to)
+            ->where('to', $trip->from)
+            ->whereDate('day', $trip->day)
+            ->exists();
+
         foreach ($forwardGuides as $guide) {
             $reservations = $guide->pendingSeatReservations()
-                ->whereNull('source_reservation_id')
+                ->when($reverseTripExists, fn ($q) => $q->whereNull('source_reservation_id'))
                 ->whereDate('travel_date', $trip->day)
                 ->with('seat')
                 ->get();
 
             foreach ($reservations as $reservation) {
                 $matched = static::remapReservationForTrip($reservation, $trip);
+                if (static::seatTakenOnTrip($reservation, $trip)) {
+                    $unmatchedLabels[] = ($reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}").' (ya ocupado)';
+                    continue;
+                }
                 $reservation->landing_route_id = $trip->id;
                 if ($matched) {
-                    $reservation->unit_price = $trip->seatPriceFor($reservation->trip_type);
+                    if ($reservation->source_reservation_id === null) {
+                        $reservation->unit_price = $trip->seatPriceFor($reservation->trip_type);
+                    }
                 } else {
                     $unmatchedLabels[] = $reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}";
                 }
@@ -227,6 +242,10 @@ class TripGuide extends Model
                 // the "De regreso" price for an ida) — don't recompute it
                 // off the now-real trip's own pricing, just the seat.
                 $matched = static::remapReservationForTrip($reservation, $trip);
+                if (static::seatTakenOnTrip($reservation, $trip)) {
+                    $unmatchedLabels[] = ($reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}").' (ya ocupado)';
+                    continue;
+                }
                 $reservation->landing_route_id = $trip->id;
                 if (! $matched) {
                     $unmatchedLabels[] = $reservation->seat?->label ?? "#{$reservation->bus_unit_seat_id}";
@@ -258,6 +277,16 @@ class TripGuide extends Model
         }
 
         return ['linked' => $linked, 'unmatched' => array_values(array_unique($unmatchedLabels))];
+    }
+
+    /** Another reservation already holds this seat+leg on the trip (unique index). */
+    private static function seatTakenOnTrip(SeatReservation $reservation, LandingRoute $trip): bool
+    {
+        return SeatReservation::where('landing_route_id', $trip->id)
+            ->where('bus_unit_seat_id', $reservation->bus_unit_seat_id)
+            ->where('leg', $reservation->leg)
+            ->where('id', '!=', $reservation->id)
+            ->exists();
     }
 
     /**

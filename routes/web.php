@@ -193,6 +193,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/guias/{guide}/editar', [AdminTripGuideController::class, 'edit'])->name('guias.edit');
     Route::put('/guias/{guide}', [AdminTripGuideController::class, 'update'])->name('guias.update');
     Route::delete('/guias/{guide}', [AdminTripGuideController::class, 'destroy'])->name('guias.destroy');
+    Route::post('/guias/{guide}/sincronizar', [AdminTripGuideController::class, 'syncTrip'])->name('guias.sync');
     Route::post('/guias/{guide}/reservas', [AdminTripGuideController::class, 'storeReservation'])->name('guias.reservations.store');
     Route::delete('/guias/{guide}/reservas/{reservation}', [AdminTripGuideController::class, 'destroyReservation'])->name('guias.reservations.destroy');
     Route::post('/guias/{guide}/reservas/{reservation}/reasignar-asiento', [AdminTripGuideController::class, 'reassignSeat'])->name('guias.reservations.reassign-seat');

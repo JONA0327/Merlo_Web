@@ -116,8 +116,13 @@ class AdminSeatReservationController extends Controller
         // and total the pending/enviado badges — the "Apartados" list
         // below is paginated separately so a trip with months of history
         // doesn't load (or render) hundreds of cards at once.
-        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type']);
+        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type', 'leg']);
         $reservationsBySeat = $allReservations->groupBy('bus_unit_seat_id');
+        // Return legs ride on this same trip: they color the map only for
+        // "regreso" (see returnLegSeatIds in the picker), never the
+        // outbound layer used by ida/redondo/especial.
+        $returnLegSeatIds = $allReservations->where('leg', SeatReservation::LEG_RETURN)->pluck('bus_unit_seat_id')->unique()->values();
+        $outboundBySeat = $allReservations->where('leg', '!=', SeatReservation::LEG_RETURN)->groupBy('bus_unit_seat_id');
         $roots = $allReservations->filter(fn (SeatReservation $r) => $r->notes === null || ! str_starts_with((string) $r->notes, 'group:'));
         $pendingCount = $roots->where('status', SeatReservation::STATUS_PENDING)->count();
         $sentCount = $roots->where('status', SeatReservation::STATUS_SENT)->count();
@@ -191,6 +196,8 @@ class AdminSeatReservationController extends Controller
             'pendingCount' => $pendingCount,
             'sentCount' => $sentCount,
             'takenIds' => $takenIds,
+            'returnLegSeatIds' => $returnLegSeatIds,
+            'outboundBySeat' => $outboundBySeat,
             'releasedSeatIds' => $releasedSeatIds,
             'idaOnlySeatIds' => $idaOnlySeatIds,
             'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
@@ -352,7 +359,16 @@ class AdminSeatReservationController extends Controller
                 $q->whereIn('status', [SeatReservation::STATUS_PENDING, SeatReservation::STATUS_SENT])
                     ->orWhereNotNull('user_id');
             })
-            ->get();
+            ->get()
+            // A seat whose only hold is a RETURN leg is still bookable as
+            // ida; for redondo/especial only when that seat has its own
+            // (different-day) return date. "regreso" is blocked by it.
+            ->reject(fn (SeatReservation $r) => $r->leg === SeatReservation::LEG_RETURN
+                && match ($tripType) {
+                    TripTicketPrice::TYPE_ONE_WAY => true,
+                    TripTicketPrice::TYPE_ROUND_TRIP, TripTicketPrice::TYPE_ESPECIAL => ! empty($returnDatesBySeat[$r->bus_unit_seat_id]),
+                    default => false,
+                });
 
         $idaOnlySeatIds = $tripType === TripTicketPrice::TYPE_REGRESO
             ? SeatReservation::idaOnlySeatIdsFor($landingRoute)
