@@ -313,6 +313,25 @@ class SeatReservation extends Model
         return TripTicketPrice::tripTypes()[$this->trip_type] ?? $this->trip_type;
     }
 
+    /**
+     * Badge color for trip_type_label — keyed the same way as that label
+     * (leg first, trip_type only as the fallback), not raw trip_type alone:
+     * a leg=return row can carry trip_type=one_way (the auto-created return
+     * ticket from an ida purchase), and the label already calls that "Solo
+     * regreso" — the color has to agree or it reads as the wrong leg.
+     */
+    public function getTripTypeBadgeClassAttribute(): string
+    {
+        return match (true) {
+            $this->isReturnLeg() => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+            $this->isOneWay() && $this->source_reservation_id !== null => 'bg-orange-100 text-orange-800 ring-1 ring-orange-200',
+            $this->trip_type === TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
+            $this->trip_type === TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+            $this->trip_type === TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+            default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
+        };
+    }
+
     public function getTotalAttribute(): float
     {
         return (float) ($this->unit_price ?? 0);

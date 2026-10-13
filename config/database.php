@@ -99,6 +99,26 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Ad-hoc read-only access to the production DB over the SSH tunnel
+        // (see docs/prod-readonly-tunnel.md) — never the default connection,
+        // only used explicitly (DB::connection('prod_readonly')->...). The
+        // DB-side user only has SELECT on merlo_web.*, so this is a second,
+        // app-level guard against writes, not the only one.
+        'prod_readonly' => [
+            'driver' => 'mysql',
+            'host' => env('PROD_RO_DB_HOST', '127.0.0.1'),
+            'port' => env('PROD_RO_DB_PORT', '3307'),
+            'database' => env('PROD_RO_DB_DATABASE', 'merlo_web'),
+            'username' => env('PROD_RO_DB_USERNAME'),
+            'password' => env('PROD_RO_DB_PASSWORD'),
+            'charset' => env('PROD_RO_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('PROD_RO_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

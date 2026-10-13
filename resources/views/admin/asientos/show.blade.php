@@ -51,6 +51,7 @@
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#991B1B] bg-[#EF4444]"></span> Vendido</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#C2410C] bg-[#FB923C]"></span> Tiene viaje de regreso (no disponible en redondo/especial)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#6B21A8] bg-[#A855F7]"></span> Predeterminado (de planta)</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border-2 border-[#EAB308] bg-white"></span> Disponible pero ya tiene regreso apartado</span>
             </div>
 
             <div id="admin-seat-canvas" class="overflow-auto rounded-2xl border border-black/10 bg-[#FFFBF6]" style="min-height:560px;"></div>
@@ -162,7 +163,7 @@
                     </div>
                     <p id="admin-payment-hint" class="text-[10px] text-[#2B1113]/40"></p>
 
-                    <label class="block">
+                    <label id="admin-abono-field" class="block {{ old('paid', '1') === '1' ? 'hidden' : '' }}">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Abono (opcional)</span>
                         <input type="number" name="abono" min="0" step="0.01" value="{{ old('abono') }}" placeholder="Ej. 500 — solo se le cobrará lo que reste" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                     </label>
@@ -213,15 +214,6 @@
                         @foreach ($customerReservations as $reservation)
                             @php
                                 $allSeats = collect([$reservation->seat?->label])->merge($reservation->groupSeats->pluck('seat.label'))->filter();
-                                // Color by trip type so the list reads at a glance:
-                                // ida = azul claro, regreso = rojo, especial = verde.
-                                // "redondo" stays neutral (no single leg it maps to).
-                                $tripTypeBadgeClass = match ($reservation->trip_type) {
-                                    \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-                                    \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
-                                    \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
-                                    default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
-                                };
                                 $reservation->setRelation('landingRoute', $trip);
                                 $standingAssignment = str_starts_with((string) $reservation->notes, 'Asiento de planta')
                                     ? $standingBySeat->get($reservation->bus_unit_seat_id)
@@ -234,7 +226,7 @@
                                     @foreach ($allSeats as $seatLabel)
                                         <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
                                     @endforeach
-                                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $tripTypeBadgeClass }}">{{ $reservation->trip_type_label }}</span>
+                                    <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->trip_type_badge_class }}">{{ $reservation->trip_type_label }}</span>
                                     <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->isPending() ? 'bg-amber-200 text-amber-900' : ($reservation->isSent() ? 'bg-blue-200 text-blue-900' : 'bg-slate-200 text-slate-700') }}">
                                         {{ $reservation->status }}
                                     </span>
@@ -302,19 +294,11 @@
                         {{-- Editar / reprogramar / quitar: por boleto (asiento), nunca en general --}}
                         <ul class="mt-3 space-y-2">
                             @foreach (collect([$reservation])->merge($reservation->groupSeats) as $member)
-                                @php
-                                    $member->setRelation('landingRoute', $trip);
-                                    $memberBadge = match ($member->trip_type) {
-                                        \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-                                        \App\Models\TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
-                                        \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
-                                        default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
-                                    };
-                                @endphp
+                                @php $member->setRelation('landingRoute', $trip); @endphp
                                 <li class="rounded-lg bg-white p-2 ring-1 ring-black/5">
                                     <div class="flex flex-wrap items-center gap-1.5">
                                         <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $member->seat?->label ?? '—' }}</span>
-                                        <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $memberBadge }}">{{ $member->trip_type_label }}</span>
+                                        <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $member->trip_type_badge_class }}">{{ $member->trip_type_label }}</span>
                                         <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $member->isPaymentCompleted() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ $member->payment_method_label }} · {{ $member->isPaymentCompleted() ? 'pagado' : 'pendiente' }}</span>
                                         <span class="ml-auto flex flex-wrap items-center gap-2">
                                             @if (! $member->isFullyCheckedIn() && ! $trip->hasEnded())
@@ -449,10 +433,12 @@
             const paidSelect = document.getElementById('admin-paid-select');
             const methodSelect = document.getElementById('admin-payment-method-select');
             const hint = document.getElementById('admin-payment-hint');
+            const abonoField = document.getElementById('admin-abono-field');
             if (!paidSelect || !methodSelect || !hint) return;
 
             function updateHint() {
                 const paid = paidSelect.value === '1';
+                abonoField?.classList.toggle('hidden', paid);
                 if (paid) {
                     hint.textContent = 'Se manda el boleto con QR por WhatsApp de inmediato.';
                     return;

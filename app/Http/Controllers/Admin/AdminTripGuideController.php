@@ -42,19 +42,28 @@ class AdminTripGuideController extends Controller
         // by visiting this page — see TripGuide::ensureForRecurringTrip()
         // (also run daily by the guides:provision-recurring command, so
         // the window stays fresh even if nobody opens this screen).
-        $recurringTrips = LandingRoute::where('is_active', true)->whereNotNull('recurring_weekdays')->get();
-        foreach ($recurringTrips as $trip) {
-            TripGuide::ensureForRecurringTrip($trip);
-        }
+        // Best-effort: this is opportunistic sync on a GET, not something
+        // the page itself needs to render — a failure here (e.g. a
+        // read-only DB connection, a transient DB hiccup) shouldn't turn
+        // a simple page view into a 500; the daily commands still run it.
+        try {
+            $recurringTrips = LandingRoute::where('is_active', true)->whereNotNull('recurring_weekdays')->get();
+            foreach ($recurringTrips as $trip) {
+                TripGuide::ensureForRecurringTrip($trip);
+            }
 
-        // Every "de planta" assignment gets a real apartado staged for
-        // each upcoming day it applies to within its guide's window —
-        // not just a purple color on the seat picker (see
-        // provisionGuideReservations()). Runs for every guide, not only
-        // recurring-trip ones — a manually created guide's own standing
-        // assignments work the same way.
-        foreach (TripGuide::all() as $guide) {
-            StandingReservation::provisionGuideReservations($guide);
+            // Every "de planta" assignment gets a real apartado staged for
+            // each upcoming day it applies to within its guide's window —
+            // not just a purple color on the seat picker (see
+            // provisionGuideReservations()). Runs for every guide, not only
+            // recurring-trip ones — a manually created guide's own standing
+            // assignments work the same way.
+            foreach (TripGuide::all() as $guide) {
+                StandingReservation::provisionGuideReservations($guide);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Guías index: opportunistic sync failed — '.$e->getMessage());
+            $recurringTrips ??= LandingRoute::where('is_active', true)->whereNotNull('recurring_weekdays')->get();
         }
 
         $guides = TripGuide::query()
@@ -352,13 +361,21 @@ class AdminTripGuideController extends Controller
         $landingRoute->load('busUnit.seats', 'prices');
 
         if (! $landingRoute->hasEnded()) {
-            StandingReservation::applyToTrip($landingRoute);
-            // Catches up anything still staged (landing_route_id null)
-            // for this date — normally nothing, since every path that
-            // opens a trip already calls linkTrip() right away, but this
-            // makes the page self-healing instead of needing a manual
-            // "Sincronizar" button for the rare case something was missed.
-            TripGuide::linkTrip($landingRoute);
+            // Best-effort: this opportunistic sync runs on every GET, so a
+            // failure (read-only DB connection, transient hiccup) must not
+            // break viewing the page — worst case the self-heal just waits
+            // for the next successful visit, or a write path, to catch up.
+            try {
+                StandingReservation::applyToTrip($landingRoute);
+                // Catches up anything still staged (landing_route_id null)
+                // for this date — normally nothing, since every path that
+                // opens a trip already calls linkTrip() right away, but this
+                // makes the page self-healing instead of needing a manual
+                // "Sincronizar" button for the rare case something was missed.
+                TripGuide::linkTrip($landingRoute);
+            } catch (\Throwable $e) {
+                Log::warning('Guía show: opportunistic sync failed for trip '.$landingRoute->id.' — '.$e->getMessage());
+            }
         }
 
         $apartadoScope = fn ($q) => $q

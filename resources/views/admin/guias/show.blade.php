@@ -214,7 +214,7 @@
                                                 @foreach ($allSeats as $seatLabel)
                                                     <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $seatLabel }}</span>
                                                 @endforeach
-                                                <span class="rounded-md bg-[#FFFBF6] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2B1113]/70 ring-1 ring-black/10">{{ $reservation->trip_type_label }}</span>
+                                                <span class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $reservation->trip_type_badge_class }}">{{ $reservation->trip_type_label }}</span>
                                             </div>
                                             @if ($reservation->notes && ! str_starts_with((string) $reservation->notes, 'group:'))
                                                 <p class="mt-1.5 text-[11px] italic text-[#2B1113]/60">{{ $reservation->notes }}</p>

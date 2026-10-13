@@ -15,6 +15,7 @@ const DISABLED_COLORS = { fill: '#D1D5DB', stroke: '#6B7280' };
 const OBJECT_COLORS = { fill: '#94A3B8', stroke: '#475569' };
 const OUTLINE_DEFAULT_COLOR = '#2B1113';
 const VIP_ACCENT_STROKE = '#F5B301';
+const RETURN_LEG_ACCENT_STROKE = '#EAB308';
 const SELECTED_ACCENT_STROKE = '#16A34A';
 const SELECTED_ACCENT_WIDTH = 4;
 // "Other-type" seat: bookable in general, but not for the trip type
@@ -165,6 +166,16 @@ function isVip(seat) {
     return seat.kind === 'seat' && seat.type === 'vip';
 }
 
+// Shown as a yellow ring, independent of the fill color: flags a seat
+// that already has a regreso ticket WHILE it's still showing as plainly
+// available (green) — i.e. open to book for ida without switching the
+// category selector to "regreso" first just to notice. colorsFor()
+// returns the module-level AVAILABLE_COLORS constant by reference in its
+// fallback branch, so this reference check is exact, not a guess.
+function hasReturnLegAccent(seat) {
+    return returnLegSeatIds.has(seat.id) && colorsFor(seat) === AVAILABLE_COLORS;
+}
+
 function computeContentBounds(seats) {
     if (seats.length === 0) {
         return { minX: 0, minY: 0, width: config.canvasWidth, height: config.canvasHeight };
@@ -266,6 +277,25 @@ function buildSeatNode(seat) {
         }));
     }
 
+    // Yellow "ya tiene regreso" ring — see hasReturnLegAccent(). A seat
+    // can be both VIP and this, so it sits one ring further out instead
+    // of replacing the gold one. Always created (just hidden when it
+    // doesn't apply yet) so repaintSeat() can toggle it as the selected
+    // category changes, the same way it already updates the base color.
+    const returnAccentOffset = isVip(seat) ? 4 : 2;
+    const returnAccent = new Konva.Rect({
+        x: -returnAccentOffset,
+        y: -returnAccentOffset,
+        width: width + returnAccentOffset * 2,
+        height: height + returnAccentOffset * 2,
+        stroke: RETURN_LEG_ACCENT_STROKE,
+        strokeWidth: 2,
+        cornerRadius: (seat.corner_radius ?? 6) + returnAccentOffset,
+        listening: false,
+        visible: hasReturnLegAccent(seat),
+    });
+    group.add(returnAccent);
+
     const text = new Konva.Text({
         x: 0,
         y: 0,
@@ -281,7 +311,7 @@ function buildSeatNode(seat) {
     });
     group.add(text);
 
-    return { group, rect, text };
+    return { group, rect, text, returnAccent };
 }
 
 config.seats.forEach((seat) => {
@@ -489,6 +519,7 @@ function repaintSeat(seatId) {
     node.rect.fill(colors.fill);
     node.rect.stroke(isSelected ? SELECTED_ACCENT_STROKE : colors.stroke);
     node.rect.strokeWidth(isSelected ? SELECTED_ACCENT_WIDTH : baseStrokeWidth);
+    node.returnAccent?.visible(hasReturnLegAccent(node.seat));
     layer.batchDraw();
 }
 
