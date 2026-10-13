@@ -14,6 +14,7 @@ use App\Models\StandingReservation;
 use App\Models\TripGuide;
 use App\Models\TripTicketPrice;
 use App\Services\EvolutionWhatsAppService;
+use App\Services\TicketImageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -318,6 +319,12 @@ class AdminTripGuideController extends Controller
 
         if (! $landingRoute->hasEnded()) {
             StandingReservation::applyToTrip($landingRoute);
+            // Catches up anything still staged (landing_route_id null)
+            // for this date — normally nothing, since every path that
+            // opens a trip already calls linkTrip() right away, but this
+            // makes the page self-healing instead of needing a manual
+            // "Sincronizar" button for the rare case something was missed.
+            TripGuide::linkTrip($landingRoute);
         }
 
         $apartadoScope = fn ($q) => $q
@@ -397,7 +404,7 @@ class AdminTripGuideController extends Controller
         ]);
     }
 
-    public function storeReservation(Request $request, TripGuide $guide, EvolutionWhatsAppService $whatsapp): RedirectResponse
+    public function storeReservation(Request $request, TripGuide $guide, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:120'],
@@ -434,9 +441,23 @@ class AdminTripGuideController extends Controller
             'mark_as_standing' => ['nullable', 'boolean'],
             // Abono: partial payment for the whole apartado (stored on the root seat only).
             'abono' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
+            // "regreso" only, and only meaningful once a real trip exists
+            // for $travel_date (see storeOnOpenTrip()) — a different day
+            // than that trip's own return date splits it off into the
+            // guide for whichever trip actually comes back that day.
+            'regreso_date' => ['nullable', 'date', 'after_or_equal:today'],
         ]);
 
         $date = Carbon::parse($data['travel_date'])->startOfDay();
+
+        // A real trip already exists for this date — sell against it
+        // directly (full price, real ticket/QR, abono, mancuerna, "de
+        // planta" — same as the old Apartar asientos store()), instead
+        // of staging an estimate that would just get migrated later.
+        if ($openTrip = $this->matchingTrip($guide, $date)) {
+            return $this->storeOnOpenTrip($request, $guide, $openTrip, $data, $whatsapp, $ticketImages);
+        }
+
         $isCashPending = ! (bool) $data['paid'];
         $methodsBySeat = $data['payment_method'];
         $returnDatesBySeat = array_filter($data['return_date'] ?? []);
@@ -460,10 +481,6 @@ class AdminTripGuideController extends Controller
         // WhatsApp confirmation below can show an actual total instead of
         // $0 while this apartado waits on a real trip to price off of.
         $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $data['trip_type'], count($data['seat_ids']));
-
-        if ($this->isDateResolved($guide, $date)) {
-            return back()->withInput()->with('error', 'Ya existe un viaje abierto para esta fecha — usa Apartar asientos directamente ahí.');
-        }
 
         $tripType = $data['trip_type'];
         $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
@@ -648,6 +665,307 @@ class AdminTripGuideController extends Controller
             ->with('success', "Apartado en guía creado para {$data['customer_name']} ({$seatCount} asiento".($seatCount === 1 ? '' : 's').", {$date->format('d/m/Y')}). Se vinculará al viaje real en cuanto se abra.");
     }
 
+    /**
+     * Sells directly against a real, already-open trip — ported from
+     * AdminSeatReservationController::store(), reached from the guide's
+     * own URL instead of a separate screen (see storeReservation()).
+     * Full feature parity with the old Apartar asientos: abono, mancuerna
+     * pricing, "de planta", "ya sé cuándo regresa", transfer reference,
+     * double-booking/zone-restriction guards.
+     *
+     * Notification timing is the one deliberate change from the old
+     * store(): instead of always sending the real ticket/payment-reminder
+     * right away, it only does that when the trip is imminent (today or
+     * tomorrow — the "día antes" moment has already arrived or there's no
+     * future one to wait for). Otherwise this apartado only gets the
+     * plain "quedó reservado" notice now, same as a guide-staged one —
+     * SendDayBeforeReminders sends the real ticket or payment reminder
+     * the day before, whenever that turns out to be.
+     */
+    private function storeOnOpenTrip(Request $request, TripGuide $guide, LandingRoute $openTrip, array $data, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
+    {
+        if ($openTrip->hasEnded()) {
+            return back()->withInput()->with('error', 'Este viaje ya pasó — ya no se pueden crear apartados.');
+        }
+
+        Customer::remember($data['customer_name'], $data['customer_phone'], $data['customer_email'] ?? null);
+
+        $tripType = $data['trip_type'];
+        $isPaid = (bool) $data['paid'];
+        $methodsBySeat = $data['payment_method'];
+        if ($tripType === TripTicketPrice::TYPE_ESPECIAL) {
+            $sharedMethod = reset($methodsBySeat);
+            $methodsBySeat = array_map(fn () => $sharedMethod, $methodsBySeat);
+        }
+        $distinctMethods = array_values(array_unique($methodsBySeat));
+        $isCashPending = ! $isPaid;
+        $unitPrice = $openTrip->seatPriceFor($tripType, count($data['seat_ids']));
+        $returnDatesBySeat = array_filter($data['return_date'] ?? []);
+        $returnPaidBySeat = $data['return_paid'] ?? [];
+        $allowsReturnDate = in_array($tripType, [
+            TripTicketPrice::TYPE_ONE_WAY,
+            TripTicketPrice::TYPE_ROUND_TRIP,
+            TripTicketPrice::TYPE_ESPECIAL,
+        ], true);
+        $regresoPrice = $allowsReturnDate
+            ? (float) ($openTrip->priceFor(TripTicketPrice::TYPE_REGRESO)?->price ?? 0)
+            : 0.0;
+
+        if ($tripType === TripTicketPrice::TYPE_REGRESO && ! empty($data['regreso_date'])) {
+            $returnDate = Carbon::parse($data['regreso_date'])->startOfDay();
+            if (! $openTrip->return_date?->isSameDay($returnDate)) {
+                return $this->stageRegresoInGuide($request, $guide, $openTrip, $data, $returnDate, $unitPrice, $isCashPending, $methodsBySeat);
+            }
+        }
+
+        $transferReference = null;
+        if ($isCashPending && in_array(SeatReservation::PAYMENT_METHOD_TRANSFER, $distinctMethods, true)) {
+            $transferReference = SeatReservation::generateTransferReference(
+                $openTrip->day ?? now(),
+                count($data['seat_ids']),
+                $data['customer_name']
+            );
+        }
+
+        $blockingReservations = $openTrip->seatReservations()
+            ->whereIn('bus_unit_seat_id', $data['seat_ids'])
+            ->where(function ($q) {
+                $q->whereIn('status', [SeatReservation::STATUS_PENDING, SeatReservation::STATUS_SENT])
+                    ->orWhereNotNull('user_id');
+            })
+            ->get()
+            ->reject(fn (SeatReservation $r) => $r->leg === SeatReservation::LEG_RETURN
+                && match ($tripType) {
+                    TripTicketPrice::TYPE_ONE_WAY => true,
+                    TripTicketPrice::TYPE_ROUND_TRIP, TripTicketPrice::TYPE_ESPECIAL => ! empty($returnDatesBySeat[$r->bus_unit_seat_id]),
+                    default => false,
+                });
+
+        $idaOnlySeatIds = $tripType === TripTicketPrice::TYPE_REGRESO
+            ? SeatReservation::idaOnlySeatIdsFor($openTrip)
+            : collect();
+
+        $alreadyTaken = $blockingReservations
+            ->reject(fn (SeatReservation $r) => $tripType === TripTicketPrice::TYPE_REGRESO
+                && ($r->isResaleWindowOpen() || $idaOnlySeatIds->contains((int) $r->bus_unit_seat_id)))
+            ->pluck('bus_unit_seat_id')
+            ->unique()
+            ->all();
+
+        if (! empty($alreadyTaken)) {
+            $labels = BusUnitSeat::whereIn('id', $alreadyTaken)->pluck('label')->all();
+
+            return back()->withInput()->with('error', 'Los siguientes asientos ya están apartados: '.implode(', ', $labels));
+        }
+
+        $mismatched = $openTrip->busUnit->seats()
+            ->whereIn('id', $data['seat_ids'])
+            ->get()
+            ->filter(fn ($seat) => ! in_array($tripType, [TripTicketPrice::TYPE_ONE_WAY, TripTicketPrice::TYPE_ESPECIAL], true)
+                && ! $seat->allowsTripType($tripType))
+            ->pluck('label')
+            ->all();
+
+        if (! empty($mismatched)) {
+            return back()->withInput()->with('error', 'Estos asientos no están disponibles para el tipo de viaje seleccionado: '.implode(', ', $mismatched));
+        }
+
+        try {
+            $root = DB::transaction(function () use ($openTrip, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
+                $root = null;
+                $abonoLeft = (float) ($data['abono'] ?? 0);
+                foreach ($data['seat_ids'] as $seatId) {
+                    $seatPrice = (float) $unitPrice;
+                    $seatAbono = min($abonoLeft, $seatPrice);
+                    $abonoLeft -= $seatAbono;
+                    $seatCovered = $isCashPending && $seatPrice > 0 && $seatAbono >= $seatPrice;
+                    $seatPending = $isCashPending && ! $seatCovered;
+                    $new = SeatReservation::create([
+                        'landing_route_id' => $openTrip->id,
+                        'bus_unit_seat_id' => $seatId,
+                        'user_id' => null,
+                        'trip_type' => $tripType,
+                        'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
+                        'unit_price' => $unitPrice,
+                        'abono' => $seatAbono,
+                        'customer_name' => $data['customer_name'],
+                        'customer_email' => $data['customer_email'] ?? null,
+                        'customer_phone' => $data['customer_phone'],
+                        'status' => SeatReservation::STATUS_PENDING,
+                        'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
+                        'payment_status' => $seatPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                        'paid_at' => $seatPending ? null : now(),
+                        'transfer_reference' => $root ? null : $transferReference,
+                        'transfer_expires_at' => ! $root && $transferReference ? now()->addDays(3) : null,
+                        'reserved_by' => $request->user()?->id,
+                        'notes' => $root ? 'group:'.$root->id : ($data['notes'] ?? null),
+                    ]);
+
+                    if (! empty($data['mark_as_standing']) && $openTrip->day !== null) {
+                        StandingReservation::markStanding(
+                            [
+                                'from' => $openTrip->from,
+                                'to' => $openTrip->to,
+                                'bus_unit_id' => $openTrip->bus_unit_id,
+                                'bus_unit_seat_id' => $seatId,
+                            ],
+                            [
+                                'customer_name' => $data['customer_name'],
+                                'customer_phone' => $data['customer_phone'],
+                                'customer_email' => $data['customer_email'] ?? null,
+                                'trip_type' => $tripType,
+                                'notes' => $data['notes'] ?? null,
+                            ],
+                            $openTrip->day->dayOfWeek
+                        );
+
+                        StandingReservation::provisionForRoute($openTrip->from, $openTrip->to, $openTrip->bus_unit_id);
+                    }
+
+                    if ($allowsReturnDate && isset($returnDatesBySeat[$seatId])) {
+                        $returnDate = Carbon::parse($returnDatesBySeat[$seatId])->startOfDay();
+                        $isIda = $tripType === TripTicketPrice::TYPE_ONE_WAY;
+                        $returnIsPaid = $isIda && ! empty($returnPaidBySeat[$seatId]);
+                        $returnTicket = $new->createReturnLegTicket($returnDate, $isIda ? [
+                            'unit_price' => $regresoPrice,
+                            'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
+                            'payment_status' => $returnIsPaid ? SeatReservation::PAYMENT_COMPLETED : SeatReservation::PAYMENT_PENDING,
+                            'paid_at' => $returnIsPaid ? now() : null,
+                            'notes' => 'Regreso agendado al apartar el boleto de ida #'.$new->id,
+                        ] : []);
+
+                        if (! $isIda) {
+                            $new->update([
+                                'return_changed_to_reservation_id' => $returnTicket->id,
+                                'return_released_at' => now(),
+                                'return_released_by' => $request->user()?->id,
+                                'return_resale_expires_at' => now()->addHours(Setting::current()->returnResaleValidityHours()),
+                            ]);
+                        }
+                    }
+
+                    if ($tripType === TripTicketPrice::TYPE_REGRESO) {
+                        $released = $blockingReservations->first(fn (SeatReservation $r) => (int) $r->bus_unit_seat_id === (int) $seatId && $r->isResaleWindowOpen());
+                        $released?->update(['resold_return_reservation_id' => $new->id]);
+                    }
+
+                    $root ??= $new;
+                }
+
+                return $root;
+            });
+        } catch (HttpException $e) {
+            return back()->withInput()->with('error', $e->getMessage() ?: 'No se pudo agendar el regreso para uno de los asientos.');
+        }
+
+        // Imminent (today/tomorrow): no future "día antes" moment to wait
+        // for, so send the full notice now, same as the trip opening this
+        // late always has — otherwise only the plain reservation notice,
+        // and SendDayBeforeReminders sends the real ticket/reminder when
+        // that day actually arrives (see the method docblock above).
+        $isImminent = $openTrip->day !== null && $openTrip->day->lte(now()->addDay()->startOfDay());
+        $allSent = true;
+        foreach ($root->regroupByPayment() as $groupRoot) {
+            $group = $groupRoot->groupMembers()->load(['landingRoute', 'seat']);
+            if ($isImminent) {
+                $allSent = $whatsapp->deliverGroup($group, $ticketImages) && $allSent;
+                SeatReservation::whereIn('id', $group->pluck('id'))->update(['reminder_sent_at' => now()]);
+            } else {
+                try {
+                    $whatsapp->sendReservationNotice($group);
+                } catch (\Throwable $e) {
+                    Log::warning('Reservation-confirmation notice failed for reservation '.$groupRoot->id.': '.$e->getMessage());
+                    $allSent = false;
+                }
+            }
+        }
+
+        $seatCount = count($data['seat_ids']);
+        $tripTypeLabel = TripTicketPrice::tripTypes()[$tripType] ?? $tripType;
+        $plural = $seatCount > 1 ? 's' : '';
+        $summary = "{$data['customer_name']} ({$seatCount} asiento{$plural}, {$tripTypeLabel})";
+        $redirect = redirect()->route('admin.guias.show', [$guide, 'fecha' => $openTrip->day->toDateString()]);
+
+        if (! $isImminent) {
+            return $redirect->with($allSent ? 'success' : 'error', $allSent
+                ? "Apartado creado para {$summary}. El cliente recibirá un aviso por WhatsApp; el boleto (o el aviso de pago al abordar) se manda un día antes del viaje."
+                : "Apartado creado para {$summary}, pero no se pudo enviar el aviso por WhatsApp automáticamente.");
+        }
+
+        if ($isCashPending) {
+            $methodLabel = implode(' y ', array_map(
+                fn ($m) => (new SeatReservation(['payment_method' => $m]))->payment_method_label,
+                $distinctMethods
+            ));
+            $activationHint = in_array(SeatReservation::PAYMENT_METHOD_TRANSFER, $distinctMethods, true)
+                ? 'Valida la transferencia en Pagos para mandar el boleto con QR.'
+                : 'El boleto se imprime/envía cuando confirmes el pago en Pagos.';
+
+            return $redirect->with($allSent ? 'success' : 'error', $allSent
+                ? "Apartado creado para {$summary}, {$methodLabel}. El cliente recibirá un aviso por WhatsApp. {$activationHint}"
+                : "Apartado creado para {$summary}, {$methodLabel}, pero no se pudo enviar el aviso por WhatsApp automáticamente. {$activationHint}");
+        }
+
+        return $redirect->with($allSent ? 'success' : 'error', $allSent
+            ? "Apartado creado y boleto{$plural} enviado{$plural} por WhatsApp a {$summary}."
+            : "Apartado creado para {$summary}, pero no se pudo enviar el boleto por WhatsApp automáticamente.");
+    }
+
+    /**
+     * "Regreso otro día" sobre un viaje real ya abierto: el pasajero
+     * regresa un día distinto al de este viaje, así que se agenda en la
+     * guía del viaje que sí regresa ese día — ported from
+     * AdminSeatReservationController::stageRegresoInGuide(). No manda
+     * WhatsApp aquí; el boleto sale cuando ese viaje real se abra y
+     * TripGuide::linkTrip() lo vincule.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<int|string, string>  $methodsBySeat
+     */
+    private function stageRegresoInGuide(Request $request, TripGuide $guide, LandingRoute $openTrip, array $data, Carbon $returnDate, float $unitPrice, bool $isCashPending, array $methodsBySeat): RedirectResponse
+    {
+        try {
+            [$root, $slot] = DB::transaction(function () use ($request, $openTrip, $data, $returnDate, $unitPrice, $isCashPending, $methodsBySeat) {
+                $slot = SeatReservation::regresoGuideSlot($openTrip, $returnDate, $data['seat_ids']);
+
+                $root = null;
+                foreach ($data['seat_ids'] as $seatId) {
+                    $new = SeatReservation::create([
+                        'trip_guide_id' => $slot['guide']->id,
+                        'travel_date' => $slot['day']->toDateString(),
+                        'bus_unit_seat_id' => $slot['seat_map'][(int) $seatId],
+                        'trip_type' => TripTicketPrice::TYPE_REGRESO,
+                        'leg' => SeatReservation::LEG_RETURN,
+                        'unit_price' => $unitPrice,
+                        'customer_name' => $data['customer_name'],
+                        'customer_email' => $data['customer_email'] ?? null,
+                        'customer_phone' => $data['customer_phone'],
+                        'status' => SeatReservation::STATUS_PENDING,
+                        'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
+                        'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                        'paid_at' => $isCashPending ? null : now(),
+                        'reserved_by' => $request->user()?->id,
+                        'notes' => $root ? 'group:'.$root->id : ($data['notes'] ?? null),
+                    ]);
+                    $root ??= $new;
+                }
+
+                return [$root, $slot];
+            });
+
+            $root->regroupByPayment();
+        } catch (HttpException $e) {
+            return back()->withInput()->with('error', $e->getMessage() ?: 'No se pudo agendar el regreso en la guía.');
+        }
+
+        $seatCount = count($data['seat_ids']);
+        $plural = $seatCount > 1 ? 's' : '';
+
+        return redirect()
+            ->route('admin.guias.show', [$guide, 'fecha' => $openTrip->day->toDateString()])
+            ->with('success', "Regreso agendado en la guía para {$data['customer_name']} ({$seatCount} asiento{$plural}): regresa el {$returnDate->format('d/m/Y')}, en el viaje que sale el {$slot['day']->format('d/m/Y')}. Se vinculará y se enviará el boleto en cuanto se abra ese viaje.");
+    }
+
     public function destroyReservation(TripGuide $guide, SeatReservation $reservation): RedirectResponse
     {
         abort_unless($reservation->trip_guide_id === $guide->id, 404);
@@ -817,26 +1135,6 @@ class AdminTripGuideController extends Controller
      * opposite direction and are unaffected by this guide's own
      * direction having a trip.
      */
-    private function isDateResolved(TripGuide $guide, Carbon $date): bool
-    {
-        if (! $this->matchingTrip($guide, $date)) {
-            return false;
-        }
-
-        // Forward apartados still pending even though the trip is open
-        // (linkTrip() missed them, e.g. staged/paused after it ran) keep
-        // the date unresolved so they can be synced via syncTrip().
-        $forwardPending = $guide->pendingSeatReservations()
-            ->whereNull('source_reservation_id')
-            ->whereDate('travel_date', $date->toDateString())
-            ->exists();
-
-        return ! $forwardPending && ! $guide->pendingSeatReservations()
-            ->whereNotNull('source_reservation_id')
-            ->whereDate('travel_date', $date->toDateString())
-            ->exists();
-    }
-
     /**
      * Pushes this guide's still-pending apartados for a date onto the
      * already-open trip (same as what happens when a trip is created).
