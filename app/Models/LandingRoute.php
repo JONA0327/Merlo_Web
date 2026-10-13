@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class LandingRoute extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'landing_routes';
 
@@ -33,6 +34,7 @@ class LandingRoute extends Model
         'image',
         'boarding_outbound_legend',
         'boarding_return_legend',
+        'color',
     ];
 
     protected $casts = [
@@ -143,6 +145,20 @@ class LandingRoute extends Model
     }
 
     /**
+     * Removes (soft-deletes) dated trips whose day already passed from
+     * the Viajes list. Their reservations stay untouched, so Apartar
+     * asientos keeps the history. Recurring templates (day=null) are
+     * never touched.
+     */
+    public static function pruneExpired(): int
+    {
+        return static::whereNull('recurring_weekdays')
+            ->whereNotNull('day')
+            ->whereDate('day', '<', now()->toDateString())
+            ->delete();
+    }
+
+    /**
      * The "next phase" isRecurring() used to promise: a recurring row
      * (day=null) is only ever a pattern — Apartar asientos needs a real,
      * dated trip to sell seats against, same as any other. For every
@@ -212,6 +228,7 @@ class LandingRoute extends Model
                 'image' => $template->image,
                 'boarding_outbound_legend' => $template->boarding_outbound_legend,
                 'boarding_return_legend' => $template->boarding_return_legend,
+                'color' => $template->color,
             ]);
 
             foreach ($template->prices as $price) {
@@ -281,6 +298,16 @@ class LandingRoute extends Model
      * string when this trip never got one; boardingLegendLines() skips
      * the line rather than show something wrong.
      */
+    /** Optional highlight colors for the guides week view (key => label). */
+    public const COLORS = [
+        'orange' => 'Naranja',
+        'blue' => 'Azul',
+        'green' => 'Verde',
+        'purple' => 'Morado',
+        'pink' => 'Rosa',
+        'red' => 'Rojo',
+    ];
+
     public function outboundMeetingPoint(): string
     {
         return (string) $this->boarding_outbound_legend;

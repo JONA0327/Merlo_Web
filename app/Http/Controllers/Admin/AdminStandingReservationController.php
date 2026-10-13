@@ -28,7 +28,7 @@ class AdminStandingReservationController extends Controller
         // one at a time (one per form submit) — grouped here so they show
         // as ONE row instead of a repeated line per seat.
         $groups = $assignments
-            ->groupBy(fn (StandingReservation $a) => $a->from.'|'.$a->to.'|'.$a->bus_unit_id.'|'.$a->customer_phone)
+            ->groupBy(fn (StandingReservation $a) => $a->from.'|'.$a->to.'|'.$a->bus_unit_id.'|'.mb_strtoupper(trim($a->customer_name)).'|'.$a->customer_phone)
             ->map(function ($group) {
                 $first = $group->first();
 

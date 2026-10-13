@@ -43,6 +43,20 @@
                 <span class="rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-700">Fecha pasada — solo lectura</span>
             @endif
         </form>
+        @php
+            $openTrip = \App\Models\LandingRoute::where('from', $guide->from)->where('to', $guide->to)->where('bus_unit_id', $guide->bus_unit_id)->whereDate('day', $date->toDateString())->first();
+        @endphp
+        @if ($openTrip && $hasPendingForDate && ! $date->lt(\Illuminate\Support\Carbon::today()))
+            <form method="POST" action="{{ route('admin.guias.sync', $guide) }}" class="mt-3 flex flex-wrap items-center gap-3">
+                @csrf
+                <input type="hidden" name="travel_date" value="{{ $date->format('Y-m-d') }}">
+                <span class="text-xs text-[#2B1113]/60">Ya hay un viaje abierto para esta fecha.</span>
+                <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity">Sincronizar apartados con el viaje</button>
+            </form>
+        @endif
+        @if ($openTrip && ! $hasPendingForDate && $syncedForDate->isNotEmpty())
+            <p class="mt-3 text-xs font-semibold text-emerald-700">✓ Apartados ya sincronizados con el viaje de esta fecha.</p>
+        @endif
     </div>
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
@@ -141,6 +155,11 @@
                     </div>
 
                     <label class="block">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Abono (opcional)</span>
+                        <input type="number" name="abono" min="0" step="0.01" value="{{ old('abono') }}" placeholder="Ej. 500 — solo se le cobrará lo que reste" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                    </label>
+
+                    <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
                         <textarea name="notes" rows="2" maxlength="1000" placeholder="Ej. Pagará en efectivo al abordar" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">{{ old('notes') }}</textarea>
                     </label>
@@ -233,6 +252,23 @@
                                 </li>
                             @endforeach
                         </ul>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+
+        @if ($syncedForDate->isNotEmpty())
+            <h3 class="mt-8 font-[Poppins] text-base font-bold text-[#2B1113]">Sincronizados con el viaje ({{ $date->format('d/m/Y') }})</h3>
+            <ul class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                @foreach ($syncedForDate->groupBy('customer_name') as $customerName => $items)
+                    <li class="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-200">
+                        <p class="text-sm font-bold text-[#2B1113]">{{ $customerName }}</p>
+                        <div class="mt-1 flex flex-wrap gap-1.5">
+                            @foreach ($items as $item)
+                                <span class="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10">{{ $item->seat?->label }}</span>
+                            @endforeach
+                        </div>
+                        <p class="mt-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Sincronizado</p>
                     </li>
                 @endforeach
             </ul>

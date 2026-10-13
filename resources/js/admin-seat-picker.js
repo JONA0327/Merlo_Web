@@ -8,6 +8,7 @@ const CONTENT_PADDING = 24;
 const AVAILABLE_COLORS = { fill: '#FFFFFF', stroke: '#15803D' };
 const PENDING_COLORS = { fill: '#FACC15', stroke: '#A16207' };
 const SENT_COLORS = { fill: '#3B82F6', stroke: '#1D4ED8' };
+const RETURN_TRIP_COLORS = { fill: '#FB923C', stroke: '#C2410C' };
 const SOLD_COLORS = { fill: '#EF4444', stroke: '#991B1B' };
 const STANDING_COLORS = { fill: '#A855F7', stroke: '#6B21A8' };
 const DISABLED_COLORS = { fill: '#D1D5DB', stroke: '#6B7280' };
@@ -44,6 +45,13 @@ const releasedSeatIds = new Set(config.releasedSeatIds ?? []);
 // Seats sold "solo ida" with no return-leg ticket yet — the bus comes
 // back with them empty, so they're open for a "regreso" apartado too.
 const idaOnlySeatIds = new Set(config.idaOnlySeatIds ?? []);
+
+// Seats whose RETURN leg is already held on this trip (same trip carries
+// ida y regreso). Only blocks "regreso"; ida can still take the seat, and
+// redondo/especial only when that passenger comes back a different day.
+const returnLegSeatIds = new Set(config.returnLegSeatIds ?? []);
+const needsOtherReturnDate = (id) => returnLegSeatIds.has(id)
+    && (currentTripType === 'round_trip' || currentTripType === 'especial');
 
 let currentTripType = 'one_way';
 
@@ -98,6 +106,7 @@ function isSeatSelectable(seat) {
     if (config.tripEnded) return false;
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
     if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return false;
+    if ((currentTripType === 'regreso' || needsOtherReturnDate(seat.id)) && returnLegSeatIds.has(seat.id)) return false;
     if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false; // pending or sent
     // A "de planta" seat books itself automatically (StandingReservation::
     // applyToTrip()) — never pick it by hand here, that's how two
@@ -134,6 +143,8 @@ function colorsFor(seat) {
     if (seat.kind === 'object') return OBJECT_COLORS;
     if (seat.type === 'disabled') return DISABLED_COLORS;
     if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return SOLD_COLORS;
+    if (currentTripType === 'regreso' && returnLegSeatIds.has(seat.id)) return SOLD_COLORS;
+    if (needsOtherReturnDate(seat.id)) return RETURN_TRIP_COLORS;
     const status = seatStatuses[seat.id];
     if (status && seatIsReturnLeg[seat.id]) return SOLD_COLORS;
     if (status && isReleasedForRegreso(seat)) return AVAILABLE_COLORS;
@@ -564,7 +575,7 @@ function updateForm() {
                 `<option value="${value}" ${seatPaymentMethods.get(s.id) === value ? 'selected' : ''}>${label}</option>`
             ).join('');
             const returnDateField = showReturnDate
-                ? `<input type="date" name="return_date[${s.id}]" data-seat-return="${s.id}" min="${minReturnDate}" value="${seatReturnDates.get(s.id) || ''}" placeholder="Fecha de regreso" title="¿Ya sabe cuándo regresa? (opcional)" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">`
+                ? `<input type="date" name="return_date[${s.id}]" data-seat-return="${s.id}" min="${minReturnDate}" value="${seatReturnDates.get(s.id) || ''}" placeholder="Fecha de regreso" ${needsOtherReturnDate(s.id) ? 'required' : ''} title="${needsOtherReturnDate(s.id) ? 'Este asiento ya tiene regreso hoy: indica otra fecha de regreso' : '¿Ya sabe cuándo regresa? (opcional)'}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">`
                 : '';
             const returnPaidField = showReturnPaid
                 ? `<select name="return_paid[${s.id}]" data-seat-return-paid="${s.id}" title="¿El regreso ya está pagado?" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">

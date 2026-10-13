@@ -47,6 +47,7 @@ class SeatReservation extends Model
         'trip_type',
         'leg',
         'unit_price',
+        'abono',
         'customer_name',
         'customer_email',
         'status',
@@ -85,6 +86,7 @@ class SeatReservation extends Model
         'ticket_sent_at' => 'datetime',
         'reminder_sent_at' => 'datetime',
         'unit_price' => 'float',
+        'abono' => 'float',
         'outbound_verified_at' => 'datetime',
         'return_verified_at' => 'datetime',
         'return_released_at' => 'datetime',
@@ -108,7 +110,7 @@ class SeatReservation extends Model
 
     public function landingRoute(): BelongsTo
     {
-        return $this->belongsTo(LandingRoute::class);
+        return $this->belongsTo(LandingRoute::class)->withTrashed();
     }
 
     public function tripGuide(): BelongsTo
@@ -276,7 +278,9 @@ class SeatReservation extends Model
         // real trip yet) has nothing of its own to check at all. Either
         // way, an unset legend just skips the line rather than show
         // something wrong for this route.
-        $trip = $this->landingRoute;
+        // Guide-staged ones borrow the legend of the recurring trip the
+        // guide belongs to.
+        $trip = $this->landingRoute ?? $this->tripGuide?->recurringTrip();
 
         if (! $this->isReturnLeg() && filled($trip?->outboundMeetingPoint())) {
             $lines[] = $trip->outboundMeetingPoint();

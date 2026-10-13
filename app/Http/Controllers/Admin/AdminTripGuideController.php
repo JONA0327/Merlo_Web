@@ -112,6 +112,7 @@ class AdminTripGuideController extends Controller
                     return $guide ? [
                         'label' => "{$trip->from} → {$trip->to}",
                         'guide' => $guide,
+                        'color' => $trip->color,
                         'active' => in_array($date->dayOfWeek, $trip->recurring_weekdays ?? [], true),
                         'pending_count' => $dayCounts->get($guide->id.'|'.$date->toDateString(), 0),
                     ] : null;
@@ -147,7 +148,7 @@ class AdminTripGuideController extends Controller
                 // visible for a past date, this just surfaces that same
                 // state up in the week view instead of only after clicking in.
                 'isPast' => $date->lt(Carbon::today()),
-                'tabs' => $recurringTabs->merge($manualTabs)->sortByDesc('active')->values(),
+                'tabs' => $recurringTabs->merge($manualTabs)->where('active', true)->values(),
             ];
         });
 
@@ -195,7 +196,15 @@ class AdminTripGuideController extends Controller
         // guide has already done its job for that day — send the admin
         // to the normal Apartar screen instead of letting two parallel
         // booking paths fight over the same seats.
-        if ($this->isDateResolved($guide, $date)) {
+        $syncedForDate = $guide->seatReservations()
+            ->whereNotNull('landing_route_id')
+            ->whereDate('travel_date', $date->toDateString())
+            ->with('seat')
+            ->get();
+
+        // Already-synced apartados keep the guide viewable (read-only
+        // "Sincronizados" list) instead of bouncing away.
+        if ($syncedForDate->isEmpty() && $this->isDateResolved($guide, $date)) {
             return redirect()
                 ->route('admin.asientos.show', $this->matchingTrip($guide, $date))
                 ->with('success', 'Ya existe un viaje abierto para esta fecha — los asientos se apartan ahí directamente.');
@@ -297,6 +306,8 @@ class AdminTripGuideController extends Controller
             'takenSeatIdsByDateLeg' => $allPending->groupBy(fn (SeatReservation $r) => $r->travel_date->toDateString().'|'.$r->leg)
                 ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
             'standingSeatIds' => $standingSeatIds,
+            'syncedForDate' => $syncedForDate,
+            'hasPendingForDate' => $pendingForDate->isNotEmpty(),
         ]);
     }
 
@@ -335,6 +346,8 @@ class AdminTripGuideController extends Controller
             // every seat in this apartado as a standing "de planta"
             // assignment for this route/bus (see StandingReservation).
             'mark_as_standing' => ['nullable', 'boolean'],
+            // Abono: partial payment for the whole apartado (stored on the root seat only).
+            'abono' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
         $date = Carbon::parse($data['travel_date'])->startOfDay();
@@ -362,7 +375,7 @@ class AdminTripGuideController extends Controller
         // $0 while this apartado waits on a real trip to price off of.
         $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $data['trip_type'], count($data['seat_ids']));
 
-        if ($this->matchingTrip($guide, $date)) {
+        if ($this->isDateResolved($guide, $date)) {
             return back()->withInput()->with('error', 'Ya existe un viaje abierto para esta fecha — usa Apartar asientos directamente ahí.');
         }
 
@@ -408,7 +421,15 @@ class AdminTripGuideController extends Controller
         try {
             $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice, $estimatedUnitPrice) {
                 $root = null;
+                    $abonoLeft = (float) ($data['abono'] ?? 0);
                 foreach ($data['seat_ids'] as $seatId) {
+                    // Abono: covers seats in order as far as it reaches; a seat it covers
+                    // fully is paid, the first one it can't is pending but keeps what was abonado.
+                    $seatPrice = (float) $estimatedUnitPrice;
+                    $seatAbono = min($abonoLeft, $seatPrice);
+                    $abonoLeft -= $seatAbono;
+                    $seatCovered = $isCashPending && $seatPrice > 0 && $seatAbono >= $seatPrice;
+                    $seatPending = $isCashPending && ! $seatCovered;
                     $new = SeatReservation::create([
                         'trip_guide_id' => $guide->id,
                         'travel_date' => $date->toDateString(),
@@ -420,13 +441,14 @@ class AdminTripGuideController extends Controller
                         // exists; TripGuide::linkTrip() recomputes it for
                         // real at that point (see $estimatedUnitPrice above).
                         'unit_price' => $estimatedUnitPrice,
+                        'abono' => $seatAbono,
                         'customer_name' => $data['customer_name'],
                         'customer_email' => $data['customer_email'] ?? null,
                         'customer_phone' => $data['customer_phone'],
                         'status' => SeatReservation::STATUS_PENDING,
                         'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
-                        'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
-                        'paid_at' => $isCashPending ? null : now(),
+                        'payment_status' => $seatPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                        'paid_at' => $seatPending ? null : now(),
                         'reserved_by' => $request->user()?->id,
                         // Payment/WhatsApp still treat this apartado as
                         // one group (group:<root id>, same as any other
@@ -526,6 +548,11 @@ class AdminTripGuideController extends Controller
             } catch (\Throwable $e) {
                 Log::warning('Guía reservation-confirmation notice failed for reservation '.$groupRoot->id.': '.$e->getMessage());
             }
+        }
+
+        // Trip already open for this date: attach right away.
+        if ($openTrip = $this->matchingTrip($guide, $date)) {
+            TripGuide::linkTrip($openTrip);
         }
 
         $seatCount = count($data['seat_ids']);
@@ -721,9 +748,39 @@ class AdminTripGuideController extends Controller
             return false;
         }
 
-        return ! $guide->pendingSeatReservations()
+        // Forward apartados still pending even though the trip is open
+        // (linkTrip() missed them, e.g. staged/paused after it ran) keep
+        // the date unresolved so they can be synced via syncTrip().
+        $forwardPending = $guide->pendingSeatReservations()
+            ->whereNull('source_reservation_id')
+            ->whereDate('travel_date', $date->toDateString())
+            ->exists();
+
+        return ! $forwardPending && ! $guide->pendingSeatReservations()
             ->whereNotNull('source_reservation_id')
             ->whereDate('travel_date', $date->toDateString())
             ->exists();
+    }
+
+    /**
+     * Pushes this guide's still-pending apartados for a date onto the
+     * already-open trip (same as what happens when a trip is created).
+     */
+    public function syncTrip(Request $request, TripGuide $guide): RedirectResponse
+    {
+        $date = Carbon::parse($request->validate(['travel_date' => ['required', 'date']])['travel_date'])->startOfDay();
+        $trip = $this->matchingTrip($guide, $date);
+
+        if (! $trip) {
+            return back()->with('error', 'No hay un viaje abierto para esa fecha todavía.');
+        }
+
+        $result = TripGuide::linkTrip($trip);
+        $msg = "Sincronizados {$result['linked']} apartado(s) con el viaje.";
+        if ($result['unmatched']) {
+            $msg .= ' Asientos sin coincidir: '.implode(', ', $result['unmatched']).'.';
+        }
+
+        return back()->with($result['unmatched'] ? 'error' : 'success', $msg);
     }
 }

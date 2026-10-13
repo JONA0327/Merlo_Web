@@ -43,14 +43,13 @@ class AdminSeatReservationController extends Controller
         LandingRoute::activateRecurringFor(now());
         LandingRoute::activateRecurringFor(now()->addDay());
 
+        // Soft-deleted (see LandingRoute::pruneExpired(), the daily
+        // trips:prune-expired job) means "already came and gone" —
+        // excluded automatically by LandingRoute::query()'s default
+        // scope, so the active list needs no extra date filtering here.
         $routes = $this->bookableRoutesQuery()
             ->where('is_active', true)
-            ->get()
-            // hasEnded() depends on return_date/day, which don't translate
-            // cleanly into one SQL condition worth maintaining twice —
-            // filtered in PHP here and in historico() instead.
-            ->reject(fn (LandingRoute $r) => $r->hasEnded())
-            ->values();
+            ->get();
 
         return view('admin.asientos.index', [
             'routes' => $routes,
@@ -59,18 +58,18 @@ class AdminSeatReservationController extends Controller
     }
 
     /**
-     * Every trip that's already come and gone — kept out of the main
+     * Every trip that's already come and gone — soft-deleted by
+     * trips:prune-expired, so it's invisible everywhere else (the
+     * reservations themselves are untouched). Kept out of the main
      * "Viajes disponibles" list (see index()) so months of closed trips
      * don't bury what's actually bookable today, but still consultable
      * here (payment history, resending a ticket, etc.).
      */
     public function historico(): View
     {
-        $routes = $this->bookableRoutesQuery()
+        $routes = $this->bookableRoutesQuery(LandingRoute::onlyTrashed())
             ->get()
-            ->filter(fn (LandingRoute $r) => $r->hasEnded())
-            ->sortByDesc(fn (LandingRoute $r) => $r->return_date ?? $r->day)
-            ->values();
+            ->sortByDesc(fn (LandingRoute $r) => $r->return_date ?? $r->day);
 
         return view('admin.asientos.index', [
             'routes' => $routes,
@@ -78,9 +77,9 @@ class AdminSeatReservationController extends Controller
         ]);
     }
 
-    private function bookableRoutesQuery()
+    private function bookableRoutesQuery(?\Illuminate\Database\Eloquent\Builder $query = null)
     {
-        return LandingRoute::query()
+        return ($query ?? LandingRoute::query())
             ->withCount([
                 // Counter rows are filtered to admin-created apartados only
                 // (have customer_name or customer_email) so legacy
@@ -146,8 +145,13 @@ class AdminSeatReservationController extends Controller
         // and total the pending/enviado badges — the "Apartados" list
         // below is paginated separately so a trip with months of history
         // doesn't load (or render) hundreds of cards at once.
-        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type']);
+        $allReservations = $apartadoScope($landingRoute->seatReservations())->get(['id', 'bus_unit_seat_id', 'status', 'notes', 'trip_type', 'leg']);
         $reservationsBySeat = $allReservations->groupBy('bus_unit_seat_id');
+        // Return legs ride on this same trip: they color the map only for
+        // "regreso" (see returnLegSeatIds in the picker), never the
+        // outbound layer used by ida/redondo/especial.
+        $returnLegSeatIds = $allReservations->where('leg', SeatReservation::LEG_RETURN)->pluck('bus_unit_seat_id')->unique()->values();
+        $outboundBySeat = $allReservations->where('leg', '!=', SeatReservation::LEG_RETURN)->groupBy('bus_unit_seat_id');
         $roots = $allReservations->filter(fn (SeatReservation $r) => $r->notes === null || ! str_starts_with((string) $r->notes, 'group:'));
         $pendingCount = $roots->where('status', SeatReservation::STATUS_PENDING)->count();
         $sentCount = $roots->where('status', SeatReservation::STATUS_SENT)->count();
@@ -221,6 +225,8 @@ class AdminSeatReservationController extends Controller
             'pendingCount' => $pendingCount,
             'sentCount' => $sentCount,
             'takenIds' => $takenIds,
+            'returnLegSeatIds' => $returnLegSeatIds,
+            'outboundBySeat' => $outboundBySeat,
             'releasedSeatIds' => $releasedSeatIds,
             'idaOnlySeatIds' => $idaOnlySeatIds,
             'customers' => Customer::orderBy('name')->get(['name', 'phone', 'email']),
@@ -302,6 +308,8 @@ class AdminSeatReservationController extends Controller
             // this exact route/bus (see StandingReservation), so every
             // future matching trip auto-books it from now on.
             'mark_as_standing' => ['nullable', 'boolean'],
+            // Abono: partial payment for the whole apartado (stored on the root seat only).
+            'abono' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
         // Grows the Agenda de clientes automatically — once a name/phone
@@ -380,7 +388,16 @@ class AdminSeatReservationController extends Controller
                 $q->whereIn('status', [SeatReservation::STATUS_PENDING, SeatReservation::STATUS_SENT])
                     ->orWhereNotNull('user_id');
             })
-            ->get();
+            ->get()
+            // A seat whose only hold is a RETURN leg is still bookable as
+            // ida; for redondo/especial only when that seat has its own
+            // (different-day) return date. "regreso" is blocked by it.
+            ->reject(fn (SeatReservation $r) => $r->leg === SeatReservation::LEG_RETURN
+                && match ($tripType) {
+                    TripTicketPrice::TYPE_ONE_WAY => true,
+                    TripTicketPrice::TYPE_ROUND_TRIP, TripTicketPrice::TYPE_ESPECIAL => ! empty($returnDatesBySeat[$r->bus_unit_seat_id]),
+                    default => false,
+                });
 
         $idaOnlySeatIds = $tripType === TripTicketPrice::TYPE_REGRESO
             ? SeatReservation::idaOnlySeatIdsFor($landingRoute)
@@ -428,7 +445,15 @@ class AdminSeatReservationController extends Controller
         try {
             $root = DB::transaction(function () use ($landingRoute, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
             $root = null;
+                $abonoLeft = (float) ($data['abono'] ?? 0);
             foreach ($data['seat_ids'] as $seatId) {
+                // Abono: covers seats in order as far as it reaches; a seat it covers
+                // fully is paid, the first one it can't is pending but keeps what was abonado.
+                $seatPrice = (float) $unitPrice;
+                $seatAbono = min($abonoLeft, $seatPrice);
+                $abonoLeft -= $seatAbono;
+                $seatCovered = $isCashPending && $seatPrice > 0 && $seatAbono >= $seatPrice;
+                $seatPending = $isCashPending && ! $seatCovered;
                 $new = SeatReservation::create([
                     'landing_route_id' => $landingRoute->id,
                     'bus_unit_seat_id' => $seatId,
@@ -436,13 +461,14 @@ class AdminSeatReservationController extends Controller
                     'trip_type' => $tripType,
                     'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
                     'unit_price' => $unitPrice,
+                    'abono' => $seatAbono,
                     'customer_name' => $data['customer_name'],
                     'customer_email' => $data['customer_email'] ?? null,
                     'customer_phone' => $data['customer_phone'],
                     'status' => SeatReservation::STATUS_PENDING,
                     'payment_method' => $methodsBySeat[$seatId] ?? reset($methodsBySeat),
-                    'payment_status' => $isCashPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
-                    'paid_at' => $isCashPending ? null : now(),
+                    'payment_status' => $seatPending ? SeatReservation::PAYMENT_PENDING : SeatReservation::PAYMENT_COMPLETED,
+                    'paid_at' => $seatPending ? null : now(),
                     // transfer_reference is DB-unique, and only the ROOT
                     // row of a multi-seat group should carry it anyway
                     // (same convention as the online purchase flow) —
@@ -798,7 +824,7 @@ class AdminSeatReservationController extends Controller
                 SeatReservation::PAYMENT_REFUNDED,
                 SeatReservation::PAYMENT_CHARGEBACK,
             ]))
-            ->with(['user'])
+            ->with(['user', 'seat'])
             ->get()
             ->groupBy('bus_unit_seat_id');
 

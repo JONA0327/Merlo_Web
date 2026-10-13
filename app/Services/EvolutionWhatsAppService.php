@@ -313,14 +313,16 @@ class EvolutionWhatsAppService
         $first = $group->first();
         $trip = $first->landingRoute;
         $seats = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
-        $legend = collect($first->boardingLegendLines())->map(fn ($line) => "📍 *{$line}*")->implode("\n");
+        $legend = $group->flatMap(fn (SeatReservation $r) => $r->boardingLegendLines())->unique()->map(fn ($line) => "📍 *{$line}*")->implode("\n");
         // Total across every seat — for an "especial" mancuerna that's
         // the mancuerna price (each seat only carries its share).
         $total = $group->sum(fn (SeatReservation $r) => (float) $r->unit_price);
+        $unitName = $trip->busUnit->name ?? '—';
 
         return "*MERLO Transportes* 🚌\n\n"
             ."Hola {$first->customer_display_name}, aquí tienen tus {$group->count()} boletos:\n\n"
             ."*{$trip->from} → {$trip->to}*\n"
+            ."🚍 Unidad: *{$unitName}*\n"
             ."💺 Asientos: {$seats}\n"
             .'💵 Total: $'.number_format($total, 2)." MXN\n"
             .'💳 Pago: '.$group->map(fn (SeatReservation $r) => $r->payment_method_label)->unique()->implode(', ')." (pagado)\n\n"
@@ -385,12 +387,21 @@ class EvolutionWhatsAppService
             "🚍 Unidad: *{$unitName}*",
             "🏷️ Tipo: ".$group->map(fn (SeatReservation $r) => $r->trip_type_label)->unique()->implode(', '),
             ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
-            "💵 A pagar: \$".number_format($total, 2)." MXN",
         ];
+
+        // Abono: the customer already paid part of it — only send what's left.
+        $abono = min($total, (float) $group->sum(fn (SeatReservation $r) => (float) $r->abono));
+        if ($abono > 0) {
+            $lines[] = "💵 Total: \$".number_format($total, 2)." MXN";
+            $lines[] = "✅ Abonado: \$".number_format($abono, 2)." MXN";
+            $lines[] = "💵 Resta por pagar: \$".number_format($total - $abono, 2)." MXN";
+        } else {
+            $lines[] = "💵 A pagar: \$".number_format($total, 2)." MXN";
+        }
 
         // Boarding-point instructions — the customer should know where
         // to show up even before the real ticket (with QR) exists.
-        foreach ($first->boardingLegendLines() as $legendLine) {
+        foreach ($group->flatMap(fn (SeatReservation $r) => $r->boardingLegendLines())->unique() as $legendLine) {
             $lines[] = "📍 *{$legendLine}*";
         }
 

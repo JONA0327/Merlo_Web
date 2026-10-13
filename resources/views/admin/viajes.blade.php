@@ -12,6 +12,23 @@
         </div>
     @endif
 
+    @if (session('error'))
+        <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if ($errors->any())
+        <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <p class="mb-1">No se pudo guardar el viaje:</p>
+            <ul class="list-disc pl-5">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_1.8fr]">
         <section class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <h3 class="font-[Poppins] text-xl font-bold text-[#2B1113]">Agregar viaje</h3>
@@ -162,6 +179,16 @@
                             @enderror
                         </div>
                     </div>
+                </div>
+
+                <div>
+                    <label for="color" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Color en Guías (opcional)</label>
+                    <select id="color" name="color" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <option value="">Sin color</option>
+                        @foreach (\App\Models\LandingRoute::COLORS as $key => $label)
+                            <option value="{{ $key }}" @selected(old('color') === $key)>{{ $label }}</option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <div class="rounded-xl border border-[#8C1D2B]/20 bg-[#8C1D2B]/5 p-3 text-xs text-[#2B1113]/70">

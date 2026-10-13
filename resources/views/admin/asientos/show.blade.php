@@ -49,6 +49,7 @@
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#A16207] bg-[#FACC15]"></span> Apartado (pendiente)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#1D4ED8] bg-[#3B82F6]"></span> Boleto enviado</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#991B1B] bg-[#EF4444]"></span> Vendido</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#C2410C] bg-[#FB923C]"></span> Tiene viaje de regreso (no disponible en redondo/especial)</span>
                 <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-[#6B21A8] bg-[#A855F7]"></span> Predeterminado (de planta)</span>
             </div>
 
@@ -159,6 +160,11 @@
                         </label>
                     </div>
                     <p id="admin-payment-hint" class="text-[10px] text-[#2B1113]/40"></p>
+
+                    <label class="block">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Abono (opcional)</span>
+                        <input type="number" name="abono" min="0" step="0.01" value="{{ old('abono') }}" placeholder="Ej. 500 — solo se le cobrará lo que reste" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                    </label>
 
                     <label class="block">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Notas (opcional)</span>
@@ -491,13 +497,14 @@
             // Map of seat_id → status (pending | sent | null when free).
             // The admin can still pick "free" seats only — pending/sent
             // show as already taken.
-            seatStatuses: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
+            seatStatuses: {!! json_encode($outboundBySeat->mapWithKeys(fn ($items, $seatId) => [
                 $seatId => $items->last()->status,
             ])) !!},
+            returnLegSeatIds: {!! json_encode($returnLegSeatIds) !!},
             // Whoever most recently claimed the seat — lets the picker
             // paint a "regreso" claim red (matching the manifest's color
             // scheme) instead of the generic pending/sent colors.
-            seatTripTypes: {!! json_encode($reservationsBySeat->mapWithKeys(fn ($items, $seatId) => [
+            seatTripTypes: {!! json_encode($outboundBySeat->mapWithKeys(fn ($items, $seatId) => [
                 $seatId => $items->last()->trip_type,
             ])) !!},
             // The set of seats already taken by a real client purchase

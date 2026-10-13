@@ -25,6 +25,6 @@ class StandingReservationSkip extends Model
 
     public function landingRoute(): BelongsTo
     {
-        return $this->belongsTo(LandingRoute::class);
+        return $this->belongsTo(LandingRoute::class)->withTrashed();
     }
 }

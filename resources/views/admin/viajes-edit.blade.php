@@ -9,6 +9,23 @@
         </a>
     </div>
 
+    @if (session('error'))
+        <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if ($errors->any())
+        <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <p class="mb-1">No se pudo guardar el viaje:</p>
+            <ul class="list-disc pl-5">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
         <section class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
             <form method="POST" action="{{ route('admin.viajes.update', $route) }}" enctype="multipart/form-data" class="space-y-4">
@@ -196,6 +213,16 @@
                             @enderror
                         </div>
                     </div>
+                </div>
+
+                <div>
+                    <label for="color" class="mb-1 block text-xs font-semibold text-[#2B1113]/70">Color en Guías (opcional)</label>
+                    <select id="color" name="color" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        <option value="">Sin color</option>
+                        @foreach (\App\Models\LandingRoute::COLORS as $key => $label)
+                            <option value="{{ $key }}" @selected(old('color', $route->color) === $key)>{{ $label }}</option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

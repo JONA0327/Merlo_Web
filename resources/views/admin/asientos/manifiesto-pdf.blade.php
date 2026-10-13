@@ -26,6 +26,7 @@
     .pay-badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 9px; font-weight: bold; margin-left: 4px; }
     .pay-badge.paid { background: #d1fae5; color: #065f46; }
     .pay-badge.pending { background: #fef3c7; color: #92400e; }
+    .pay-badge.especial { background: #d1fae5; color: #065f46; border: 1px solid #065f46; }
     .legend { margin-top: 10px; }
     .legend-item { display: inline-block; margin-right: 14px; font-size: 9px; font-weight: bold; }
     .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
@@ -65,6 +66,23 @@
             // between blocks. $seats already arrives sorted by label and
             // includes every bookable seat, not just the occupied ones.
             $blocks = $seats->chunk(4);
+            // "Especial" seats are sold as a mancuerna (2+ seats, ONE charge) —
+            // only they get the ESPECIAL tag, and the payment badge prints once
+            // per group (on its first seat) so the pair isn't charged as two.
+            $especialGroups = $reservationsBySeat->flatten(1)
+                ->filter(fn ($r) => $r->trip_type === \App\Models\TripTicketPrice::TYPE_ESPECIAL)
+                ->groupBy(fn ($r) => $r->groupRootId())
+                ->map(fn ($g) => $g->sortBy(fn ($r) => $r->seat?->label, SORT_NATURAL)->values());
+            $especialTag = function ($r) use ($especialGroups) {
+                $group = $especialGroups->get($r->groupRootId());
+                if (! $group) {
+                    return null;
+                }
+                $isFirst = $group->first()->id === $r->id;
+                $labels = $group->map(fn ($x) => $x->seat?->label)->filter()->implode(' + ');
+
+                return ['first' => $isFirst, 'labels' => $labels, 'total' => $group->sum(fn ($x) => (float) $x->unit_price), 'abono' => $group->sum(fn ($x) => (float) $x->abono)];
+            };
             $typeClass = fn ($r) => match ($r->trip_type) {
                 \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'ida',
                 \App\Models\TripTicketPrice::TYPE_REGRESO => 'regreso',
@@ -92,7 +110,13 @@
                                     @foreach ($seatReservations as $r)
                                         @if (! $loop->first)<span class="name-sep">/</span>@endif
                                         <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
-                                        <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}</span>
+                                        @php $esp = $especialTag($r); @endphp
+                                        @if ($esp)
+                                            <span class="pay-badge especial">ESPECIAL {{ $esp['labels'] }}</span>
+                                        @endif
+                                        @if (! $esp || $esp['first'])
+                                            <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}@if (! $r->isPaymentCompleted()) ${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}@endif</span>
+                                        @endif
                                     @endforeach
                                 @endif
                             </td>
@@ -104,7 +128,13 @@
                                     @foreach ($seatReservations as $r)
                                         @if (! $loop->first)<span class="name-sep">/</span>@endif
                                         <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
-                                        <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}</span>
+                                        @php $esp = $especialTag($r); @endphp
+                                        @if ($esp)
+                                            <span class="pay-badge especial">ESPECIAL {{ $esp['labels'] }}</span>
+                                        @endif
+                                        @if (! $esp || $esp['first'])
+                                            <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}@if (! $r->isPaymentCompleted()) ${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}@endif</span>
+                                        @endif
                                     @endforeach
                                 @endif
                             </td>
