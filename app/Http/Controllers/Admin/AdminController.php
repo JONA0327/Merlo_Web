@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\BusUnit;
 use App\Models\LandingRoute;
 use App\Models\Package;
-use App\Models\SeatReservation;
 use Illuminate\View\View;
 
 class AdminController extends Controller
@@ -16,10 +15,6 @@ class AdminController extends Controller
         return view('admin.dashboard', [
             'activeTripsCount' => LandingRoute::where('is_active', true)->where('day', '>=', today())->count(),
             'activePackagesCount' => Package::where('status', '!=', Package::STATUS_ENTREGADO)->count(),
-            'monthlySales' => SeatReservation::where('payment_status', SeatReservation::PAYMENT_COMPLETED)
-                ->whereMonth('paid_at', now()->month)
-                ->whereYear('paid_at', now()->year)
-                ->sum('total'),
         ]);
     }
 
@@ -43,10 +38,5 @@ class AdminController extends Controller
             // same <select> markup so both stay in lockstep.
             'destinations' => \App\Models\Destination::query()->active()->orderBy('name')->get(),
         ]);
-    }
-
-    public function ventas(): View
-    {
-        return view('admin.ventas');
     }
 }

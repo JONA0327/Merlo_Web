@@ -144,7 +144,6 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::put('/unidades/{busUnit}', [AdminBusUnitController::class, 'update'])->name('unidades.update');
     Route::put('/unidades/{busUnit}/asientos', [AdminBusUnitSeatController::class, 'sync'])->name('unidades.seats.sync');
     Route::delete('/unidades/{busUnit}', [AdminBusUnitController::class, 'destroy'])->name('unidades.destroy');
-    Route::get('/ventas', [AdminController::class, 'ventas'])->name('ventas');
     Route::get('/pagos', [AdminPaymentController::class, 'index'])->name('pagos.index');
     Route::get('/pagos/{reservation}', [AdminPaymentController::class, 'show'])->name('pagos.show');
     Route::post('/pagos/{reservation}/reembolsar', [AdminPaymentController::class, 'refund'])->name('pagos.refund');
