@@ -453,6 +453,7 @@ class AdminTripGuideController extends Controller
                 ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
             'standingSeatIds' => $standingSeatIds,
             'standingBySeat' => $standingBySeat,
+            'busUnits' => BusUnit::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -1554,6 +1555,52 @@ class AdminTripGuideController extends Controller
         }
 
         return $redirect;
+    }
+
+    /**
+     * Switches the "plantilla" of ONE real trip (the guide's selected
+     * date), unlike update() which changes the whole guide. Existing
+     * apartados follow their seat label to the new bus.
+     */
+    public function changeTripBus(Request $request, TripGuide $guide): RedirectResponse
+    {
+        $data = $request->validate([
+            'travel_date' => ['required', 'date'],
+            'bus_unit_id' => ['required', 'exists:bus_units,id'],
+        ]);
+
+        $date = Carbon::parse($data['travel_date'])->startOfDay();
+        $trip = $this->matchingTrip($guide, $date);
+        $back = redirect()->route('admin.guias.show', [$guide, 'fecha' => $date->toDateString()]);
+
+        if (! $trip || $trip->hasEnded()) {
+            return $back->with('error', 'No hay un viaje abierto para cambiar en esa fecha.');
+        }
+
+        $newBusUnit = BusUnit::findOrFail($data['bus_unit_id']);
+
+        if ($newBusUnit->id === $trip->bus_unit_id) {
+            return $back;
+        }
+
+        $conflict = LandingRoute::busUnitConflict($trip->from, $trip->to, $newBusUnit->id, $trip->day->toDateString(), null, $trip->id);
+        if ($conflict) {
+            return $back->with('error', "Esa unidad ya está asignada a \"{$conflict->from} → {$conflict->to}\" en un día que se empalma con este viaje.");
+        }
+
+        $trip->update([
+            'bus_unit_id' => $newBusUnit->id,
+            'available_seats' => max(0, $newBusUnit->bookableSeatsCount() - $trip->seatReservations()->count()),
+        ]);
+
+        $moved = TripGuide::remapTripReservations($trip->fresh()->load('busUnit'));
+        StandingReservation::applyToTrip($trip->fresh());
+
+        $back->with('success', 'Plantilla del viaje actualizada.');
+
+        return $moved
+            ? $back->with('warning', 'Estos asientos no existen o ya estaban tomados en la nueva plantilla: '.implode(', ', $moved).' — reasígnalos; mientras tanto no se les envía el boleto.')
+            : $back;
     }
 
     public function destroy(TripGuide $guide): RedirectResponse

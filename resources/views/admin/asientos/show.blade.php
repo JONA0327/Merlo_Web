@@ -12,7 +12,20 @@
                 {{ $trip->formatted_price }}
             </p>
         </div>
-        <div class="flex items-center gap-2 text-xs font-semibold text-[#2B1113]/60">
+        <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#2B1113]/60">
+            @unless ($trip->hasEnded())
+                <form method="POST" action="{{ route('admin.guias.trip-bus', $guide) }}" class="inline-flex items-center gap-1.5" onsubmit="return confirm('¿Cambiar la plantilla de este viaje? Los apartados se pasan al asiento con la misma etiqueta.')">
+                    @csrf
+                    @method('PUT')
+                    <input type="hidden" name="travel_date" value="{{ $trip->day->toDateString() }}">
+                    <select name="bus_unit_id" aria-label="Plantilla" class="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-[#2B1113] outline-none focus:ring-2 focus:ring-[#8C1D2B]/20">
+                        @foreach ($busUnits as $unit)
+                            <option value="{{ $unit->id }}" @selected($unit->id === $trip->bus_unit_id)>{{ $unit->name }}</option>
+                        @endforeach
+                    </select>
+                    <button type="submit" class="rounded-full bg-[#8C1D2B] px-3 py-1.5 text-white hover:opacity-90 transition-opacity">Cambiar plantilla</button>
+                </form>
+            @endunless
             <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">
                 <span class="h-1.5 w-1.5 rounded-full bg-amber-600"></span>
                 {{ $pendingCount }} pendiente{{ $pendingCount === 1 ? '' : 's' }}

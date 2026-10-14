@@ -65,6 +65,15 @@ class SendDayBeforeReminders extends Command
             $group = $root->groupMembers();
             $hasRealTrip = $root->landing_route_id !== null;
 
+            // Seat left over from a plantilla switch and not reassigned
+            // yet: no ticket until an admin fixes it (reminder_sent_at
+            // stays null, so it goes out on the next run once fixed).
+            if ($group->contains(fn (SeatReservation $r) => $r->hasSeatMismatch())) {
+                Log::warning('Day-before reminder skipped: seat mismatch pending reassignment.', ['root_id' => $root->id]);
+
+                continue;
+            }
+
             try {
                 if ($hasRealTrip) {
                     // Splits by payment itself: ticket to whoever's paid,
