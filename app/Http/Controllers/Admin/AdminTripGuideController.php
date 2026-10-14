@@ -1597,8 +1597,12 @@ class AdminTripGuideController extends Controller
         return LandingRoute::withTrashed()
             ->where('from', $guide->from)
             ->where('to', $guide->to)
-            ->where('bus_unit_id', $guide->bus_unit_id)
             ->whereDate('day', $date->toDateString())
+            // Not filtered by bus: the trip's "plantilla" can be switched
+            // after the guide was staged (linkTrip() already relinks the
+            // reservations), and the guide must still find its trip.
+            // Same bus wins if two trips share the route+day.
+            ->orderByRaw('bus_unit_id = ? desc', [$guide->bus_unit_id])
             ->first();
     }
 
