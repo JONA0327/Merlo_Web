@@ -462,6 +462,13 @@ class AdminTripGuideController extends Controller
 
     public function storeReservation(Request $request, TripGuide $guide, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
+        // With a real trip open for the date, its own plantilla (which
+        // changeTripBus() may have switched) is what the seat picker shows,
+        // not the guide's — validate the seats against that bus.
+        $requestedDate = $request->date('travel_date') ?? now();
+        $seatBusUnitId = $this->matchingTrip($guide, $requestedDate->copy()->startOfDay())?->bus_unit_id
+            ?? $guide->busUnitIdFor($requestedDate);
+
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:120'],
             'customer_email' => ['nullable', 'email', 'max:180'],
@@ -471,7 +478,7 @@ class AdminTripGuideController extends Controller
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
                 'integer',
-                Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $guide->busUnitIdFor($request->date('travel_date') ?? now())),
+                Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $seatBusUnitId),
             ],
             // Same "paid independent from payment method, keyed by seat"
             // shape as Apartar asientos — a group can split across
