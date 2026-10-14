@@ -71,10 +71,15 @@ class AdminPaymentController extends Controller
             $r->setRelation('groupSeats', $groupSeats->get('group:'.$r->id, collect()));
         });
 
+        // sum('total') was reading the raw `total` column, which stays 0
+        // for admin-created apartados (OpenPay is disabled, so that's
+        // nearly every row) — the real amount owed per row is unit_price
+        // (see SeatReservation::getTotalAttribute(), which the "Total"
+        // column in the table below already reads from instead of the
+        // raw column), so the summary cards need to match that.
         $totals = [
-            'completed' => (clone $query)->where('payment_status', 'completed')->sum('total'),
-            'pending' => (clone $query)->where('payment_status', 'pending')->sum('total'),
-            'refunded' => (clone $query)->where('payment_status', 'refunded')->sum('refund_amount'),
+            'completed' => (clone $query)->where('payment_status', 'completed')->sum('unit_price'),
+            'pending' => (clone $query)->where('payment_status', 'pending')->sum('unit_price'),
         ];
 
         return view('admin.pagos.index', [

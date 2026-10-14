@@ -14,7 +14,7 @@
     @endif
 
     {{-- Totals --}}
-    <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div class="rounded-2xl bg-white p-4 ring-1 ring-black/5 shadow-sm">
             <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Cobrado</p>
             <p class="mt-1 font-[Poppins] text-2xl font-extrabold text-[#15803D]">${{ number_format($totals['completed'], 2) }} MXN</p>
@@ -22,10 +22,6 @@
         <div class="rounded-2xl bg-white p-4 ring-1 ring-black/5 shadow-sm">
             <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Pendiente</p>
             <p class="mt-1 font-[Poppins] text-2xl font-extrabold text-[#A16207]">${{ number_format($totals['pending'], 2) }} MXN</p>
-        </div>
-        <div class="rounded-2xl bg-white p-4 ring-1 ring-black/5 shadow-sm">
-            <p class="text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Reembolsado</p>
-            <p class="mt-1 font-[Poppins] text-2xl font-extrabold text-[#991B1B]">${{ number_format($totals['refunded'], 2) }} MXN</p>
         </div>
     </div>
 
