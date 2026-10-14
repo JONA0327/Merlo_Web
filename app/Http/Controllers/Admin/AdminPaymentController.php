@@ -11,6 +11,7 @@ use App\Services\TicketImageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -58,6 +59,56 @@ class AdminPaymentController extends Controller
             });
         }
 
+        // Week strip + single-day scope — skipped while searching by
+        // reference/code (that search is explicitly "find this one
+        // regardless of date", not a browsing view). Without it, this
+        // page used to dump every payment ever taken onto one endless
+        // list; now it defaults to today and a 7-day strip to pick
+        // another date, same pattern as Guías.
+        $weekStart = null;
+        $selectedDate = null;
+        $days = collect();
+
+        if (! $search) {
+            $weekStart = Carbon::parse($request->query('inicio', now()->toDateString()))->startOfWeek(Carbon::SUNDAY);
+            $weekEnd = $weekStart->copy()->addDays(6);
+            $selectedDate = Carbon::parse($request->query('fecha', now()->toDateString()))->startOfDay();
+
+            // A reservation's "day" is its real trip's departure date once
+            // one exists, or its travel_date while still staged in a Guía
+            // with no real trip yet (landing_route_id null) — same
+            // fallback used throughout the Guías work. Bounds must be full
+            // start/end-of-day datetimes, not bare date strings: `day` is
+            // a datetime column, and whereBetween('day', [date, date])
+            // for a single day collapses to one exact instant (and even
+            // then can miss it — SQLite compares the stored "Y-m-d
+            // H:i:s" string against the bare "Y-m-d" bound lexicographically,
+            // where the longer string always sorts after it).
+            $scopeToRange = function ($q, Carbon $from, Carbon $to) {
+                $bounds = [$from->copy()->startOfDay(), $to->copy()->endOfDay()];
+                $q->where(function ($q2) use ($bounds) {
+                    $q2->whereHas('landingRoute', fn ($lq) => $lq->whereBetween('day', $bounds))
+                        ->orWhere(fn ($q3) => $q3->whereNull('landing_route_id')->whereBetween('travel_date', $bounds));
+                });
+            };
+
+            // One query for the whole week's counts (for the strip's
+            // badges) instead of seven.
+            $weekRows = (clone $query)->tap(fn ($q) => $scopeToRange($q, $weekStart, $weekEnd))->get(['id', 'landing_route_id', 'travel_date']);
+            $dayCounts = $weekRows->countBy(fn (SeatReservation $r) => ($r->landingRoute?->day ?? $r->travel_date)?->toDateString());
+
+            $days = collect(range(0, 6))->map(fn (int $i) => (function (Carbon $date) use ($dayCounts, $selectedDate) {
+                return [
+                    'date' => $date,
+                    'count' => $dayCounts->get($date->toDateString(), 0),
+                    'isPast' => $date->lt(today()),
+                    'isSelected' => $date->isSameDay($selectedDate),
+                ];
+            })($weekStart->copy()->addDays($i)));
+
+            $query->tap(fn ($q) => $scopeToRange($q, $selectedDate, $selectedDate));
+        }
+
         $payments = $query->orderByDesc('id')->paginate(20)->withQueryString();
 
         // Attach the other seats in each purchase (for display only —
@@ -82,9 +133,20 @@ class AdminPaymentController extends Controller
             'pending' => (clone $query)->where('payment_status', 'pending')->sum('unit_price'),
         ];
 
+        // Only for a day that's already gone by — an at-a-glance "how much
+        // business happened that day" regardless of what ended up paid,
+        // pending, or never resolved, since Cobrado/Pendiente alone don't
+        // add up to the full picture once nothing more is coming in.
+        if ($selectedDate && $selectedDate->lt(today())) {
+            $totals['estimated'] = (clone $query)->sum('unit_price');
+        }
+
         return view('admin.pagos.index', [
             'payments' => $payments,
             'totals' => $totals,
+            'weekStart' => $weekStart,
+            'selectedDate' => $selectedDate,
+            'days' => $days,
             'filters' => [
                 'status' => $status,
                 'method' => $method,
