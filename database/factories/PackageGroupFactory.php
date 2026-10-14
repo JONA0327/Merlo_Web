@@ -19,7 +19,7 @@ class PackageGroupFactory extends Factory
     {
         return [
             'client_name' => fake()->name(),
-            'client_email' => fake()->safeEmail(),
+            'phone' => fake()->numerify('##########'),
             'total_price' => fake()->randomFloat(2, 100, 1500),
             'tracking_code' => PackageGroup::generateTrackingCode(),
         ];

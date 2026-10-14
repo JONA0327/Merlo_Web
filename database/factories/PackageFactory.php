@@ -32,7 +32,7 @@ class PackageFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => Package::STATUS_RECOLECTADO,
             'client_name' => fake()->name(),
-            'client_email' => fake()->safeEmail(),
+            'phone' => fake()->numerify('##########'),
             'price' => fake()->randomFloat(2, 50, 800),
             'collected_by' => User::factory(),
             'collected_at' => now(),

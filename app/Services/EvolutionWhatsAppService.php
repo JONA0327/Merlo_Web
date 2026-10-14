@@ -426,6 +426,55 @@ class EvolutionWhatsAppService
     }
 
     /**
+     * Paquetería registration notice — plain text, same sendText pattern
+     * as sendReservationNotice() above. $folioRangeLabel is already
+     * formatted (e.g. "F-000101 a F-000105" or just "F-000101" for qty=1).
+     *
+     * @throws RuntimeException when not configured, the phone is invalid,
+     *                         or the API call itself fails.
+     */
+    public function sendPackageRegistration(string $phone, string $customerName, string $folioRangeLabel, int $qty, ?float $total): void
+    {
+        $this->assertConfigured();
+
+        $number = self::normalizePhone($phone);
+        if (! $number) {
+            throw new RuntimeException('El teléfono del cliente no es válido.');
+        }
+
+        $lines = [
+            '*MERLO Transportes* 📦',
+            '',
+            "Hola {$customerName}, tu".($qty > 1 ? 's' : '')." paquete".($qty > 1 ? 's' : '')." quedó registrado:",
+            '',
+            '🏷️ Folio'.($qty > 1 ? 's' : '').": *{$folioRangeLabel}*",
+            "📦 Cantidad: {$qty}",
+        ];
+
+        if ($total !== null) {
+            $lines[] = '💵 Total a pagar: $'.number_format($total, 2).' MXN';
+        }
+
+        $lines[] = '';
+        $lines[] = 'Guarda este mensaje como comprobante.';
+
+        $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
+            'number' => $number,
+            'text' => implode("\n", $lines),
+        ]);
+
+        if ($response->failed()) {
+            Log::warning('Evolution API WhatsApp package registration notice failed', [
+                'folio_range' => $folioRangeLabel,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('Evolution API respondió con error '.$response->status().'.');
+        }
+    }
+
+    /**
      * Digits only, with the Mexico country code (52) auto-prefixed on a
      * plain 10-digit local number — the near-universal shape a Merlo
      * admin types into the apartado form. A number already longer than

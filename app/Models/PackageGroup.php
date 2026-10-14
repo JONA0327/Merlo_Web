@@ -16,7 +16,9 @@ class PackageGroup extends Model
     protected $fillable = [
         'client_name',
         'client_email',
+        'phone',
         'total_price',
+        'photo_path',
         'tracking_code',
         'created_by',
     ];

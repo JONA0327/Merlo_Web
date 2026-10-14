@@ -449,7 +449,7 @@
                     <ul class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
                         @foreach ([
                             'Entrega el mismo día entre CDMX y SLP',
-                            'Rastreo de tu envío en tiempo real',
+                            'Te avisamos tu folio por WhatsApp',
                             'Empaque y manejo seguro garantizado',
                             'Tarifas accesibles por kilo o volumen',
                         ] as $item)
@@ -461,12 +461,6 @@
                             </li>
                         @endforeach
                     </ul>
-
-                    <div class="mt-9 flex flex-col sm:flex-row gap-4">
-                        <a href="{{ route('paqueteria.rastreo') }}" class="inline-flex items-center justify-center gap-2 rounded-full bg-[#8C1D2B] px-7 py-3.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
-                            Rastrear paquete
-                        </a>
-                    </div>
                 </div>
 
                 <div class="order-1 lg:order-2 flex justify-center">

@@ -17,7 +17,6 @@ use App\Http\Controllers\Admin\AdminTripTicketPriceController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminWhatsAppController;
 use App\Http\Controllers\ClientDashboardController;
-use App\Http\Controllers\PackageTrackingController;
 use App\Http\Controllers\GuestTicketLookupController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SeatHoldController;
@@ -73,8 +72,6 @@ Route::get('/viajes/buscar', function () {
         'returnDate' => $returnDate,
     ]);
 })->name('travel.search');
-
-Route::get('/rastreo', [PackageTrackingController::class, 'show'])->name('paqueteria.rastreo');
 
 // Guest ticket lookup — the "I bought without an account, where are my
 // tickets?" flow. Public (gates by the customer_name + customer_phone
@@ -231,14 +228,16 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
 
 Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/paqueteria', [AdminPackageController::class, 'index'])->name('paqueteria');
-    Route::get('/paqueteria/qr/crear', [AdminPackageController::class, 'qrCreate'])->name('paqueteria.qr.create');
-    Route::post('/paqueteria/qr', [AdminPackageController::class, 'qrStore'])->name('paqueteria.qr.store');
-    Route::get('/paqueteria/qr/lotes', [AdminPackageController::class, 'qrBatches'])->name('paqueteria.qr.batches');
-    Route::get('/paqueteria/qr/lotes/{batch}/pdf', [AdminPackageController::class, 'qrBatchDownload'])->name('paqueteria.qr.batches.download');
+    Route::get('/paqueteria/qr', [AdminPackageController::class, 'qrUniversal'])->name('paqueteria.qr-universal');
+    Route::get('/paqueteria/registrar', [AdminPackageController::class, 'registerCreate'])->name('paqueteria.registrar.create');
+    Route::post('/paqueteria/registrar', [AdminPackageController::class, 'registerStore'])->name('paqueteria.registrar.store');
+    Route::get('/paqueteria/folios/crear', [AdminPackageController::class, 'folioGuideCreate'])->name('paqueteria.folios.create');
+    Route::post('/paqueteria/folios', [AdminPackageController::class, 'folioGuideStore'])->name('paqueteria.folios.store');
+    Route::get('/paqueteria/folios/lotes', [AdminPackageController::class, 'qrBatches'])->name('paqueteria.qr.batches');
+    Route::get('/paqueteria/folios/lotes/{batch}/pdf', [AdminPackageController::class, 'qrBatchDownload'])->name('paqueteria.qr.batches.download');
     Route::post('/paqueteria/buscar', [AdminPackageController::class, 'lookup'])->name('paqueteria.paquetes.lookup');
     Route::get('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'show'])->name('paqueteria.paquetes.show');
     Route::get('/paqueteria/paquetes/{package}/foto', [AdminPackageController::class, 'photo'])->name('paqueteria.paquetes.photo');
-    Route::post('/paqueteria/paquetes/{package}/asignar', [AdminPackageController::class, 'assign'])->name('paqueteria.paquetes.assign');
     Route::post('/paqueteria/paquetes/{package}/estado', [AdminPackageController::class, 'updateStatus'])->name('paqueteria.paquetes.update-status');
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
 });

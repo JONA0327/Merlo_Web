@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Collection;
 
 class Package extends Model
 {
@@ -51,22 +50,13 @@ class Package extends Model
         self::STATUS_NO_ENTREGADO,
     ];
 
-    /**
-     * How far along the delivery pipeline each status is — used to find the
-     * "furthest" status across a group's packages. no_entregado is a
-     * terminal exception, not a rung on this ladder.
-     */
-    public const PROGRESS_ORDER = [
-        self::STATUS_RECOLECTADO => 1,
-        self::STATUS_EN_RECORRIDO => 2,
-        self::STATUS_ENTREGADO => 3,
-    ];
-
     protected $fillable = [
         'tracking_code',
+        'folio_number',
         'status',
         'client_name',
         'client_email',
+        'phone',
         'price',
         'photo_path',
         'package_group_id',
@@ -134,6 +124,21 @@ class Package extends Model
         return $this->isGrouped() ? $this->group->total_price : $this->price;
     }
 
+    public function displayPhone(): ?string
+    {
+        return $this->isGrouped() ? $this->group->phone : $this->phone;
+    }
+
+    public function displayPhotoPath(): ?string
+    {
+        return $this->isGrouped() ? $this->group->photo_path : $this->photo_path;
+    }
+
+    public function getFolioLabelAttribute(): ?string
+    {
+        return $this->folio_number === null ? null : PackageFolioSequence::formatFolio($this->folio_number);
+    }
+
     /**
      * A short, unambiguous (no 0/O/1/I) code a client can read off an email
      * or type by hand — retried until it doesn't collide with an existing one.
@@ -155,25 +160,5 @@ class Package extends Model
     public function scopeStatus(Builder $query, string $status): Builder
     {
         return $query->where('status', $status);
-    }
-
-    /**
-     * The furthest-along status among a set of packages — e.g. if one
-     * package in a shipment is already en_recorrido while the rest are
-     * still recolectado, the shipment as a whole reads as en_recorrido.
-     * Packages stuck at no_entregado don't count as progress; if every
-     * package in the set failed, the whole shipment reads as no_entregado.
-     *
-     * @param  Collection<int, self>  $packages
-     */
-    public static function furthestStatus($packages): string
-    {
-        $progressing = $packages->filter(fn (self $p) => array_key_exists($p->status, self::PROGRESS_ORDER));
-
-        if ($progressing->isEmpty()) {
-            return self::STATUS_NO_ENTREGADO;
-        }
-
-        return $progressing->sortByDesc(fn (self $p) => self::PROGRESS_ORDER[$p->status])->first()->status;
     }
 }

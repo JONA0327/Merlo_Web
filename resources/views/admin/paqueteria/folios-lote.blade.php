@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Lote de QR · Paquetería</title>
+        <title>Lote de folios · Paquetería</title>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>
             @media print {
@@ -14,8 +14,8 @@
     <body class="bg-[#FFFBF6] text-[#2B1113] antialiased">
         <div class="print:hidden sticky top-0 z-10 bg-white border-b border-black/5 px-4 sm:px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p class="text-sm font-bold text-[#2B1113]">{{ $packages->count() }} etiquetas generadas</p>
-                <p class="text-xs text-[#2B1113]/50">Imprime esta hoja y pega cada QR en su paquete correspondiente. El PDF ya quedó guardado en "Lotes generados".</p>
+                <p class="text-sm font-bold text-[#2B1113]">{{ $packages->count() }} folios generados</p>
+                <p class="text-xs text-[#2B1113]/50">Imprime esta hoja y pega cada folio en su paquete correspondiente. El PDF ya quedó guardado en "Lotes generados". Estos folios no vencen.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 sm:gap-3">
                 <a href="{{ route('admin.paqueteria.qr.batches') }}" class="rounded-xl px-4 py-2 text-sm font-semibold text-[#2B1113]/60 hover:bg-black/5 transition-colors">Lotes generados</a>
@@ -26,11 +26,10 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 p-6 print:grid-cols-3 print:gap-4 print:p-0">
+        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4 p-6 print:grid-cols-4 print:gap-3 print:p-0">
             @foreach ($packages as $package)
-                <div class="flex flex-col items-center rounded-2xl border border-black/10 bg-white p-4 text-center break-inside-avoid">
-                    <div class="h-[160px] w-[160px] [&>svg]:h-full [&>svg]:w-full">{!! $svgs[$package->id] !!}</div>
-                    <p class="mt-2 font-mono text-xs font-bold tracking-wider text-[#2B1113]">{{ $package->tracking_code }}</p>
+                <div class="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-white p-4 text-center break-inside-avoid">
+                    <p class="font-mono text-lg font-black tracking-wider text-[#2B1113]">{{ $package->folio_label }}</p>
                     <p class="text-[10px] text-[#2B1113]/40">Merlo Transportes · Paquetería</p>
                 </div>
             @endforeach
