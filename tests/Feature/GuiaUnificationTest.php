@@ -305,3 +305,64 @@ test('changing the plantilla of an open trip only changes that trip', function (
 
     $this->actingAs(guiaAdmin())->get(route('admin.guias.show', [$guide, 'fecha' => $d1]))->assertOk();
 });
+
+test('a guide-staged apartado for a future date sends the "apartado registrado" WhatsApp right away', function () {
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(20)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    $seat = $a->seats()->where('label', '1')->first();
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.store', $guide), [
+            'travel_date' => $d, 'customer_name' => 'Lejana', 'customer_phone' => '4444416578', 'trip_type' => 'one_way',
+            'paid' => '0', 'payment_method' => [$seat->id => 'cash'], 'seat_ids' => [$seat->id],
+        ])
+        ->assertSessionHas('success');
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/message/sendText/') && str_contains($r['text'], 'tu apartado fue registrado') && $r['number'] === '524444416578');
+});
+
+test('a guide-staged apartado warns the admin when the WhatsApp notice could not be sent', function () {
+    Http::swap(new \Illuminate\Http\Client\Factory); // beforeEach's success fake would win otherwise
+    Http::fake(['*' => Http::response(['error' => 'down'], 500)]);
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(20)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    $seat = $a->seats()->where('label', '1')->first();
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.store', $guide), [
+            'travel_date' => $d, 'customer_name' => 'Lejana', 'customer_phone' => '4444416578', 'trip_type' => 'one_way',
+            'paid' => '0', 'payment_method' => [$seat->id => 'cash'], 'seat_ids' => [$seat->id],
+        ])
+        ->assertSessionHas('warning');
+
+    expect(SeatReservation::count())->toBe(1); // the apartado is kept even if WhatsApp is down
+});
+
+test('provisioning "de planta" apartados does not duplicate a seat after the date switched plantilla', function () {
+    [$a, $b] = guiaTwoBuses();
+    $d = now()->addDays(3);
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d->toDateString(), 'date_to' => $d->toDateString()]);
+    StandingReservation::create([
+        'from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'bus_unit_seat_id' => $a->seats()->where('label', '1')->value('id'),
+        'customer_name' => 'Planta', 'customer_phone' => '4444416578', 'trip_type' => 'one_way', 'is_active' => true,
+        'weekdays' => [$d->dayOfWeek],
+    ]);
+
+    expect(StandingReservation::provisionGuideReservations($guide))->toBe(1);
+
+    $this->actingAs(guiaAdmin())->put(route('admin.guias.date-bus', $guide), ['travel_date' => $d->toDateString(), 'bus_unit_id' => $b->id]);
+
+    // Re-run (the guides index does this on every load): still exactly one.
+    expect(StandingReservation::provisionGuideReservations($guide->fresh()))->toBe(0)
+        ->and(SeatReservation::where('trip_guide_id', $guide->id)->count())->toBe(1);
+
+    // Same through the whole-guide route (no per-date override): label match, no duplicate.
+    $guide2 = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d->copy()->addDay()->toDateString(), 'date_to' => $d->copy()->addDay()->toDateString()]);
+    $seatA = $a->seats()->where('label', '1')->value('id');
+    SeatReservation::create(['trip_guide_id' => $guide2->id, 'bus_unit_seat_id' => $b->seats()->where('label', '1')->value('id'), 'travel_date' => $d->copy()->addDay()->toDateString(),
+        'trip_type' => 'one_way', 'leg' => 'outbound', 'unit_price' => 1, 'customer_name' => 'Planta', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending', 'notes' => 'Asiento de planta']);
+    StandingReservation::where('bus_unit_seat_id', $seatA)->update(['weekdays' => null]);
+    expect(StandingReservation::provisionGuideReservations($guide2))->toBe(0);
+});

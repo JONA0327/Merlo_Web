@@ -265,5 +265,47 @@
                 });
             })();
         </script>
+        {{-- Anti doble envío: en cualquier formulario POST del admin, al enviar
+             se bloquean los botones y se muestra "Guardando…" hasta que el
+             servidor responde (con red lenta un segundo clic duplicaba el
+             apartado). Los formularios cancelados por un confirm no entran,
+             y los que abren otra pestaña (target) se dejan en paz. --}}
+        <script>
+            (function () {
+                const spinner = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" stroke-linecap="round" class="opacity-75"/></svg>';
+
+                function unlock(form) {
+                    delete form.dataset.submitting;
+                    form.querySelectorAll('[data-idle-html]').forEach((b) => {
+                        b.innerHTML = b.dataset.idleHtml;
+                        b.disabled = false;
+                        delete b.dataset.idleHtml;
+                    });
+                }
+
+                document.addEventListener('submit', (e) => {
+                    const form = e.target;
+                    if (e.defaultPrevented || form.method.toLowerCase() !== 'post' || form.target) return;
+                    if (form.dataset.submitting) { e.preventDefault(); return; }
+                    form.dataset.submitting = '1';
+                    // After the browser has collected the form data, so the
+                    // disabled buttons don't change what gets sent.
+                    setTimeout(() => {
+                        form.querySelectorAll('button[type=submit], button:not([type])').forEach((b) => {
+                            b.dataset.idleHtml = b.innerHTML;
+                            b.disabled = true;
+                            b.innerHTML = '<span class="inline-flex items-center gap-1.5">' + spinner + 'Guardando…</span>';
+                        });
+                    }, 0);
+                    // Safety net: a response that never navigates (file download) must not leave the form stuck.
+                    setTimeout(() => unlock(form), 30000);
+                });
+
+                // Back/forward cache restores the page with the buttons still locked.
+                window.addEventListener('pageshow', (e) => {
+                    if (e.persisted) document.querySelectorAll('form[data-submitting]').forEach(unlock);
+                });
+            })();
+        </script>
     </body>
 </html>

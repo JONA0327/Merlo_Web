@@ -153,11 +153,25 @@ class StandingReservation extends Model
                 continue;
             }
 
-            $takenSeatIds = SeatReservation::whereNull('landing_route_id')
+            // A date that runs its own plantilla (per-date override) has its
+            // standing seats on THAT bus, not this assignment's — staging
+            // them here would create seats on the wrong unit.
+            if ($guide->busUnitIdFor($date) !== $guide->bus_unit_id) {
+                continue;
+            }
+
+            // Compared by seat LABEL, not id: after a plantilla switch the
+            // existing apartado points at the same-labeled seat on another
+            // bus (different id), and an id check re-staged it as a duplicate
+            // every time this ran.
+            $takenLabels = SeatReservation::whereNull('landing_route_id')
                 ->whereNotNull('trip_guide_id')
                 ->whereDate('travel_date', $date->toDateString())
                 ->where('leg', SeatReservation::LEG_OUTBOUND)
-                ->pluck('bus_unit_seat_id')
+                ->with('seat:id,label')
+                ->get()
+                ->map(fn (SeatReservation $r) => $r->seat?->label)
+                ->filter()
                 ->all();
 
             // Each standing seat stages as its own separate apartado —
@@ -165,7 +179,8 @@ class StandingReservation extends Model
             // doesn't take the others with it, same as any other
             // independently-managed standing assignment.
             foreach ($dayAssignments as $assignment) {
-                if (in_array($assignment->bus_unit_seat_id, $takenSeatIds, true)) {
+                $label = $assignment->seat?->label;
+                if ($label === null || in_array($label, $takenLabels, true)) {
                     continue;
                 }
 
@@ -188,7 +203,7 @@ class StandingReservation extends Model
                     'notes' => 'Asiento de planta'.($assignment->notes ? ' — '.$assignment->notes : ''),
                 ]);
 
-                $takenSeatIds[] = $assignment->bus_unit_seat_id;
+                $takenLabels[] = $label;
                 $applied++;
             }
         }

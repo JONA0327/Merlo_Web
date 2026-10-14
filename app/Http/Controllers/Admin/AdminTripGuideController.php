@@ -702,11 +702,13 @@ class AdminTripGuideController extends Controller
         // finally fires, which can be weeks later). One per resulting
         // group — regroupByPayment() above may have split the original
         // selection into several if it mixed payment methods/status.
+        $noticeFailed = false;
         foreach ($roots as $groupRoot) {
             try {
                 $whatsapp->sendReservationNotice($groupRoot->groupMembers());
             } catch (\Throwable $e) {
                 Log::warning('Guía reservation-confirmation notice failed for reservation '.$groupRoot->id.': '.$e->getMessage());
+                $noticeFailed = true;
             }
         }
 
@@ -716,10 +718,15 @@ class AdminTripGuideController extends Controller
         }
 
         $seatCount = count($data['seat_ids']);
+        $summary = "Apartado en guía creado para {$data['customer_name']} ({$seatCount} asiento".($seatCount === 1 ? '' : 's').", {$date->format('d/m/Y')}). Se vinculará al viaje real en cuanto se abra.";
 
+        // Silent failure before: the admin saw "creado" even when the
+        // customer never got the WhatsApp confirmation.
         return redirect()
             ->route('admin.guias.show', [$guide, 'fecha' => $date->toDateString()])
-            ->with('success', "Apartado en guía creado para {$data['customer_name']} ({$seatCount} asiento".($seatCount === 1 ? '' : 's').", {$date->format('d/m/Y')}). Se vinculará al viaje real en cuanto se abra.");
+            ->with($noticeFailed ? 'warning' : 'success', $noticeFailed
+                ? $summary.' ⚠ No se pudo enviar el aviso por WhatsApp — avísale al cliente (revisa Administración → WhatsApp).'
+                : $summary);
     }
 
     /**
