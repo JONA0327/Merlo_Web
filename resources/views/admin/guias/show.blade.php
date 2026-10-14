@@ -9,6 +9,9 @@
             <p class="mt-1 text-sm text-[#2B1113]/60">
                 Plantilla: {{ $guide->busUnit->name }} ·
                 {{ $guide->date_from->format('d/m/Y') }} – {{ $guide->date_to->format('d/m/Y') }}
+                @if ($dateUnit->id !== $guide->bus_unit_id)
+                    · <span class="font-semibold text-[#8C1D2B]">el {{ $date->format('d/m') }} usa {{ $dateUnit->name }}</span>
+                @endif
             </p>
         </div>
         <a href="{{ route('admin.guias.edit', $guide) }}" class="text-xs font-semibold text-[#2B1113]/60 hover:text-[#2B1113]">Editar guía</a>
@@ -43,8 +46,24 @@
                 <span class="rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-700">Fecha pasada — solo lectura</span>
             @endif
         </form>
+        @unless ($date->lt(\Illuminate\Support\Carbon::today()))
+            <form method="POST" action="{{ route('admin.guias.date-bus', $guide) }}" class="mt-3 flex flex-wrap items-end gap-3" onsubmit="return confirm('¿Cambiar la plantilla solo del {{ $date->format('d/m/Y') }}? Los apartados de ese día se pasan al asiento con la misma etiqueta.')">
+                @csrf
+                @method('PUT')
+                <input type="hidden" name="travel_date" value="{{ $date->format('Y-m-d') }}">
+                <label class="block">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Plantilla de esta fecha</span>
+                    <select name="bus_unit_id" class="mt-1 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        @foreach ($busUnits as $unit)
+                            <option value="{{ $unit->id }}" @selected($unit->id === $dateUnit->id)>{{ $unit->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity">Cambiar plantilla</button>
+            </form>
+        @endunless
         @php
-            $openTrip = \App\Models\LandingRoute::where('from', $guide->from)->where('to', $guide->to)->where('bus_unit_id', $guide->bus_unit_id)->whereDate('day', $date->toDateString())->first();
+            $openTrip = \App\Models\LandingRoute::where('from', $guide->from)->where('to', $guide->to)->whereDate('day', $date->toDateString())->first();
         @endphp
         @if ($openTrip && $hasPendingForDate && ! $date->lt(\Illuminate\Support\Carbon::today()))
             <form method="POST" action="{{ route('admin.guias.sync', $guide) }}" class="mt-3 flex flex-wrap items-center gap-3">
@@ -90,13 +109,13 @@
 
                 @php
                     $tripTypeLabels = \App\Models\TripTicketPrice::tripTypes();
-                    $zones = $guide->busUnit->seats->pluck('zone')->filter()->unique()->sort()->values();
+                    $zones = $dateUnit->seats->pluck('zone')->filter()->unique()->sort()->values();
                 @endphp
                 <label class="mt-3 block">
                     <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Categoría</span>
                     <select name="trip_type" id="admin-trip-type-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                         @foreach ($tripTypeLabels as $type => $label)
-                            @php $estimatedPrice = \App\Models\TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $type); @endphp
+                            @php $estimatedPrice = \App\Models\TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $dateUnit->id, $type); @endphp
                             <option value="{{ $type }}" {{ $type === \App\Models\TripTicketPrice::TYPE_ONE_WAY ? 'selected' : '' }}>{{ $label }} — {{ $estimatedPrice > 0 ? '$'.number_format($estimatedPrice, 2) : 'sin precio' }}</option>
                         @endforeach
                     </select>
@@ -278,10 +297,10 @@
     <script>
         window.__ADMIN_SEAT_PICKER__ = {
             tripEnded: {{ $date->lt(\Illuminate\Support\Carbon::today()) ? 'true' : 'false' }},
-            canvasWidth: {{ $guide->busUnit->canvas_width }},
-            canvasHeight: {{ $guide->busUnit->canvas_height }},
-            hasUpperDeck: {{ $guide->busUnit->has_upper_deck ? 'true' : 'false' }},
-            seats: {!! json_encode($guide->busUnit->seats->map(fn ($s) => [
+            canvasWidth: {{ $dateUnit->canvas_width }},
+            canvasHeight: {{ $dateUnit->canvas_height }},
+            hasUpperDeck: {{ $dateUnit->has_upper_deck ? 'true' : 'false' }},
+            seats: {!! json_encode($dateUnit->seats->map(fn ($s) => [
                 'id' => $s->id,
                 'label' => $s->label,
                 'kind' => $s->kind,

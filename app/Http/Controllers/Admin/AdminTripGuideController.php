@@ -318,11 +318,14 @@ class AdminTripGuideController extends Controller
         // the picker, same as Apartar asientos (StandingReservation
         // never auto-applies to a guide, only a real trip — see
         // applyToTrip() — so there's no per-guide skip concept here).
-        $standingSeatIds = StandingReservation::activeSeatIdsFor($guide->from, $guide->to, $guide->bus_unit_id, null, $date->dayOfWeek);
+        $dateUnit = $guide->busUnitFor($date);
+        $standingSeatIds = StandingReservation::activeSeatIdsFor($guide->from, $guide->to, $dateUnit->id, null, $date->dayOfWeek);
 
         return view('admin.guias.show', [
             'guide' => $guide,
             'date' => $date,
+            'dateUnit' => $dateUnit,
+            'busUnits' => BusUnit::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'pendingReservationsForDate' => $pendingForDate->keyBy('bus_unit_seat_id'),
             'rootsByCustomer' => $rootsByCustomer,
             'filters' => $filters,
@@ -332,7 +335,7 @@ class AdminTripGuideController extends Controller
             // that no longer belongs to this guide's current bus unit.
             // Natural sort so labels read 1,2,3…10,11 instead of the
             // lexicographic 1,10,11,2,20…
-            'currentBusSeats' => $guide->busUnit->seats()->bookable()->get()->sortBy('label', SORT_NATURAL)->values(),
+            'currentBusSeats' => $dateUnit->seats()->bookable()->get()->sortBy('label', SORT_NATURAL)->values(),
             // Seats already held in THIS guide for a given date+leg — same
             // scope reassignSeat() itself checks — so the dropdown only
             // ever offers seats that are actually free that day.
@@ -468,7 +471,7 @@ class AdminTripGuideController extends Controller
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
                 'integer',
-                Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $guide->bus_unit_id),
+                Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $guide->busUnitIdFor($request->date('travel_date') ?? now())),
             ],
             // Same "paid independent from payment method, keyed by seat"
             // shape as Apartar asientos — a group can split across
@@ -502,6 +505,7 @@ class AdminTripGuideController extends Controller
         ]);
 
         $date = Carbon::parse($data['travel_date'])->startOfDay();
+        $dateBusUnitId = $guide->busUnitIdFor($date);
 
         // A real trip already exists for this date — sell against it
         // directly (full price, real ticket/QR, abono, mancuerna, "de
@@ -528,12 +532,12 @@ class AdminTripGuideController extends Controller
         // another trip, if any (see estimateUnitPrice()); otherwise 0,
         // same as an unconfigured trip shows "sin precio" elsewhere.
         $regresoPrice = $allowsReturnDate
-            ? TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, TripTicketPrice::TYPE_REGRESO)
+            ? TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $dateBusUnitId, TripTicketPrice::TYPE_REGRESO)
             : 0.0;
         // Same reasoning as $regresoPrice above — needed so the immediate
         // WhatsApp confirmation below can show an actual total instead of
         // $0 while this apartado waits on a real trip to price off of.
-        $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $guide->bus_unit_id, $data['trip_type'], count($data['seat_ids']));
+        $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $dateBusUnitId, $data['trip_type'], count($data['seat_ids']));
 
         $tripType = $data['trip_type'];
         $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
@@ -628,7 +632,7 @@ class AdminTripGuideController extends Controller
                             [
                                 'from' => $guide->from,
                                 'to' => $guide->to,
-                                'bus_unit_id' => $guide->bus_unit_id,
+                                'bus_unit_id' => $dateBusUnitId,
                                 'bus_unit_seat_id' => $seatId,
                             ],
                             [
@@ -1072,7 +1076,7 @@ class AdminTripGuideController extends Controller
 
         $busUnitId = $reservation->landing_route_id !== null
             ? $reservation->landingRoute->bus_unit_id
-            : $guide->bus_unit_id;
+            : $guide->busUnitIdFor($reservation->travel_date);
 
         $data = $request->validate([
             'bus_unit_seat_id' => [
@@ -1600,6 +1604,60 @@ class AdminTripGuideController extends Controller
 
         return $moved
             ? $back->with('warning', 'Estos asientos no existen o ya estaban tomados en la nueva plantilla: '.implode(', ', $moved).' — reasígnalos; mientras tanto no se les envía el boleto.')
+            : $back;
+    }
+
+    /**
+     * Plantilla for ONE date of a guide that has no real trip yet (once
+     * it does, changeTripBus() handles it). Stores a per-date override and
+     * moves that date's staged apartados to the same-labeled seats; the
+     * rest of the guide keeps its own bus.
+     */
+    public function changeDateBus(Request $request, TripGuide $guide): RedirectResponse
+    {
+        $data = $request->validate([
+            'travel_date' => ['required', 'date', 'after_or_equal:'.$guide->date_from->toDateString(), 'before_or_equal:'.$guide->date_to->toDateString()],
+            'bus_unit_id' => ['required', 'exists:bus_units,id'],
+        ]);
+
+        $date = Carbon::parse($data['travel_date'])->startOfDay();
+        $back = redirect()->route('admin.guias.show', [$guide, 'fecha' => $date->toDateString()]);
+
+        if ($this->matchingTrip($guide, $date)) {
+            return $back->with('error', 'Esta fecha ya tiene un viaje abierto — cambia la plantilla desde el viaje.');
+        }
+
+        if ($date->lt(Carbon::today())) {
+            return $back->with('error', 'Fecha pasada — solo lectura.');
+        }
+
+        $newBusUnit = BusUnit::findOrFail($data['bus_unit_id']);
+
+        if ($newBusUnit->id === $guide->busUnitIdFor($date)) {
+            return $back;
+        }
+
+        $unmatched = DB::transaction(function () use ($guide, $date, $newBusUnit) {
+            $unmatched = $guide->remapSeatsTo($newBusUnit, $date);
+
+            // Back to the guide's own bus: drop the override instead of storing a no-op.
+            $table = DB::table('trip_guide_date_units')->where('trip_guide_id', $guide->id)->whereDate('date', $date->toDateString());
+            if ($newBusUnit->id === $guide->bus_unit_id) {
+                $table->delete();
+            } else {
+                DB::table('trip_guide_date_units')->updateOrInsert(
+                    ['trip_guide_id' => $guide->id, 'date' => $date->toDateString()],
+                    ['bus_unit_id' => $newBusUnit->id, 'updated_at' => now(), 'created_at' => now()]
+                );
+            }
+
+            return $unmatched;
+        });
+
+        $back->with('success', 'Plantilla del '.$date->format('d/m/Y').' actualizada.');
+
+        return $unmatched->isNotEmpty()
+            ? $back->with('warning', 'No se pudieron ligar al mismo asiento en el otro autobús: '.$unmatched->implode(', ').'. Reasígnalos; mientras tanto no se les envía el boleto.')
             : $back;
     }
 

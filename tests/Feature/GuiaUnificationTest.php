@@ -243,3 +243,65 @@ test('updateAvailability updates a seat allowed_trip_type for the open trip', fu
 
     expect($seats[0]->fresh()->allowed_trip_type)->toBe('one_way');
 });
+
+function guiaTwoBuses(): array
+{
+    $mk = fn ($name, $labels) => tap(BusUnit::create(['name' => $name]), fn ($b) => collect($labels)->each(
+        fn ($l, $i) => BusUnitSeat::create(['bus_unit_id' => $b->id, 'label' => $l, 'type' => 'normal', 'pos_x' => $i, 'pos_y' => 0])
+    ));
+
+    return [$mk('Bus A', ['1', '2', '3']), $mk('Bus B', ['1', '2'])];
+}
+
+function guiaStaged($guide, $bus, string $date, string $label): SeatReservation
+{
+    return SeatReservation::create([
+        'trip_guide_id' => $guide->id, 'bus_unit_seat_id' => $bus->seats()->where('label', $label)->value('id'),
+        'travel_date' => $date, 'trip_type' => 'one_way', 'leg' => 'outbound', 'unit_price' => 100,
+        'customer_name' => 'Cliente '.$label.$date, 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+    ]);
+}
+
+test('changing the plantilla of one date moves only that date, not the whole guide', function () {
+    [$a, $b] = guiaTwoBuses();
+    $d1 = now()->addDays(3)->toDateString();
+    $d2 = now()->addDays(4)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d1, 'date_to' => $d2]);
+    $r1 = guiaStaged($guide, $a, $d1, '2');
+    $r2 = guiaStaged($guide, $a, $d2, '2');
+    $r3 = guiaStaged($guide, $a, $d1, '3'); // label 3 doesn't exist on Bus B
+
+    $this->actingAs(guiaAdmin())
+        ->put(route('admin.guias.date-bus', $guide), ['travel_date' => $d1, 'bus_unit_id' => $b->id])
+        ->assertSessionHas('warning');
+
+    $guide = $guide->fresh();
+    expect($guide->bus_unit_id)->toBe($a->id)
+        ->and($guide->busUnitIdFor(now()->addDays(3)))->toBe($b->id)
+        ->and($guide->busUnitIdFor(now()->addDays(4)))->toBe($a->id)
+        ->and($r1->fresh()->seat->bus_unit_id)->toBe($b->id)
+        ->and($r2->fresh()->seat->bus_unit_id)->toBe($a->id)
+        ->and($r3->fresh()->hasSeatMismatch())->toBeTrue()  // unmatched: held, no ticket
+        ->and($r1->fresh()->hasSeatMismatch())->toBeFalse();
+
+    $this->actingAs(guiaAdmin())->get(route('admin.guias.show', [$guide, 'fecha' => $d1]))->assertOk();
+});
+
+test('changing the plantilla of an open trip only changes that trip', function () {
+    [$a, $b] = guiaTwoBuses();
+    $d1 = now()->addDays(3)->toDateString();
+    $d2 = now()->addDays(4)->toDateString();
+    $t1 = LandingRoute::create(['from' => 'SLP', 'to' => 'CDMX', 'duration' => '1h', 'price' => '$1', 'available_seats' => 3, 'bus_unit_id' => $a->id, 'is_active' => true, 'day' => $d1]);
+    $t2 = LandingRoute::create(['from' => 'SLP', 'to' => 'CDMX', 'duration' => '1h', 'price' => '$1', 'available_seats' => 3, 'bus_unit_id' => $a->id, 'is_active' => true, 'day' => $d2]);
+    $guide = TripGuide::ensureForTrip($t1);
+
+    $this->actingAs(guiaAdmin())
+        ->put(route('admin.guias.trip-bus', $guide), ['travel_date' => $d1, 'bus_unit_id' => $b->id])
+        ->assertSessionHas('success');
+
+    expect($t1->fresh()->bus_unit_id)->toBe($b->id)
+        ->and($t2->fresh()->bus_unit_id)->toBe($a->id)
+        ->and($guide->fresh()->bus_unit_id)->toBe($a->id);
+
+    $this->actingAs(guiaAdmin())->get(route('admin.guias.show', [$guide, 'fecha' => $d1]))->assertOk();
+});

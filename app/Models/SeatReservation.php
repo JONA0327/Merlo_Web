@@ -708,7 +708,7 @@ class SeatReservation extends Model
 
         $expectedBusUnitId = $this->landing_route_id !== null
             ? $this->loadMissing('landingRoute')->landingRoute?->bus_unit_id
-            : $this->loadMissing('tripGuide')->tripGuide?->bus_unit_id;
+            : $this->loadMissing('tripGuide')->tripGuide?->busUnitIdFor($this->travel_date ?? now());
 
         return $expectedBusUnitId !== null && $this->seat->bus_unit_id !== $expectedBusUnitId;
     }

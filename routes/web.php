@@ -177,6 +177,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::get('/guias/{guide}/editar', [AdminTripGuideController::class, 'edit'])->name('guias.edit');
     Route::put('/guias/{guide}', [AdminTripGuideController::class, 'update'])->name('guias.update');
     Route::delete('/guias/{guide}', [AdminTripGuideController::class, 'destroy'])->name('guias.destroy');
+    Route::put('/guias/{guide}/fecha/plantilla', [AdminTripGuideController::class, 'changeDateBus'])->name('guias.date-bus');
     Route::put('/guias/{guide}/viaje/plantilla', [AdminTripGuideController::class, 'changeTripBus'])->name('guias.trip-bus');
     Route::post('/guias/{guide}/sincronizar', [AdminTripGuideController::class, 'syncTrip'])->name('guias.sync');
     Route::post('/guias/{guide}/reservas', [AdminTripGuideController::class, 'storeReservation'])->name('guias.reservations.store');

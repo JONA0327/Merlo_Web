@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A "guía" is a staging area for seat reservations made for a route/date
@@ -38,6 +39,35 @@ class TripGuide extends Model
     public function busUnit(): BelongsTo
     {
         return $this->belongsTo(BusUnit::class);
+    }
+
+    /** @var array<string, int>|null per-date bus overrides, 'Y-m-d' => bus_unit_id */
+    private ?array $dateUnits = null;
+
+    /**
+     * Per-date bus overrides (trip_guide_date_units): one guide spans many
+     * days but a given day can run a different "plantilla".
+     *
+     * @return array<string, int>
+     */
+    public function dateUnits(): array
+    {
+        return $this->dateUnits ??= DB::table('trip_guide_date_units')
+            ->where('trip_guide_id', $this->id)
+            ->pluck('bus_unit_id', 'date')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /** The bus unit this guide uses on $date: the override, else the guide's own. */
+    public function busUnitIdFor(\DateTimeInterface $date): int
+    {
+        return $this->dateUnits()[$date->format('Y-m-d')] ?? $this->bus_unit_id;
+    }
+
+    public function busUnitFor(\DateTimeInterface $date): BusUnit
+    {
+        return BusUnit::with('seats')->findOrFail($this->busUnitIdFor($date));
     }
 
     public function seatReservations(): HasMany
@@ -368,9 +398,15 @@ class TripGuide extends Model
      *
      * @return Collection<int, string> labels that couldn't be remapped
      */
-    public function remapSeatsTo(BusUnit $newBusUnit): Collection
+    public function remapSeatsTo(BusUnit $newBusUnit, ?\Carbon\Carbon $onlyDate = null): Collection
     {
-        $reservations = $this->pendingSeatReservations()->with('seat')->get();
+        // Whole-guide switch skips dates that run their own bus (per-date
+        // override); a per-date switch touches just that date.
+        $overrides = $this->dateUnits();
+        $reservations = $this->pendingSeatReservations()->with('seat')->get()
+            ->filter(fn (SeatReservation $r) => $onlyDate
+                ? $r->travel_date->isSameDay($onlyDate)
+                : ! isset($overrides[$r->travel_date->toDateString()]));
         $newSeatsByLabel = $newBusUnit->seats()->get()->keyBy('label');
 
         $unmatched = collect();
