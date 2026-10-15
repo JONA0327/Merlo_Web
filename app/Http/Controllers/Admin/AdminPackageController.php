@@ -65,11 +65,30 @@ class AdminPackageController extends Controller
         return view('admin.paqueteria.qr-universal', ['svg' => $svg]);
     }
 
-    public function registerCreate(): View
+    /**
+     * Opened by the universal QR. The people who scan it are not users, so
+     * this page needs NO login: a visitor gets a stripped-down form (no list
+     * of known clients, no price); staff who are logged in keep the full one.
+     */
+    public function registerCreate(Request $request): View
     {
+        if (! $request->user()?->canAccessPaqueteria()) {
+            return view('admin.paqueteria.registrar-publico');
+        }
+
         return view('admin.paqueteria.registrar', [
             'clients' => PackageClient::orderBy('name')->get(['name', 'phone']),
         ]);
+    }
+
+    /** Thank-you page for someone who registered a package without logging in. */
+    public function registerDone(Request $request)
+    {
+        $message = $request->session()->get('registered');
+
+        return $message
+            ? view('admin.paqueteria.registrado', ['message' => $message])
+            : redirect()->route('admin.paqueteria.registrar.create');
     }
 
     /**
@@ -82,6 +101,14 @@ class AdminPackageController extends Controller
      */
     public function registerStore(Request $request, EvolutionWhatsAppService $whatsapp): RedirectResponse
     {
+        $isStaff = (bool) $request->user()?->canAccessPaqueteria();
+
+        // Anyone with the QR can reach this: a bot that fills the hidden trap
+        // field gets a normal-looking "done" page and nothing is created.
+        if (! $isStaff && $request->filled('website')) {
+            return redirect()->route('admin.paqueteria.registrar.done')->with('registered', 'Listo.');
+        }
+
         $validated = $request->validate([
             'client_name' => ['required', 'string', 'max:255'],
             'qty' => ['required', 'integer', 'min:1', 'max:50'],
@@ -94,6 +121,11 @@ class AdminPackageController extends Controller
             'photos.*' => ['image', 'max:8192'],
         ]);
 
+        // A visitor cannot set the price: staff fill that in afterwards.
+        if (! $isStaff) {
+            $validated['price'] = null;
+        }
+
         $qty = (int) $validated['qty'];
         $paths = collect([$request->file('photo')])->merge($request->file('photos', []))->filter()
             ->map(fn (UploadedFile $file) => $this->storeEvidencePhoto($file))->values();
@@ -103,7 +135,7 @@ class AdminPackageController extends Controller
         $extraPaths = $paths->slice(1);
 
         $client = PackageClient::forRegistration($validated['client_name'], $validated['phone']);
-        $collectedBy = $request->user()->id;
+        $collectedBy = $request->user()?->id; // null when registered from the public QR form
         $collectedAt = now();
         $isGroup = false;
         $root = null;
@@ -182,6 +214,14 @@ class AdminPackageController extends Controller
         $message = $whatsappSent
             ? "Paquete{$this->plural($qty)} registrado{$this->plural($qty)} (folio".($qty > 1 ? 's' : '')." {$folioRange}) — avisamos por WhatsApp a {$validated['client_name']}."
             : "Paquete{$this->plural($qty)} registrado{$this->plural($qty)} (folio".($qty > 1 ? 's' : '')." {$folioRange}), pero no pudimos enviar el WhatsApp. Comparte el folio manualmente.";
+
+        if (! $isStaff) {
+            $guestMessage = $whatsappSent
+                ? "Registramos {$qty} paquete{$this->plural($qty)}. Tu folio: {$folioRange}. Te avisamos por WhatsApp al {$validated['phone']}."
+                : "Registramos {$qty} paquete{$this->plural($qty)}. Tu folio: {$folioRange}. No pudimos enviarte el WhatsApp: anota tu folio.";
+
+            return redirect()->route('admin.paqueteria.registrar.done')->with('registered', $guestMessage);
+        }
 
         return redirect()->route('admin.paqueteria.paquetes.show', $root)->with('success', $message);
     }

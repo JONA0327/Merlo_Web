@@ -451,3 +451,86 @@ test('photo validation: at least one image, at most ten, images only', function 
 
     expect(Package::count())->toBe(0);
 });
+
+// ---------------------------------------------------------------------------
+// Public registration (universal QR, no login)
+// ---------------------------------------------------------------------------
+
+function publicRegistration(array $over = []): array
+{
+    return $over + [
+        'client_name' => 'Visitante', 'qty' => 2, 'phone' => '4444416578',
+        'photos' => [UploadedFile::fake()->image('a.jpg'), UploadedFile::fake()->image('b.jpg')],
+    ];
+}
+
+test('a visitor without a session opens the registration form straight from the QR', function () {
+    \App\Models\PackageClient::forRegistration('Cliente Secreto', '4441112222');
+
+    $html = $this->get(route('admin.paqueteria.registrar.create'))->assertOk()->getContent();
+
+    expect($html)->toContain('Registra tu paquete')
+        ->and($html)->not->toContain('Cliente Secreto')       // no customer data leaks to the public
+        ->and($html)->not->toContain('known-clients')
+        ->and($html)->not->toContain('name="price"')            // a visitor cannot set the price
+        ->and($html)->toContain('name="website"');              // honeypot
+});
+
+test('logged-in staff keep the full form (known clients and price)', function () {
+    \App\Models\PackageClient::forRegistration('Cliente Conocido', '4441112222');
+
+    $html = $this->actingAs(paqueteriaUser())->get(route('admin.paqueteria.registrar.create'))->assertOk()->getContent();
+
+    expect($html)->toContain('Cliente Conocido')->and($html)->toContain('name="price"');
+});
+
+test('a visitor can register packages: folios are assigned, price is ignored, a thank-you page is shown', function () {
+    Storage::fake('local');
+
+    $response = $this->post(route('admin.paqueteria.registrar.store'), publicRegistration(['price' => 99999]));
+
+    $response->assertRedirect(route('admin.paqueteria.registrar.done'));
+    $group = PackageGroup::first();
+    expect(Package::count())->toBe(2)
+        ->and($group->total_price)->toBeNull()
+        ->and($group->created_by)->toBeNull()
+        ->and(Package::whereNotNull('collected_by')->count())->toBe(0)
+        ->and($group->extraPhotos)->toHaveCount(1);
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/message/sendText/') && str_contains($request['text'], 'F-000001'));
+
+    $this->followRedirects($response)->assertOk()
+        ->assertSee('Paquete registrado')->assertSee('F-000001');
+    // the confirmation is shown once, then it sends you back to the form
+    $this->get(route('admin.paqueteria.registrar.done'))->assertRedirect(route('admin.paqueteria.registrar.create'));
+});
+
+test('the hidden trap field makes a bot look successful but creates nothing', function () {
+    Storage::fake('local');
+
+    $this->post(route('admin.paqueteria.registrar.store'), publicRegistration(['website' => 'http://spam.example']))
+        ->assertRedirect(route('admin.paqueteria.registrar.done'));
+
+    expect(Package::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('the public registration is rate limited per IP', function () {
+    Storage::fake('local');
+
+    foreach (range(1, 5) as $i) {
+        $this->post(route('admin.paqueteria.registrar.store'), publicRegistration(['qty' => 1]))->assertRedirect();
+    }
+    $this->post(route('admin.paqueteria.registrar.store'), publicRegistration(['qty' => 1]))->assertStatus(429);
+    expect(Package::count())->toBe(5);
+});
+
+test('the rest of paquetería stays behind login: only the QR form is public', function () {
+    $package = Package::factory()->create(['status' => Package::STATUS_RECOLECTADO, 'folio_number' => 7]);
+
+    $this->get(route('admin.paqueteria'))->assertRedirect(route('login'));
+    $this->get(route('admin.paqueteria.paquetes.show', $package))->assertRedirect(route('login'));
+    $this->get(route('admin.paqueteria.paquetes.photo', $package))->assertRedirect(route('login'));
+    $this->get(route('admin.paqueteria.clientes'))->assertRedirect(route('login'));
+    $this->get(route('admin.paqueteria.qr-universal'))->assertRedirect(route('login'));
+    $this->post(route('admin.paqueteria.folios.store'), ['qty' => 5])->assertRedirect(route('login'));
+});

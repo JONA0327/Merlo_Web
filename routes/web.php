@@ -233,11 +233,19 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     });
 });
 
+// Paquetería registration is PUBLIC: the universal QR is scanned by people who
+// have no account. The URL is the one already printed on the QR, so it stays.
+// The POST is rate-limited (see the 'package-register' limiter) because anyone
+// can reach it; a logged-in staff member simply gets the full form.
+Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('/paqueteria/registrar', [AdminPackageController::class, 'registerCreate'])->name('paqueteria.registrar.create');
+    Route::post('/paqueteria/registrar', [AdminPackageController::class, 'registerStore'])->middleware('throttle:package-register')->name('paqueteria.registrar.store');
+    Route::get('/paqueteria/registrado', [AdminPackageController::class, 'registerDone'])->name('paqueteria.registrar.done');
+});
+
 Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/paqueteria', [AdminPackageController::class, 'index'])->name('paqueteria');
     Route::get('/paqueteria/qr', [AdminPackageController::class, 'qrUniversal'])->name('paqueteria.qr-universal');
-    Route::get('/paqueteria/registrar', [AdminPackageController::class, 'registerCreate'])->name('paqueteria.registrar.create');
-    Route::post('/paqueteria/registrar', [AdminPackageController::class, 'registerStore'])->name('paqueteria.registrar.store');
     Route::get('/paqueteria/folios/crear', [AdminPackageController::class, 'folioGuideCreate'])->name('paqueteria.folios.create');
     Route::post('/paqueteria/folios', [AdminPackageController::class, 'folioGuideStore'])->name('paqueteria.folios.store');
     Route::get('/paqueteria/folios/lotes', [AdminPackageController::class, 'qrBatches'])->name('paqueteria.qr.batches');

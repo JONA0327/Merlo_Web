@@ -635,7 +635,7 @@ function updateForm() {
     });
     selectedIds.forEach((id) => {
         if (!seatPaymentMethods.has(id)) {
-            seatPaymentMethods.set(id, defaultMethodSelect?.value || 'transfer');
+            seatPaymentMethods.set(id, defaultMethodSelect?.value || 'tbd');
         }
     });
     Array.from(seatReturnDates.keys()).forEach((id) => {

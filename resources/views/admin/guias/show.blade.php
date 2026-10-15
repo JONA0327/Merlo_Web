@@ -176,8 +176,9 @@
                         <label class="block">
                             <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">¿Pagado?</span>
                             <select name="paid" id="admin-paid-select" required class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
-                                <option value="1" {{ old('paid', '1') === '1' ? 'selected' : '' }}>Sí, ya está pagado</option>
-                                <option value="0" {{ old('paid') === '0' ? 'selected' : '' }}>No, pagará después</option>
+                                {{-- Default: NO pagado — it is switched to "Sí" only once they paid. --}}
+                                <option value="1" {{ old('paid', '0') === '1' ? 'selected' : '' }}>Sí, ya está pagado</option>
+                                <option value="0" {{ old('paid', '0') === '0' ? 'selected' : '' }}>No, pagará después</option>
                             </select>
                             @error('paid') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                         </label>
@@ -188,9 +189,10 @@
                                  per-seat selects (payment_method[seat_id]), same shared
                                  mechanism Apartar asientos uses. --}}
                             <select id="admin-payment-method-select" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                                {{-- Default: "Por definir" until it is known how they pay. --}}
                                 <option value="transfer">Transferencia</option>
                                 <option value="cash">Efectivo</option>
-                                <option value="tbd">Por definir</option>
+                                <option value="tbd" selected>Por definir</option>
                             </select>
                             @error('payment_method') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
                         </label>

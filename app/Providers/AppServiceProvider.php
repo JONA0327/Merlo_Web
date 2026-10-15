@@ -4,8 +4,11 @@ namespace App\Providers;
 
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 
@@ -33,6 +36,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Event::listen(Registered::class, SendEmailVerificationNotification::class);
+
+        // The public package-registration form (universal QR, no login) creates
+        // records, stores photos and sends a WhatsApp: cap it per IP so it can't
+        // be used to flood the folio series, the disk or someone's phone.
+        RateLimiter::for('package-register', fn (Request $request) => [
+            Limit::perMinute(5)->by($request->ip()),
+            Limit::perHour(40)->by($request->ip()),
+        ]);
 
         // Long written date for tickets ("1 de octubre del 2026") —
         // forced to the 'es' locale regardless of APP_LOCALE, so ticket

@@ -504,3 +504,22 @@ test('the staged (no trip yet) seat map receives who holds each seat on that dat
 
     expect($html)->toContain('seatHolders')->and($html)->toContain('Cliente 1'.$d)->and($html)->toContain('Pendiente');
 });
+
+test('the apartar form defaults to "no pagado" and payment method "por definir"', function () {
+    // open trip (Apartar asientos) and a date still staged in the guide
+    [$trip, , $guide] = guiaFutureOpenTrip();
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(15)->toDateString();
+    $staged = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+
+    foreach ([
+        route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]),
+        route('admin.guias.show', [$staged, 'fecha' => $d]),
+    ] as $url) {
+        $html = $this->actingAs(guiaAdmin())->get($url)->assertOk()->getContent();
+
+        expect($html)->toMatch('/<option value="0"\s+selected>No, pagará después<\/option>/')
+            ->and($html)->not->toMatch('/<option value="1"\s+selected>Sí, ya está pagado<\/option>/')
+            ->and($html)->toMatch('/<option value="tbd" selected>Por definir<\/option>/');
+    }
+});
