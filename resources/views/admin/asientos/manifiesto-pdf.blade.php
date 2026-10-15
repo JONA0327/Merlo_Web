@@ -22,6 +22,16 @@
     .name-sep { font-weight: bold; font-size: 13px; color: #9a8a8c; margin: 0 3px; }
     .check-col { width: 18px; }
     .box { display: inline-block; width: 13px; height: 13px; border: 1px solid #2B1113; }
+    .map-col { float: left; width: 250px; }
+    .list-col { margin-left: 266px; }
+    .map-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #6b5c5e; margin: 0 0 4px 0; }
+    .map-box { position: relative; border: 1px solid #c9bfc1; background: #FFFBF6; margin-bottom: 12px; }
+    .map-seat { position: absolute; border: 1px solid #15803D; background: #ffffff; text-align: center; font-size: 7px; font-weight: bold; color: #2B1113; overflow: hidden; }
+    .map-seat.ida { background: #bae6fd; border-color: #075985; }
+    .map-seat.regreso { background: #fecaca; border-color: #991b1b; }
+    .map-seat.especial { background: #a7f3d0; border-color: #065f46; }
+    .map-seat.redondo { background: #e5d5d7; border-color: #2B1113; }
+    .deck-title { font-size: 12px; font-weight: bold; margin: 14px 0 0 0; color: #8C1D2B; }
     .empty { padding: 18px; text-align: center; color: #9a8a8c; }
     .pay-badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 9px; font-weight: bold; margin-left: 4px; }
     .pay-badge.paid { background: #d1fae5; color: #065f46; }
@@ -59,13 +69,52 @@
         <p class="empty">Esta unidad no tiene asientos configurados.</p>
     @else
         @php
+            $unit = $trip->busUnit;
+            $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
+            $seatsByDeck = $seats->groupBy('deck')->sortKeys();
+            $mapWidth = 250;
+            $scale = $mapWidth / max(1, (float) $unit->canvas_width);
+            $mapTypeClass = function ($seatId) use ($reservationsBySeat) {
+                $r = $reservationsBySeat->get($seatId, collect())->first();
+                if (! $r) {
+                    return '';
+                }
+
+                return match ($r->trip_type) {
+                    \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'ida',
+                    \App\Models\TripTicketPrice::TYPE_REGRESO => 'regreso',
+                    \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'especial',
+                    default => 'redondo',
+                };
+            };
+        @endphp
+
+        <div class="map-col">
+            @foreach ($seatsByDeck as $deck => $deckSeats)
+                @if ($unit->has_upper_deck)
+                    <p class="map-title">{{ $deckNames[$deck] ?? $deck }}</p>
+                @endif
+                <div class="map-box" style="width: {{ $mapWidth }}px; height: {{ round($unit->canvas_height * $scale) }}px;">
+                    @foreach ($deckSeats as $seat)
+                        <div class="map-seat {{ $mapTypeClass($seat->id) }}" style="left: {{ round($seat->pos_x * $scale) }}px; top: {{ round($seat->pos_y * $scale) }}px; width: {{ max(10, round($seat->width * $scale)) }}px; height: {{ max(10, round($seat->height * $scale)) }}px; line-height: {{ max(10, round($seat->height * $scale)) }}px;">{{ $seat->label }}</div>
+                    @endforeach
+                </div>
+            @endforeach
+        </div>
+
+        <div class="list-col">
+        @foreach ($seatsByDeck as $deck => $deckSeats)
+        @if ($unit->has_upper_deck)
+            <p class="deck-title">{{ $deckNames[$deck] ?? $deck }}</p>
+        @endif
+        @php
             // Matches the bus's real seat distribution: every 4 consecutive
             // seats form one printed block — the first 2 stack in the left
             // column, the next 2 stack in the right column (1/2 left,
             // 3/4 right; 5/6 left, 7/8 right; ...), with a divider line
             // between blocks. $seats already arrives sorted by label and
             // includes every bookable seat, not just the occupied ones.
-            $blocks = $seats->chunk(4);
+            $blocks = $deckSeats->chunk(4);
             // "Especial" seats are sold as a mancuerna (2+ seats, ONE charge) —
             // only they get the ESPECIAL tag, and the payment badge prints once
             // per group (on its first seat) so the pair isn't charged as two.
@@ -143,6 +192,8 @@
                 @endforeach
             </tbody>
         </table>
+        @endforeach
+        </div>
     @endif
 </body>
 </html>

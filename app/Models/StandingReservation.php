@@ -386,8 +386,6 @@ class StandingReservation extends Model
                 'notes' => 'Asiento de planta'.($assignment->notes ? ' — '.$assignment->notes : ''),
             ]);
 
-            \App\Jobs\SendLinkedTicketNotification::dispatch($reservation->id);
-
             $takenIds[] = $assignment->bus_unit_seat_id;
             $applied++;
         }

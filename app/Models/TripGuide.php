@@ -303,7 +303,7 @@ class TripGuide extends Model
             if (in_array($rootId, $mismatchedRootIds, true)) {
                 continue;
             }
-            \App\Jobs\SendLinkedTicketNotification::dispatch($rootId);
+            // Sin envío automático al abrir el viaje: el cliente ya recibió su aviso al reservar.
         }
 
         return ['linked' => $linked, 'unmatched' => array_values(array_unique($unmatchedLabels))];

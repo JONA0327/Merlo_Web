@@ -205,7 +205,38 @@
     </div>
 
     {{-- ===================== Lista de apartados de la guía (todas las fechas) ===================== --}}
-    <div class="mt-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+    <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
+        {{-- Distribución del autobús (un bloque por piso) --}}
+        <div class="xl:col-span-4 space-y-4 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+            <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Distribución · {{ $date->format('d/m/Y') }}</h3>
+            @php
+                $mapDecks = $dateUnit->seats->where('kind', 'seat')->groupBy('deck');
+                $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
+            @endphp
+            @foreach ($mapDecks->sortKeys() as $deck => $deckSeats)
+                <div>
+                    @if ($dateUnit->has_upper_deck)
+                        <p class="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#2B1113]/60">{{ $deckNames[$deck] ?? $deck }}</p>
+                    @endif
+                    <div class="relative w-full overflow-hidden rounded-2xl border border-black/10 bg-[#FFFBF6]" style="aspect-ratio: {{ $dateUnit->canvas_width }} / {{ $dateUnit->canvas_height }};">
+                        @foreach ($deckSeats as $seat)
+                            @php
+                                $taken = $pendingReservationsForDate->has($seat->id);
+                                $isStanding = $standingSeatIds->contains($seat->id);
+                                $bg = $taken ? 'bg-[#FACC15] border-[#A16207]' : ($isStanding ? 'bg-[#A855F7] border-[#6B21A8]' : 'bg-white border-[#15803D]');
+                            @endphp
+                            <div class="absolute flex items-center justify-center rounded border text-[9px] font-bold text-[#2B1113] {{ $bg }}"
+                                 style="left: {{ $seat->pos_x / $dateUnit->canvas_width * 100 }}%; top: {{ $seat->pos_y / $dateUnit->canvas_height * 100 }}%; width: {{ $seat->width / $dateUnit->canvas_width * 100 }}%; height: {{ $seat->height / $dateUnit->canvas_height * 100 }}%;">
+                                {{ $seat->label }}
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endforeach
+        </div>
+
+        {{-- Lista de apartados --}}
+        <div class="xl:col-span-8 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados pendientes en esta guía</h3>
 
         @include('admin.partials.reservation-filters', ['filters' => $filters, 'keep' => ['fecha' => request('fecha')]])
@@ -213,7 +244,7 @@
         @if ($rootsByCustomer->isEmpty())
             <p class="mt-3 text-xs text-[#2B1113]/50">{{ collect($filters)->filter(fn ($v) => filled($v))->isNotEmpty() ? 'Ningún apartado coincide con los filtros.' : 'Aún no hay apartados pendientes en esta guía.' }}</p>
         @else
-            <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 @foreach ($rootsByCustomer as $customerName => $reservations)
                     <li class="rounded-2xl border border-black/5 bg-[#FFFBF6] p-4">
                         <p class="font-[Poppins] text-sm font-bold text-[#2B1113]">{{ $customerName }}</p>
@@ -248,6 +279,34 @@
                                     </div>
 
                                     @foreach ($members as $member)
+                                        <details class="mt-2 rounded-lg bg-[#FFFBF6] p-2 ring-1 ring-black/10">
+                                            <summary class="cursor-pointer text-[11px] font-semibold text-[#8C1D2B]">Editar asiento {{ $member->seat?->label ?? '—' }}</summary>
+                                            <form method="POST" action="{{ route('admin.guias.reservations.update-staged', [$guide, $member]) }}" class="mt-2 space-y-2">
+                                                @csrf
+                                                @method('PUT')
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <select name="trip_type" class="rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        @foreach (\App\Models\TripTicketPrice::tripTypes() as $type => $label)
+                                                            <option value="{{ $type }}" {{ $member->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <select name="payment_method" class="rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        <option value="transfer" {{ $member->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
+                                                        <option value="cash" {{ $member->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
+                                                        <option value="tbd" {{ $member->payment_method === 'tbd' ? 'selected' : '' }}>Por definir</option>
+                                                        @if ($member->payment_method === 'card')
+                                                            <option value="card" selected>Tarjeta</option>
+                                                        @endif
+                                                    </select>
+                                                    <select name="payment_status" class="rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        <option value="pending" {{ $member->payment_status !== 'completed' ? 'selected' : '' }}>Pendiente</option>
+                                                        <option value="completed" {{ $member->payment_status === 'completed' ? 'selected' : '' }}>Pagado</option>
+                                                    </select>
+                                                </div>
+                                                <p class="text-[10px] text-[#2B1113]/40">Solo cambia este asiento. Al guardar se envía el aviso de ese asiento por WhatsApp.</p>
+                                                <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
+                                            </form>
+                                        </details>
                                         @if ($member->hasSeatMismatch())
                                             @php
                                                 $takenForSlot = $takenSeatIdsByDateLeg->get($member->travel_date->toDateString().'|'.$member->leg, collect());
@@ -278,7 +337,7 @@
 
         @if ($syncedForDate->isNotEmpty())
             <h3 class="mt-8 font-[Poppins] text-base font-bold text-[#2B1113]">Sincronizados con el viaje ({{ $date->format('d/m/Y') }})</h3>
-            <ul class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 @foreach ($syncedForDate->groupBy('customer_name') as $customerName => $items)
                     <li class="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-200">
                         <p class="text-sm font-bold text-[#2B1113]">{{ $customerName }}</p>
@@ -292,6 +351,7 @@
                 @endforeach
             </ul>
         @endif
+        </div>
     </div>
 
     <script>

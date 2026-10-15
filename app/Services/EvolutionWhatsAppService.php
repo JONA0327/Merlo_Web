@@ -25,6 +25,12 @@ class EvolutionWhatsAppService
 {
     private Setting $settings;
 
+    /**
+     * Pregunta de confirmación del regreso. Deslinda a la empresa: si el
+     * cliente no confirma ni avisa a tiempo, el boleto de regreso se vence.
+     */
+    private const RETURN_CONFIRM_NOTICE = '❓ ¿Confirmas que regresas ese día? Responde a este mensaje para confirmar. Si no confirmas ni nos avisas a tiempo, tu boleto de regreso se vence y tendrías que comprar otro; la empresa no se hace responsable.';
+
     public function __construct()
     {
         $this->settings = Setting::current();
@@ -342,7 +348,7 @@ class EvolutionWhatsAppService
      * @throws RuntimeException when not configured, the customer has no
      *                         phone on file, or the API call itself fails.
      */
-    public function sendReservationNotice(Collection $group): void
+    public function sendReservationNotice(Collection $group, bool $updated = false): void
     {
         $this->assertConfigured();
 
@@ -377,17 +383,32 @@ class EvolutionWhatsAppService
             ? $methodLabels->first()
             : $group->map(fn (SeatReservation $r) => ($r->seat?->label ?? '—').': '.$r->payment_method_label)->implode(', ');
 
+        $rescheduled = $group->every(fn (SeatReservation $r) => $r->isRescheduledRoundTripReturn());
+
         $lines = [
             '*MERLO Transportes* 🚌',
             '',
-            "Hola {$first->customer_display_name}, tu apartado fue registrado:",
+            $rescheduled
+                ? "Hola {$first->customer_display_name}, tu regreso cambió:"
+                : "Hola {$first->customer_display_name}, tu apartado fue ".($updated ? 'actualizado' : 'registrado').':',
             '',
             "*{$route['from']} → {$route['to']}*",
-            "📅 Salida: *{$departureDate}*",
+            ($rescheduled ? '🔁 Regreso: *' : '📅 Salida: *').$departureDate.'*',
             "🚍 Unidad: *{$unitName}*",
-            "🏷️ Tipo: ".$group->map(fn (SeatReservation $r) => $r->trip_type_label)->unique()->implode(', '),
-            ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels,
         ];
+
+        // Categorías distintas en el mismo aviso (ej. 2 redondos y 1 de ida):
+        // asientos separados por categoría.
+        $byType = $group->groupBy(fn (SeatReservation $r) => $r->trip_type_label);
+        if ($byType->count() > 1) {
+            foreach ($byType as $typeLabel => $rows) {
+                $labels = $rows->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
+                $lines[] = "💺 {$typeLabel}: {$labels}";
+            }
+        } else {
+            $lines[] = "🏷️ Tipo: ".$byType->keys()->first();
+            $lines[] = ($group->count() > 1 ? '💺 Asientos: ' : '💺 Asiento: ').$seatLabels;
+        }
 
         // Abono: the customer already paid part of it — only send what's left.
         $abono = min($total, (float) $group->sum(fn (SeatReservation $r) => (float) $r->abono));
@@ -408,6 +429,31 @@ class EvolutionWhatsAppService
         $lines[] = '';
         $lines[] = "🟡 *RESERVADO — {$methodLabel}*";
         $lines[] = 'Tu pasaje se paga a la hora de abordar.';
+
+        // Solo redondos/especiales (los de ida no llevan regreso: si regresan es
+        // un boleto aparte). Regreso ya reservado (boleto ligado a estos asientos):
+        // se avisa en el mismo mensaje y se pide confirmar la fecha.
+        $returnDates = SeatReservation::query()
+            ->whereIn('source_reservation_id', $group->filter->needsBothLegs()->pluck('id'))
+            ->where('leg', SeatReservation::LEG_RETURN)
+            ->with('landingRoute')
+            ->get()
+            ->map(fn (SeatReservation $r) => $r->landing_route_id !== null ? $r->landingRoute?->day : $r->travel_date)
+            ->filter()
+            ->unique(fn ($d) => $d->toDateString())
+            ->sortBy(fn ($d) => $d->toDateString())
+            ->map(fn ($d) => $d->toSpanishLongDate());
+
+        if ($rescheduled) {
+            $lines[] = '';
+            $lines[] = self::RETURN_CONFIRM_NOTICE;
+        }
+
+        if ($returnDates->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = '🔁 Tu regreso quedó reservado para el *'.$returnDates->implode(', ').'*.';
+            $lines[] = self::RETURN_CONFIRM_NOTICE;
+        }
 
         $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
             'number' => $number,
@@ -580,15 +626,18 @@ class EvolutionWhatsAppService
         $unitName = $trip->busUnit->name ?? '—';
         $seat = $reservation->seat?->label ?? '—';
         $price = $reservation->unit_price ? $reservation->display_price_label : '—';
+        $rescheduled = $reservation->isRescheduledRoundTripReturn();
         $legLabel = $reservation->isReturnLeg() ? 'regreso' : ($reservation->needsBothLegs() ? 'salida y tu regreso' : 'subida al autobús');
 
         $lines = [
             '*MERLO Transportes* 🚌',
             '',
-            "Hola {$reservation->customer_display_name}, este es tu boleto:",
+            $rescheduled
+                ? "Hola {$reservation->customer_display_name}, tu regreso cambió. Este es tu boleto:"
+                : "Hola {$reservation->customer_display_name}, este es tu boleto:",
             '',
             "*{$trip->from} → {$trip->to}*",
-            "📅 Salida: *{$tripDate}*",
+            ($rescheduled ? '🔁 Regreso: *' : '📅 Salida: *').$tripDate.'*',
             "🚍 Unidad: *{$unitName}*",
             "🏷️ Tipo: {$reservation->trip_type_label}",
         ];
@@ -613,6 +662,11 @@ class EvolutionWhatsAppService
         $lines[] = "Muestra el código QR de esta imagen al abordar — el operador lo escanea para registrar tu {$legLabel}.";
         $lines[] = 'Si no escanea, dicta este código:';
         $lines[] = "```{$reservation->ticket_code}```";
+
+        if ($rescheduled) {
+            $lines[] = '';
+            $lines[] = self::RETURN_CONFIRM_NOTICE;
+        }
 
         if ($reservation->notes) {
             $lines[] = '';

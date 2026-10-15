@@ -379,6 +379,24 @@ class SeatReservation extends Model
      * calendar leg — i.e. a resold return seat, not a normal outbound
      * one-way purchase.
      */
+    /**
+     * Ticket created when a redondo/especial customer moved their
+     * return to another date (admin rescheduleReturn or self-service
+     * confirmReturnChange). For the customer it is still the SAME
+     * boleto — the notice says "cambió tu regreso" and asks to confirm.
+     * A one-way ("ida") ticket's separately-booked return does NOT count.
+     */
+    public function isRescheduledRoundTripReturn(): bool
+    {
+        if ($this->source_reservation_id === null) {
+            return false;
+        }
+
+        $this->loadMissing('sourceReservation');
+
+        return (bool) $this->sourceReservation?->needsBothLegs();
+    }
+
     public function isReturnLeg(): bool
     {
         return $this->leg === self::LEG_RETURN;

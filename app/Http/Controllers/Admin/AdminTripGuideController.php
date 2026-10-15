@@ -1343,9 +1343,16 @@ class AdminTripGuideController extends Controller
         $changed = $before !== $reservation->trip_type.'|'.$reservation->payment_method.'|'.$reservation->payment_status;
         $resent = null;
         if ($changed) {
-            $members = $reservation->fresh()->groupMembers()->load(['landingRoute', 'seat']);
-            if ($members->whereNotNull('ticket_sent_at')->isNotEmpty()) {
-                $resent = $whatsapp->deliverGroup($members, $ticketImages);
+            // Reenviar TODOS los boletos del cliente (no solo el editado):
+            // regroupByPayment() pudo partir el apartado en varios grupos.
+            $resent = true;
+            $groups = $roots->map(fn (SeatReservation $r) => $r->fresh()->groupMembers()->load(['landingRoute', 'seat']));
+            if ($groups->flatten()->whereNotNull('ticket_sent_at')->isNotEmpty()) {
+                foreach ($groups as $members) {
+                    $resent = $whatsapp->deliverGroup($members, $ticketImages) && $resent;
+                }
+            } else {
+                $resent = null;
             }
         }
 
@@ -1362,6 +1369,71 @@ class AdminTripGuideController extends Controller
         return redirect()
             ->route('admin.guias.show', [$guide, 'fecha' => $trip->day?->toDateString()])
             ->with($resent === false ? 'error' : 'success', 'Boleto actualizado. '.$summary.'.'.$notice);
+    }
+
+    /**
+     * Edita categoría/pago de un apartado que sigue en la guía (aún sin
+     * viaje abierto) — antes solo se podía editar con el viaje abierto.
+     * Cambia solo ese asiento (ej. 3 redondos y uno no regresa → "Solo
+     * ida"). Avisa por WhatsApp solo de ese asiento.
+     */
+    public function updateStagedCategory(Request $request, TripGuide $guide, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp): RedirectResponse
+    {
+        abort_unless($reservation->landing_route_id === null && $reservation->trip_guide_id === $guide->id, 404);
+
+        if ($reservation->travel_date?->lt(now()->startOfDay())) {
+            return back()->with('error', 'Esa fecha ya pasó — ya no se puede editar el apartado.');
+        }
+
+        $data = $request->validate([
+            'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            'payment_method' => ['required', 'string', 'in:transfer,cash,card,tbd'],
+            'payment_status' => ['required', 'string', 'in:pending,completed'],
+        ]);
+
+        $tripType = $data['trip_type'];
+        $paid = $data['payment_status'] === SeatReservation::PAYMENT_COMPLETED;
+        $route = $reservation->outboundRouteInfo();
+        $groupIds = $reservation->groupMembers()->pluck('id');
+
+        $reservation->update([
+            'trip_type' => $tripType,
+            'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
+            'unit_price' => TripTicketPrice::estimateUnitPrice($route['from'], $route['to'], (int) $route['bus_unit_id'], $tripType, 1),
+            'payment_method' => $data['payment_method'],
+            'payment_status' => $data['payment_status'],
+            'paid_at' => $paid ? ($reservation->paid_at ?? now()) : null,
+            'status' => $paid ? $reservation->status : SeatReservation::STATUS_PENDING,
+        ]);
+
+        $especialMembers = $reservation->fresh()->groupMembers()->where('trip_type', TripTicketPrice::TYPE_ESPECIAL);
+        if ($especialMembers->isNotEmpty()) {
+            $mancuerna = ['unit_price' => TripTicketPrice::estimateUnitPrice($route['from'], $route['to'], (int) $route['bus_unit_id'], TripTicketPrice::TYPE_ESPECIAL, $especialMembers->count())];
+            if ($reservation->isEspecial()) {
+                $mancuerna += $reservation->only(['payment_method', 'payment_status', 'paid_at', 'status']);
+            }
+            SeatReservation::whereIn('id', $especialMembers->pluck('id'))->update($mancuerna);
+            $reservation->refresh();
+        }
+
+        $reservation->regroupByPayment();
+
+        // Aviso con TODOS los asientos del cliente, con la corrección aplicada.
+        $summary = 'Apartado actualizado: asiento '.($reservation->seat?->label ?? '—').' → '.(TripTicketPrice::tripTypes()[$tripType] ?? $tripType).'.';
+        $noticeFailed = false;
+        try {
+            $allSeats = SeatReservation::whereIn('id', $groupIds)->orderBy('id')->get();
+            $whatsapp->sendReservationNotice($allSeats, true);
+        } catch (\Throwable $e) {
+            Log::warning('Guía edit notice failed for reservation '.$reservation->id.': '.$e->getMessage());
+            $noticeFailed = true;
+        }
+
+        return redirect()
+            ->route('admin.guias.show', [$guide, 'fecha' => $reservation->travel_date?->toDateString()])
+            ->with($noticeFailed ? 'error' : 'success', $noticeFailed
+                ? $summary.' ⚠ No se pudo enviar el aviso por WhatsApp — avísale al cliente.'
+                : $summary.' Se envió el aviso por WhatsApp.');
     }
 
     /**
@@ -1441,7 +1513,7 @@ class AdminTripGuideController extends Controller
             'trip' => $trip,
             'seats' => $seats,
             'reservationsBySeat' => $reservationsBySeat,
-        ]);
+        ])->setPaper('a4', 'landscape');
 
         return $pdf->stream('lista-asientos-'.$trip->id.'.pdf');
     }

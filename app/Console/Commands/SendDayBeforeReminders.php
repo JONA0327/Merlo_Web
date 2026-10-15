@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\SendDayBeforeReminder;
 use App\Models\SeatReservation;
 use App\Services\EvolutionWhatsAppService;
 use App\Services\TicketImageService;
@@ -74,28 +75,18 @@ class SendDayBeforeReminders extends Command
                 continue;
             }
 
-            try {
-                if ($hasRealTrip) {
-                    // Splits by payment itself: ticket to whoever's paid,
-                    // the same reservation-notice/reminder text to whoever
-                    // isn't — same mechanism Apartar asientos already uses.
-                    $whatsapp->deliverGroup($group, $ticketImages);
-                } else {
-                    // Still guide-staged the day before travel — nobody's
-                    // opened the real trip yet, so there's no seat map to
-                    // generate a QR against. Just the reminder either way;
-                    // logged so an admin notices this guide needs attention.
-                    $whatsapp->sendReservationNotice($group);
-                    Log::warning('Reservation still guide-staged the day before travel.', ['root_id' => $root->id]);
-                }
-
-                SeatReservation::whereIn('id', $group->pluck('id'))->update(['reminder_sent_at' => now()]);
-                $sent++;
-            } catch (\Throwable $e) {
-                Log::warning('Day-before reminder failed for reservation '.$root->id.': '.$e->getMessage());
+            if (! $hasRealTrip) {
+                Log::warning('Reservation still guide-staged the day before travel.', ['root_id' => $root->id]);
             }
+
+            // Por cola y escalonado (8 s entre grupos) — nada de envío masivo.
+            // Se marca al despachar para que otra corrida no lo duplique; el
+            // job lo libera si el envío falla.
+            SeatReservation::whereIn('id', $group->pluck('id'))->update(['reminder_sent_at' => now()]);
+            SendDayBeforeReminder::dispatch($root->id)->delay(now()->addSeconds($sent * 8));
+            $sent++;
         }
 
-        $this->info("Procesados {$sent} grupo(s) para mañana ({$tomorrow}).");
+        $this->info("Encolados {$sent} grupo(s) para mañana ({$tomorrow}).");
     }
 }
