@@ -1513,7 +1513,7 @@ class AdminTripGuideController extends Controller
             'trip' => $trip,
             'seats' => $seats,
             'reservationsBySeat' => $reservationsBySeat,
-        ])->setPaper('a4', 'landscape');
+        ])->setPaper('a4', 'portrait');
 
         return $pdf->stream('lista-asientos-'.$trip->id.'.pdf');
     }
