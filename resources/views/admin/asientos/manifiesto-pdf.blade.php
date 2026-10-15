@@ -4,12 +4,88 @@
 <meta charset="utf-8">
 <title>Lista de asientos</title>
 @php
-    // Everything must fit on ONE sheet. Pick the biggest font whose ESTIMATED
-    // printed height fits: a seat's line wraps to 2+ lines when its names +
-    // payment badges are wider than the cell, so seat count alone isn't enough.
-    $sheetBudget = 650; // px left for the list under the header (A4 landscape)
-    $cellWidth = 345;   // px of one list cell
-    $estimateHeight = function (int $fs, int $pad) use ($seats, $reservationsBySeat, $cellWidth) {
+    // ---- Map geometry (computed first: the list's width depends on it) ----
+    $unit = $trip->busUnit;
+    $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
+    $seatsByDeck = $seats->groupBy('deck')->sortKeys();
+    // DomPDF renders this A4-landscape sheet at roughly 954x673 CSS px (measured
+    // from real output), NOT the 1123x794 of a browser: every budget below is in those px.
+    $pageW = 954;
+    $mapBudget = 540;   // total height of the stacked map blocks (header takes ~70 of 673)
+    $mapBlocks = collect();   // per deck: list of ['seats', 'minX', 'minY', 'scale', 'w', 'h']
+    $maxBoxW = 250;
+    $stacked = false;
+    if ($seats->isNotEmpty()) {
+        // A single-deck bus can have two separate seat blocks on the canvas
+        // (e.g. 1-48 plus 49-64 off to the right). Numbered row by row, the
+        // y position jumps back to the top when the next block starts — so
+        // those blocks are stacked vertically: a narrow, tall map leaves the
+        // list more width (bigger letters). Double-deck units keep one box
+        // per deck, as laid out.
+        $splitBlocks = function ($deckSeats) use ($unit) {
+            if ($unit->has_upper_deck) {
+                return collect([$deckSeats]);
+            }
+            $sorted = $deckSeats->sortBy('label', SORT_NATURAL)->values();
+            $groups = [];
+            $current = collect();
+            $prev = null;
+            foreach ($sorted as $seat) {
+                if ($prev && $seat->pos_y < $prev->pos_y - 2 * max(1, $prev->height)) {
+                    $groups[] = $current;
+                    $current = collect();
+                }
+                $current->push($seat);
+                $prev = $seat;
+            }
+            $groups[] = $current;
+
+            // Only trust the split when it looks like a few real blocks:
+            // 2-3 blocks of 4+ seats whose x ranges are clearly apart.
+            // (Column-by-column numbering would otherwise shred the map.)
+            $ok = count($groups) >= 2 && count($groups) <= 3;
+            foreach ($groups as $i => $g) {
+                $ok = $ok && $g->count() >= 4;
+                if ($ok && $i > 0) {
+                    $gap = $g->min('pos_x') - $groups[$i - 1]->max(fn ($x) => $x->pos_x + $x->width);
+                    $ok = $gap >= 1.3 * max(1, $g->first()->width);
+                }
+            }
+
+            return $ok ? collect($groups) : collect([$deckSeats]);
+        };
+        $deckGroups = $seatsByDeck->map($splitBlocks);
+        $allGroups = $deckGroups->flatten(1);
+        $stacked = $allGroups->count() > $seatsByDeck->count();
+        $mapWidth = $stacked ? 250 : 340;
+        $dim = fn ($g) => [
+            'minX' => $g->min('pos_x'),
+            'minY' => $g->min('pos_y'),
+            'w' => max(1, $g->max(fn ($x) => $x->pos_x + $x->width) - $g->min('pos_x')),
+            'h' => max(1, $g->max(fn ($x) => $x->pos_y + $x->height) - $g->min('pos_y')),
+        ];
+        $dims = $allGroups->map($dim);
+        $titlesH = $unit->has_upper_deck ? 16 * $seatsByDeck->count() : 0;
+        // Each box also carries 12px of frame and 12px of margin.
+        $common = min(($mapWidth - 12) / $dims->max('w'), ($mapBudget - $titlesH - 26 * $dims->count()) / $dims->sum('h'));
+        $perDeckShare = ($mapBudget - $titlesH) / max(1, $seatsByDeck->count()) - 26;
+        $mapBlocks = $deckGroups->map(fn ($groups) => $groups->map(function ($g) use ($dim, $stacked, $common, $mapWidth, $perDeckShare) {
+            $d = $dim($g);
+            $scale = $stacked ? $common : min(($mapWidth - 12) / $d['w'], $perDeckShare / $d['h']);
+
+            return ['seats' => $g, 'scale' => $scale, 'w' => round($d['w'] * $scale) + 12, 'h' => round($d['h'] * $scale) + 12] + $d; // scaled w/h win over the raw ones
+        }));
+        $maxBoxW = $mapBlocks->flatten(1)->max('w');
+    }
+    $mapColWidth = $maxBoxW + 14;
+
+    // ---- Everything must fit on ONE sheet. Pick the biggest font whose
+    // ESTIMATED printed height fits: a seat's line wraps to 2+ lines when its
+    // names + payment badges are wider than the cell, so seat count alone
+    // isn't enough.
+    $sheetBudget = 545; // px left for the list under the header (A4 landscape), with a safety margin
+    $cellWidth = ($pageW - 28 - $mapColWidth) / 2 - 16; // px of one list cell
+    $estimateHeight = function (int $fs, int $pad) use ($seats, $reservationsBySeat, $cellWidth, $unit) {
         $lineH = $fs + 2 * $pad + 6;
         $cellLines = function ($seat) use ($reservationsBySeat, $fs, $cellWidth) {
             $width = 60 * $fs / 9;
@@ -21,6 +97,7 @@
         };
         $total = 0;
         foreach ($seats->groupBy('deck') as $deckSeats) {
+            $total += $unit->has_upper_deck ? 22 : 0; // deck title
             foreach ($deckSeats->chunk(4) as $block) {
                 $left = $block->slice(0, 2)->values();
                 $right = $block->slice(2, 2)->values();
@@ -68,7 +145,7 @@
     /* Mapa a la izquierda y lista a la derecha en una tabla (DomPDF no
        acomoda bien una tabla junto a un float: estiraba la primera fila). */
     table.layout { width: 100%; border-collapse: collapse; margin-top: {{ $tight ? 4 : 12 }}px; }
-    table.layout td.map-col { width: 340px; padding: 0 14px 0 0; vertical-align: top; }
+    table.layout td.map-col { width: {{ $mapColWidth - 14 }}px; padding: 0 14px 0 0; vertical-align: top; }
     table.layout td.list-col { padding: 0; vertical-align: top; }
     table.manifest { margin-top: 0; }
     table.manifest tr { page-break-inside: avoid; }
@@ -117,24 +194,6 @@
         <p class="empty">Esta unidad no tiene asientos configurados.</p>
     @else
         @php
-            $unit = $trip->busUnit;
-            $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
-            $seatsByDeck = $seats->groupBy('deck')->sortKeys();
-            // The canvas usually has lots of empty space around the seats:
-            // crop each deck to its seats' bounding box and scale THAT to fill
-            // the column, capped by height so the sheet stays on one page
-            // (each deck gets its share of $mapHeight).
-            $mapWidth = 340;
-            $mapHeight = 610 / max(1, $seatsByDeck->count());
-            $deckBox = function ($deckSeats) use ($mapWidth, $mapHeight) {
-                $minX = $deckSeats->min('pos_x');
-                $minY = $deckSeats->min('pos_y');
-                $w = max(1, $deckSeats->max(fn ($x) => $x->pos_x + $x->width) - $minX);
-                $h = max(1, $deckSeats->max(fn ($x) => $x->pos_y + $x->height) - $minY);
-                $scale = min(($mapWidth - 12) / $w, ($mapHeight - 12) / $h);
-
-                return ['minX' => $minX, 'minY' => $minY, 'scale' => $scale, 'w' => round($w * $scale) + 12, 'h' => round($h * $scale) + 12];
-            };
             $mapTypeClass = function ($seatId) use ($reservationsBySeat) {
                 $r = $reservationsBySeat->get($seatId, collect())->first();
                 if (! $r) {
@@ -152,20 +211,21 @@
 
         <table class="layout"><tr>
         <td class="map-col">
-            @foreach ($seatsByDeck as $deck => $deckSeats)
+            @foreach ($mapBlocks as $deck => $boxes)
                 @if ($unit->has_upper_deck)
                     <p class="map-title">{{ $deckNames[$deck] ?? $deck }}</p>
                 @endif
-                @php $box = $deckBox($deckSeats); @endphp
-                <div class="map-box" style="width: {{ $box['w'] }}px; height: {{ $box['h'] }}px;">
-                    @foreach ($deckSeats as $seat)
-                        @php
-                            $sw = max(8, round($seat->width * $box['scale']));
-                            $sh = max(8, round($seat->height * $box['scale']));
-                        @endphp
-                        <div class="map-seat {{ $mapTypeClass($seat->id) }}" style="left: {{ round(($seat->pos_x - $box['minX']) * $box['scale']) + 6 }}px; top: {{ round(($seat->pos_y - $box['minY']) * $box['scale']) + 6 }}px; width: {{ $sw }}px; height: {{ $sh }}px; line-height: {{ $sh }}px; font-size: {{ max(7, min(14, round($sh * 0.45))) }}px;">{{ $seat->label }}</div>
-                    @endforeach
-                </div>
+                @foreach ($boxes as $box)
+                    <div class="map-box" style="width: {{ $box['w'] }}px; height: {{ $box['h'] }}px;">
+                        @foreach ($box['seats'] as $seat)
+                            @php
+                                $sw = max(8, round($seat->width * $box['scale']));
+                                $sh = max(8, round($seat->height * $box['scale']));
+                            @endphp
+                            <div class="map-seat {{ $mapTypeClass($seat->id) }}" style="left: {{ round(($seat->pos_x - $box['minX']) * $box['scale']) + 6 }}px; top: {{ round(($seat->pos_y - $box['minY']) * $box['scale']) + 6 }}px; width: {{ $sw }}px; height: {{ $sh }}px; line-height: {{ $sh }}px; font-size: {{ max(7, min(14, round($sh * 0.45))) }}px;">{{ $seat->label }}</div>
+                        @endforeach
+                    </div>
+                @endforeach
             @endforeach
         </td>
 
