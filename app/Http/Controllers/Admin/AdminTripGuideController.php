@@ -11,10 +11,12 @@ use App\Models\LandingRoute;
 use App\Models\SeatReservation;
 use App\Models\Setting;
 use App\Models\StandingReservation;
+use App\Models\TripCorte;
 use App\Models\TripGuide;
 use App\Models\TripTicketPrice;
 use App\Services\EvolutionWhatsAppService;
 use App\Services\TicketImageService;
+use App\Services\TripCorteService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -435,7 +437,13 @@ class AdminTripGuideController extends Controller
             ->get()
             ->keyBy('bus_unit_seat_id');
 
+        $corteService = app(TripCorteService::class);
+        $corte = $corteService->summarize($landingRoute);
+
         return view('admin.asientos.show', [
+            'corte' => $corte,
+            'corteSaved' => TripCorte::where('landing_route_id', $landingRoute->id)->first(),
+            'contratosCompras' => $corteService->contratosCompras(),
             'trip' => $landingRoute,
             'guide' => $guide,
             'reservations' => $reservations,

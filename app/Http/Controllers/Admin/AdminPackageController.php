@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Package;
+use App\Models\PackageClient;
 use App\Models\PackageFolioSequence;
 use App\Models\PackageGroup;
 use App\Models\PackageQrBatch;
@@ -65,7 +66,9 @@ class AdminPackageController extends Controller
 
     public function registerCreate(): View
     {
-        return view('admin.paqueteria.registrar');
+        return view('admin.paqueteria.registrar', [
+            'clients' => PackageClient::orderBy('name')->get(['name', 'phone']),
+        ]);
     }
 
     /**
@@ -89,12 +92,13 @@ class AdminPackageController extends Controller
         $qty = (int) $validated['qty'];
         $photoPath = $this->storeEvidencePhoto($request->file('photo'));
 
+        $client = PackageClient::forRegistration($validated['client_name'], $validated['phone']);
         $collectedBy = $request->user()->id;
         $collectedAt = now();
         $isGroup = false;
         $root = null;
 
-        DB::transaction(function () use ($qty, $validated, $photoPath, $collectedBy, $collectedAt, &$isGroup, &$root) {
+        DB::transaction(function () use ($qty, $validated, $photoPath, $client, $collectedBy, $collectedAt, &$isGroup, &$root) {
             $packages = $this->claimOrMintFolios($qty, $collectedBy);
 
             if ($qty === 1) {
@@ -104,6 +108,7 @@ class AdminPackageController extends Controller
                     'phone' => $validated['phone'],
                     'price' => $validated['price'] ?? null,
                     'photo_path' => $photoPath,
+                    'package_client_id' => $client->id,
                     'status' => Package::STATUS_RECOLECTADO,
                     'collected_by' => $collectedBy,
                     'collected_at' => $collectedAt,
@@ -120,6 +125,7 @@ class AdminPackageController extends Controller
                 'total_price' => $validated['price'] ?? null,
                 'photo_path' => $photoPath,
                 'tracking_code' => PackageGroup::generateTrackingCode(),
+                'package_client_id' => $client->id,
                 'created_by' => $collectedBy,
             ]);
 
@@ -332,6 +338,7 @@ class AdminPackageController extends Controller
     {
         return view('admin.paqueteria.paquete', [
             'package' => $package->load('group.packages'),
+            'unit' => $package->billingUnit()->load('payments.user'),
         ]);
     }
 
@@ -370,13 +377,22 @@ class AdminPackageController extends Controller
         return Storage::disk('local')->response($path);
     }
 
+    public function deliveryPhoto(Package $package)
+    {
+        abort_unless($package->delivery_photo_path && Storage::disk('local')->exists($package->delivery_photo_path), 404);
+
+        return Storage::disk('local')->response($package->delivery_photo_path);
+    }
+
     public function updateStatus(Request $request, Package $package): RedirectResponse
     {
+        // La entrega pasa por su propio formulario (folios, cobro, evidencia y aviso).
+        abort_if($request->input('status') === Package::STATUS_ENTREGADO, 409, 'Usa el formulario Entregar.');
+
         $validated = $request->validate([
             'status' => ['required', 'string', 'in:'.implode(',', [
                 Package::STATUS_RECOLECTADO,
                 Package::STATUS_EN_RECORRIDO,
-                Package::STATUS_ENTREGADO,
                 Package::STATUS_NO_ENTREGADO,
             ])],
         ]);
@@ -385,7 +401,6 @@ class AdminPackageController extends Controller
 
         $package->update([
             'status' => $validated['status'],
-            'delivered_at' => $validated['status'] === Package::STATUS_ENTREGADO ? now() : $package->delivered_at,
         ]);
 
         return redirect()->route('admin.paqueteria.paquetes.show', $package)

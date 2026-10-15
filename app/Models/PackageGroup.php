@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPackageBilling;
 use Database\Factories\PackageGroupFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PackageGroup extends Model
 {
     /** @use HasFactory<PackageGroupFactory> */
-    use HasFactory;
+    use HasFactory, HasPackageBilling;
 
     protected $fillable = [
         'client_name',
@@ -21,13 +22,21 @@ class PackageGroup extends Model
         'photo_path',
         'tracking_code',
         'created_by',
+        'package_client_id',
+        'amount_paid',
     ];
 
     protected function casts(): array
     {
         return [
             'total_price' => 'decimal:2',
+            'amount_paid' => 'decimal:2',
         ];
+    }
+
+    public function billedAmount(): ?float
+    {
+        return $this->total_price === null ? null : (float) $this->total_price;
     }
 
     public function packages(): HasMany

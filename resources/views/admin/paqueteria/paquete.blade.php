@@ -100,7 +100,7 @@
                     <div>
                         <x-input-label for="status" value="Nuevo estado" />
                         <select id="status" name="status" class="mt-1.5 block w-full rounded-xl border-black/10 focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
-                            @foreach (['recolectado', 'en_recorrido', 'entregado', 'no_entregado'] as $option)
+                            @foreach (['recolectado', 'en_recorrido', 'no_entregado'] as $option)
                                 <option value="{{ $option }}" @selected($package->status === $option)>{{ $statusMeta[$option]['label'] }}</option>
                             @endforeach
                         </select>
@@ -111,6 +111,86 @@
                         </x-primary-button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        @php
+            $members = $package->isGrouped() ? $package->group->packages->sortBy('folio_number') : collect([$package]);
+            $undelivered = $members->where('status', '!=', \App\Models\Package::STATUS_ENTREGADO);
+            $billed = $unit->billedAmount();
+            $money = fn ($v) => '$'.number_format((float) $v, 2);
+        @endphp
+        <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="rounded-2xl bg-white p-6 sm:p-8 ring-1 ring-black/5 shadow-sm">
+                <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Cobro</h3>
+                <dl class="mt-4 space-y-3 text-sm">
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/50">Costo total</dt><dd class="font-semibold text-[#2B1113]">{{ $billed !== null ? $money($billed) : 'Sin capturar' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/50">Pagado</dt><dd class="font-semibold text-emerald-700">{{ $money($unit->amount_paid) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-[#2B1113]/50">Pendiente</dt><dd class="font-semibold {{ $unit->pendingAmount() > 0 ? 'text-red-600' : 'text-[#2B1113]' }}">{{ $money($unit->pendingAmount()) }}</dd></div>
+                </dl>
+                @if ($unit->payments->isNotEmpty())
+                    <p class="mt-5 text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">Pagos</p>
+                    <ul class="mt-2 space-y-1 text-sm text-[#2B1113]/70">
+                        @foreach ($unit->payments as $pay)
+                            <li class="flex justify-between"><span>{{ $pay->paid_at->format('d/m/Y H:i') }}{{ $pay->user ? ' · '.$pay->user->name : '' }}</span><span>{{ $money($pay->amount) }}</span></li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if ($package->client)
+                    <a href="{{ route('admin.paqueteria.clientes.show', $package->client) }}" class="mt-5 inline-block text-sm font-semibold text-[#8C1D2B] hover:underline">Ver historial del cliente &rarr;</a>
+                @endif
+            </div>
+
+            <div class="rounded-2xl bg-white p-6 sm:p-8 ring-1 ring-black/5 shadow-sm">
+                <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Entrega</h3>
+                @if ($undelivered->isEmpty())
+                    <p class="mt-1 text-sm text-emerald-700 font-semibold">Todos los paquetes de este envío fueron entregados.</p>
+                    @if ($package->delivery_photo_path)
+                        <a href="{{ route('admin.paqueteria.paquetes.delivery-photo', $package) }}" target="_blank" class="mt-3 inline-block text-sm font-semibold text-[#8C1D2B] hover:underline">Ver evidencia de entrega</a>
+                    @endif
+                @else
+                    <p class="mt-1 text-sm text-[#2B1113]/60">Marca los folios que se entregan; los demás quedan pendientes. Se avisa por WhatsApp al cliente.</p>
+                    <form method="POST" action="{{ route('admin.paqueteria.paquetes.deliver', $package) }}" enctype="multipart/form-data" class="mt-5 space-y-4">
+                        @csrf
+                        <div class="space-y-2">
+                            @foreach ($members as $m)
+                                <label class="flex items-center gap-3 text-sm {{ $m->status === 'entregado' ? 'text-[#2B1113]/40' : 'text-[#2B1113]' }}">
+                                    @if ($m->status === 'entregado')
+                                        <span class="w-4 text-emerald-600">&#10003;</span>
+                                    @else
+                                        <input type="checkbox" name="package_ids[]" value="{{ $m->id }}" checked class="rounded border-black/20 text-[#8C1D2B] focus:ring-[#8C1D2B]">
+                                    @endif
+                                    <span class="font-semibold">{{ $m->folio_label }}</span>
+                                    <span class="text-xs">{{ $m->status === 'entregado' ? 'Entregado' : 'Pendiente' }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+
+                        @unless ($billed > 0)
+                            <div>
+                                <x-input-label for="price" value="Costo del envío" />
+                                <x-text-input id="price" name="price" type="number" step="0.01" min="0" class="block mt-1.5 w-full" value="{{ old('price') }}" />
+                                <p class="mt-1 text-xs text-[#2B1113]/50">No se capturó al registrar; ponlo aquí.</p>
+                            </div>
+                        @endunless
+                        <div>
+                            <x-input-label for="amount_paid" value="Cobrado ahora" />
+                            <x-text-input id="amount_paid" name="amount_paid" type="number" step="0.01" min="0" class="block mt-1.5 w-full" value="{{ old('amount_paid') }}" />
+                            <p class="mt-1 text-xs text-[#2B1113]/50">Lo que falte para el costo total queda como pendiente del cliente.</p>
+                        </div>
+                        <div x-data="{ photoPreview: null }">
+                            <x-input-label value="Evidencia de entrega (opcional)" />
+                            <p class="mt-1 text-xs text-[#2B1113]/50">Toca para tomar una foto del paquete entregado.</p>
+                            <label class="mt-2 flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-black/15 bg-[#FFFBF6] hover:border-[#8C1D2B]/40 transition-colors">
+                                <img x-show="photoPreview" x-cloak :src="photoPreview" class="h-full w-full object-cover">
+                                <svg x-show="! photoPreview" class="h-7 w-7 text-[#2B1113]/25" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 3a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd"/></svg>
+                                <input type="file" name="photo" accept="image/*" capture="environment" class="hidden"
+                                       @change="photoPreview = $event.target.files[0] ? URL.createObjectURL($event.target.files[0]) : null">
+                            </label>
+                        </div>
+                        <div class="flex justify-end pt-2"><x-primary-button type="submit">Registrar entrega</x-primary-button></div>
+                    </form>
+                @endif
             </div>
         </div>
     @endif

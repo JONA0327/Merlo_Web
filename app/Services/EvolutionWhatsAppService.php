@@ -475,6 +475,50 @@ class EvolutionWhatsAppService
     }
 
     /**
+     * Aviso de entrega: qué folios se entregaron, cuáles siguen pendientes de
+     * entregar y cuánto se cobró / queda por pagar.
+     *
+     * @throws RuntimeException when not configured, the phone is invalid,
+     *                         or the API call itself fails.
+     */
+    public function sendPackageDelivery(string $phone, string $customerName, string $deliveredFolios, string $pendingFolios, float $paidNow, float $pendingMoney): void
+    {
+        $this->assertConfigured();
+
+        $number = self::normalizePhone($phone);
+        if (! $number) {
+            throw new RuntimeException('El teléfono del cliente no es válido.');
+        }
+
+        $lines = ['*MERLO Transportes* 📦', '', "Hola {$customerName}, te confirmamos la entrega:", '', "✅ Entregado: *{$deliveredFolios}*"];
+
+        if ($pendingFolios !== '') {
+            $lines[] = "⏳ Pendiente por entregar: *{$pendingFolios}*";
+        }
+        if ($paidNow > 0) {
+            $lines[] = '💵 Cobrado hoy: $'.number_format($paidNow, 2).' MXN';
+        }
+        if ($pendingMoney > 0) {
+            $lines[] = '⚠️ Saldo pendiente de pago: $'.number_format($pendingMoney, 2).' MXN';
+        }
+
+        $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
+            'number' => $number,
+            'text' => implode("\n", $lines),
+        ]);
+
+        if ($response->failed()) {
+            Log::warning('Evolution API WhatsApp package delivery notice failed', [
+                'folios' => $deliveredFolios,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('Evolution API respondió con error '.$response->status().'.');
+        }
+    }
+
+    /**
      * Digits only, with the Mexico country code (52) auto-prefixed on a
      * plain 10-digit local number — the near-universal shape a Merlo
      * admin types into the apartado form. A number already longer than

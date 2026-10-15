@@ -15,6 +15,12 @@
             <p class="mt-1 text-sm text-[#2B1113]/60">Registra y da seguimiento a los envíos de paquetería.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+            <a href="{{ route('admin.paqueteria.clientes') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
+                Clientes
+            </a>
+            <a href="{{ route('admin.paqueteria.corte') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
+                Corte del día
+            </a>
             <a href="{{ route('admin.paqueteria.qr-universal') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                 QR universal
             </a>

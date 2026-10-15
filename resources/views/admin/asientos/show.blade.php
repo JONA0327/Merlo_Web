@@ -53,6 +53,55 @@
         </div>
     @endif
 
+    {{-- ===================== Corte del viaje ===================== --}}
+    @php $money = fn ($v) => '$'.number_format($v, 2); @endphp
+    <div class="mb-6 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Corte del viaje · {{ $trip->day?->format('d/m/Y') }}</h3>
+            @if ($corteSaved?->sent_at)
+                <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Enviado a Control {{ $corteSaved->sent_at->format('d/m/Y H:i') }}</span>
+            @endif
+        </div>
+        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            @foreach ([
+                ['Asientos vendidos', $corte['sold_seats'] + $corte['external_seats']],
+                ['Total vendido', $money($corte['sold_amount'] + $corte['external_amount'])],
+                ['Abonos', $money($corte['abonos_amount'])],
+                ['Vendido fuera del sistema', $corte['external_seats'].' asientos · '.$money($corte['external_amount'])],
+            ] as [$label, $value])
+                <div class="rounded-2xl bg-[#FFFBF6] p-3">
+                    <dt class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">{{ $label }}</dt>
+                    <dd class="mt-1 text-lg font-bold text-[#2B1113]">{{ $value }}</dd>
+                </div>
+            @endforeach
+        </dl>
+
+        <form method="POST" action="{{ route('admin.viajes.corte', $trip) }}" class="mt-4 flex flex-wrap items-end gap-3" onsubmit="return confirm('¿Confirmar el corte y enviarlo a Control Reportes?')">
+            @csrf
+            <label class="block">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Asientos vendidos fuera del sistema</span>
+                <input type="number" name="external_seats" min="0" max="{{ $corte['free_seats'] + $corte['external_seats'] }}" value="{{ $corte['external_seats'] }}" class="mt-1 w-40 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
+            </label>
+            <label class="block">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Dinero cobrado fuera del sistema</span>
+                <input type="number" step="0.01" name="external_amount" min="0" value="{{ $corte['external_amount'] }}" class="mt-1 w-44 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
+            </label>
+            <label class="block">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Contrato de compras</span>
+                    <select name="contrato_id" required class="mt-1 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
+                        <option value="">— Selecciona —</option>
+                        @foreach ($contratosCompras as $c)
+                            <option value="{{ $c['id'] }}" @selected($corteSaved?->contrato_id == $c['id'])>{{ $c['folio'] }} · {{ $c['cliente_nombre'] }}</option>
+                        @endforeach
+                    </select>
+                    @if (empty($contratosCompras))
+                        <span class="mt-1 block text-[11px] text-red-600">No se pudieron cargar los contratos de Control.</span>
+                    @endif
+                </label>
+            <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity">{{ $corteSaved?->sent_at ? 'Reenviar corte' : 'Confirmar y enviar a Control' }}</button>
+        </form>
+    </div>
+
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
         {{-- ===================== Plano de asientos ===================== --}}
         <div class="xl:col-span-7 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">

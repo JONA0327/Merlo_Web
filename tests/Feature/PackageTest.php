@@ -312,9 +312,9 @@ test('staff can move a package through its status lifecycle', function () {
     expect($package->fresh()->status)->toBe('en_recorrido');
     expect($package->fresh()->delivered_at)->toBeNull();
 
-    $this->actingAs($staff)->post(route('admin.paqueteria.paquetes.update-status', $package), ['status' => 'entregado']);
-    expect($package->fresh()->status)->toBe('entregado');
-    expect($package->fresh()->delivered_at)->not->toBeNull();
+    // 'entregado' ya no se pone a mano: pasa por el formulario de entrega (cobro + aviso).
+    $this->actingAs($staff)->post(route('admin.paqueteria.paquetes.update-status', $package), ['status' => 'entregado'])->assertStatus(409);
+    expect($package->fresh()->status)->toBe('en_recorrido');
 });
 
 test('looking up a package by its folio label redirects to its detail page', function () {

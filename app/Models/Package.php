@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPackageBilling;
 use Database\Factories\PackageFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Package extends Model
 {
     /** @use HasFactory<PackageFactory> */
-    use HasFactory;
+    use HasFactory, HasPackageBilling;
 
     public const STATUS_SIN_ASIGNAR = 'sin_asignar';
 
@@ -64,12 +65,16 @@ class Package extends Model
         'collected_by',
         'collected_at',
         'delivered_at',
+        'package_client_id',
+        'amount_paid',
+        'delivery_photo_path',
     ];
 
     protected function casts(): array
     {
         return [
             'price' => 'decimal:2',
+            'amount_paid' => 'decimal:2',
             'collected_at' => 'datetime',
             'delivered_at' => 'datetime',
         ];
@@ -97,6 +102,22 @@ class Package extends Model
     public function collectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'collected_by');
+    }
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(PackageClient::class, 'package_client_id');
+    }
+
+    public function billedAmount(): ?float
+    {
+        return $this->price === null ? null : (float) $this->price;
+    }
+
+    /** Lo que se cobra: el grupo si el paquete va agrupado, si no él mismo. */
+    public function billingUnit(): Package|PackageGroup
+    {
+        return $this->isGrouped() ? $this->group : $this;
     }
 
     public function isGrouped(): bool

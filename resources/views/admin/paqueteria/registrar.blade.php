@@ -14,7 +14,13 @@
 
             <div>
                 <x-input-label for="client_name" value="Nombre del cliente" />
-                <x-text-input id="client_name" name="client_name" type="text" required class="block mt-1.5 w-full" value="{{ old('client_name') }}" />
+                <x-text-input id="client_name" name="client_name" type="text" required list="known-clients" autocomplete="off" class="block mt-1.5 w-full" value="{{ old('client_name') }}" />
+                <datalist id="known-clients">
+                    @foreach ($clients as $c)
+                        <option value="{{ $c->name }}" data-phone="{{ $c->phone_formatted }}"></option>
+                    @endforeach
+                </datalist>
+                <p class="mt-1 text-xs text-[#2B1113]/50">Si el cliente ya ha enviado antes, elígelo de la lista y se carga su teléfono.</p>
                 <x-input-error :messages="$errors->get('client_name')" class="mt-2" />
             </div>
 
@@ -66,4 +72,14 @@
             </div>
         </form>
     </div>
+<script>
+    document.getElementById('client_name').addEventListener('input', function () {
+        const match = [...document.querySelectorAll('#known-clients option')].find(o => o.value === this.value);
+        if (match) {
+            const phone = document.getElementById('phone');
+            phone.value = match.dataset.phone;
+            phone.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+</script>
 </x-admin-layout>

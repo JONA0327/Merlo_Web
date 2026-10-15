@@ -35,6 +35,11 @@ return [
         ],
     ],
 
+    'control_reportes' => [
+        'url' => env('CONTROL_REPORTES_URL'),
+        'token' => env('CONTROL_REPORTES_TOKEN'),
+    ],
+
     // OpenPay config block removed: the gateway is disabled for now,
     // so there's no use reading these keys. Restore the
     // `OPENPAY_*` env vars and this array if/when the gateway

@@ -8,9 +8,13 @@ use App\Http\Controllers\Admin\AdminStandingReservationController;
 use App\Http\Controllers\Admin\AdminDestinationController;
 use App\Http\Controllers\Admin\AdminLandingRouteController;
 use App\Http\Controllers\Admin\AdminPackageController;
+use App\Http\Controllers\Admin\AdminPackageClientController;
+use App\Http\Controllers\Admin\AdminPackageCorteController;
+use App\Http\Controllers\Admin\AdminPackageDeliveryController;
 use App\Http\Controllers\Admin\AdminPaymentController;
 use App\Http\Controllers\Admin\AdminPaymentMethodController;
 use App\Http\Controllers\Admin\AdminSettingController;
+use App\Http\Controllers\Admin\AdminTripCorteController;
 use App\Http\Controllers\Admin\AdminTripCheckinController;
 use App\Http\Controllers\Admin\AdminTripGuideController;
 use App\Http\Controllers\Admin\AdminTripTicketPriceController;
@@ -158,6 +162,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/pagos/{reservation}/confirmar-efectivo', [AdminPaymentController::class, 'confirmCash'])->name('pagos.confirm-cash');
     Route::get('/pagos/{reservation}/boleto-efectivo', [AdminPaymentController::class, 'cashTicket'])->name('pagos.cash-ticket');
     Route::get('/pagos/{reservation}/boleto-efectivo/imagen', [AdminPaymentController::class, 'cashTicketImage'])->name('pagos.cash-ticket-image');
+    Route::post('/viajes/{landingRoute}/corte', [AdminTripCorteController::class, 'store'])->name('viajes.corte');
     Route::get('/precios', [AdminTripTicketPriceController::class, 'index'])->name('precios.index');
     Route::post('/precios', [AdminTripTicketPriceController::class, 'update'])->name('precios.update');
     Route::get('/guias', [AdminTripGuideController::class, 'index'])->name('guias.index');
@@ -241,6 +246,13 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::get('/paqueteria/paquetes/{package}/foto', [AdminPackageController::class, 'photo'])->name('paqueteria.paquetes.photo');
     Route::post('/paqueteria/paquetes/{package}/estado', [AdminPackageController::class, 'updateStatus'])->name('paqueteria.paquetes.update-status');
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
+    Route::post('/paqueteria/paquetes/{package}/entregar', [AdminPackageDeliveryController::class, 'store'])->name('paqueteria.paquetes.deliver');
+    Route::get('/paqueteria/paquetes/{package}/foto-entrega', [AdminPackageController::class, 'deliveryPhoto'])->name('paqueteria.paquetes.delivery-photo');
+    Route::get('/paqueteria/clientes', [AdminPackageClientController::class, 'index'])->name('paqueteria.clientes');
+    Route::get('/paqueteria/clientes/{client}', [AdminPackageClientController::class, 'show'])->name('paqueteria.clientes.show');
+    Route::post('/paqueteria/clientes/{client}/pagos', [AdminPackageClientController::class, 'pay'])->name('paqueteria.clientes.pay');
+    Route::get('/paqueteria/corte', [AdminPackageCorteController::class, 'show'])->name('paqueteria.corte');
+    Route::post('/paqueteria/corte', [AdminPackageCorteController::class, 'store'])->name('paqueteria.corte.store');
 });
 
 // OpenPay webhook route removed: OpenPay is disabled for now, so
