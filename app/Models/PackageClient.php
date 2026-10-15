@@ -19,6 +19,10 @@ class PackageClient extends Model
     /** "4441234567" → "444 123 4567" (formato del campo de captura). */
     public function getPhoneFormattedAttribute(): string
     {
+        if (! $this->phone) {
+            return 'Sin teléfono';
+        }
+
         return substr($this->phone, 0, 3).' '.substr($this->phone, 3, 3).' '.substr($this->phone, 6);
     }
 
@@ -26,6 +30,12 @@ class PackageClient extends Model
     public static function forRegistration(string $name, string $phone): self
     {
         return static::updateOrCreate(['phone' => static::normalizePhone($phone)], ['name' => $name]);
+    }
+
+    /** Cliente sin teléfono (paquetes entregados que nunca se registraron), por nombre. */
+    public static function forName(string $name): self
+    {
+        return static::firstOrCreate(['name' => $name, 'phone' => null]);
     }
 
     public function packages(): HasMany

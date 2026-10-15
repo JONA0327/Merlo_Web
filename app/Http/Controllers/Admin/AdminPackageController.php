@@ -81,6 +81,56 @@ class AdminPackageController extends Controller
         ]);
     }
 
+    /**
+     * Paquetes que ya se entregaron pero nunca se capturaron en el sistema:
+     * sin folio, teléfono ni fotos. Solo nombre, costo y lo que quedó a deber
+     * (ese saldo aparece en Clientes para cobrarlo después).
+     */
+    public function legacyCreate(): View
+    {
+        return view('admin.paqueteria.sin-folio');
+    }
+
+    public function legacyStore(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'client_name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'owed' => ['nullable', 'numeric', 'min:0', 'lte:price'],
+            'delivered_on' => ['nullable', 'date', 'before_or_equal:today'],
+        ]);
+
+        $price = (float) $data['price'];
+        $owed = (float) ($data['owed'] ?? 0);
+        $deliveredAt = isset($data['delivered_on']) ? \Illuminate\Support\Carbon::parse($data['delivered_on'])->endOfDay()->min(now()) : now();
+
+        // No se da de alta en Clientes (no hay teléfono ni folio): queda solo
+        // con el nombre. Lo pagado se registra como cobro en la fecha de
+        // entrega para que salga en el corte de ese día; lo que debe sale
+        // en la lista de pendientes del corte.
+        $package = DB::transaction(function () use ($data, $price, $owed, $deliveredAt, $request) {
+            $package = Package::create([
+                'tracking_code' => Package::generateTrackingCode(),
+                'status' => Package::STATUS_ENTREGADO,
+                'client_name' => trim($data['client_name']),
+                'price' => $price,
+                'amount_paid' => round($price - $owed, 2),
+                'collected_by' => $request->user()->id,
+                'collected_at' => $deliveredAt,
+                'delivered_at' => $deliveredAt,
+            ]);
+
+            if ($price - $owed > 0) {
+                $package->payments()->create(['amount' => round($price - $owed, 2), 'user_id' => $request->user()->id, 'paid_at' => $deliveredAt]);
+            }
+
+            return $package;
+        });
+
+        return redirect()->route('admin.paqueteria.sin-folio.create')
+            ->with('success', "Registrado: {$package->client_name}".($owed > 0 ? ' — debe $'.number_format($owed, 2).'.' : ' — pagado.'));
+    }
+
     /** Thank-you page for someone who registered a package without logging in. */
     public function registerDone(Request $request)
     {

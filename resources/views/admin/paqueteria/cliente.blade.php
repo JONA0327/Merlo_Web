@@ -22,7 +22,7 @@
         @forelse ($pendingUnits as $u)
             @php
                 $isGroup = $u instanceof \App\Models\PackageGroup;
-                $folios = $isGroup ? $u->packages->sortBy('folio_number')->pluck('folio_label')->implode(', ') : $u->folio_label;
+                $folios = $isGroup ? $u->packages->sortBy('folio_number')->pluck('folio_label')->implode(', ') : ($u->folio_label ?? 'Sin folio · '.($u->delivered_at?->format('d/m/Y') ?? ''));
             @endphp
             <form method="POST" action="{{ route('admin.paqueteria.clientes.pay', $client) }}" class="mt-4 flex flex-wrap items-end gap-3 border-t border-black/5 pt-4">
                 @csrf
@@ -48,7 +48,7 @@
             <tbody>
                 @forelse ($packages as $p)
                     <tr class="border-b border-black/5">
-                        <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $p->folio_label }}</td>
+                        <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $p->folio_label ?? 'Sin folio' }}</td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $statusLabel[$p->status] ?? $p->status }}</td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->collected_at?->format('d/m/Y') ?? '—' }}</td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->delivered_at?->format('d/m/Y') ?? '—' }}</td>

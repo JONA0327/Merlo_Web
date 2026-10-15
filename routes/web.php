@@ -250,6 +250,8 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::post('/paqueteria/folios', [AdminPackageController::class, 'folioGuideStore'])->name('paqueteria.folios.store');
     Route::get('/paqueteria/folios/lotes', [AdminPackageController::class, 'qrBatches'])->name('paqueteria.qr.batches');
     Route::get('/paqueteria/folios/lotes/{batch}/pdf', [AdminPackageController::class, 'qrBatchDownload'])->name('paqueteria.qr.batches.download');
+    Route::get('/paqueteria/sin-folio', [AdminPackageController::class, 'legacyCreate'])->name('paqueteria.sin-folio.create');
+    Route::post('/paqueteria/sin-folio', [AdminPackageController::class, 'legacyStore'])->name('paqueteria.sin-folio.store');
     Route::post('/paqueteria/buscar', [AdminPackageController::class, 'lookup'])->name('paqueteria.paquetes.lookup');
     Route::get('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'show'])->name('paqueteria.paquetes.show');
     Route::get('/paqueteria/paquetes/{package}/foto', [AdminPackageController::class, 'photo'])->name('paqueteria.paquetes.photo');
@@ -262,6 +264,7 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::get('/paqueteria/clientes/{client}', [AdminPackageClientController::class, 'show'])->name('paqueteria.clientes.show');
     Route::post('/paqueteria/clientes/{client}/pagos', [AdminPackageClientController::class, 'pay'])->name('paqueteria.clientes.pay');
     Route::get('/paqueteria/corte', [AdminPackageCorteController::class, 'show'])->name('paqueteria.corte');
+    Route::get('/paqueteria/corte/imprimir', [AdminPackageCorteController::class, 'print'])->name('paqueteria.corte.imprimir');
     Route::post('/paqueteria/corte', [AdminPackageCorteController::class, 'store'])->name('paqueteria.corte.store');
 });
 

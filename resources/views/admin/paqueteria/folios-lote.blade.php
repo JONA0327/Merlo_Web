@@ -6,8 +6,18 @@
         <title>Lote de folios · Paquetería</title>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>
+            @page { size: letter portrait; margin: 8mm; }
+            .page { width: 184mm; margin: 0 auto; padding: 24px 0; }
+            .row { display: flex; flex-wrap: nowrap; gap: 6mm; height: 54mm; margin-bottom: 4mm; }
+            .card { flex: 0 0 85.6mm; width: 85.6mm; height: 54mm; box-sizing: border-box; border: 0.3mm solid #8C1D2B; border-radius: 3mm; overflow: hidden; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 3mm 3mm 2.5mm; text-align: center; }
+            .card .logo { height: 13mm; width: auto; }
+            .card .tel { font-size: 7.5pt; line-height: 1.3; color: #2B1113; }
+            .card .tel b { font-weight: 700; }
+            .card .folio { font-family: ui-monospace, monospace; font-size: 44pt; font-weight: 900; letter-spacing: .05em; white-space: nowrap; }
             @media print {
-                @page { margin: 12mm; }
+                html, body { margin: 0 !important; padding: 0 !important; background: #fff; }
+                .page { padding: 0; margin: 0; height: 240mm; overflow: hidden; break-after: page; page-break-after: always; }
+                .page:last-child { break-after: auto; page-break-after: auto; }
             }
         </style>
     </head>
@@ -26,13 +36,23 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4 p-6 print:grid-cols-4 print:gap-3 print:p-0">
-            @foreach ($packages as $package)
-                <div class="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-white p-4 text-center break-inside-avoid">
-                    <p class="font-mono text-lg font-black tracking-wider text-[#2B1113]">{{ $package->folio_label }}</p>
-                    <p class="text-[10px] text-[#2B1113]/40">Merlo Transportes · Paquetería</p>
-                </div>
-            @endforeach
-        </div>
+        @foreach ($packages->chunk(8) as $page)
+            <div class="page">
+                @foreach ($page->chunk(2) as $row)
+                    <div class="row">
+                        @foreach ($row as $package)
+                            <div class="card">
+                                <img class="logo" src="{{ asset('Logo.png') }}" alt="Merlo Transportes">
+                                <div class="folio">{{ $package->folio_label }}</div>
+                                <div class="tel">
+                                    <div><b>WhatsApp:</b> 444 300 9923</div>
+                                    <div><b>Oficina:</b> 444 814 6688 &middot; 444 812 1651</div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endforeach
+            </div>
+        @endforeach
     </body>
 </html>

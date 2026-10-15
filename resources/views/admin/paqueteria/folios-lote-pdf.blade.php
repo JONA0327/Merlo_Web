@@ -4,37 +4,36 @@
 <meta charset="utf-8">
 <title>Lote de folios</title>
 <style>
-    body { font-family: Helvetica, Arial, sans-serif; color: #2B1113; margin: 0; padding: 24px; }
-    .header { margin-bottom: 18px; }
-    .header h1 { font-size: 16px; margin: 0 0 4px 0; }
-    .header p { font-size: 10px; color: #6b5c5e; margin: 0; }
-    table.grid { width: 100%; border-collapse: collapse; }
-    table.grid td { width: 25%; text-align: center; padding: 10px; vertical-align: top; }
-    .card { border: 1px solid #ddd; border-radius: 6px; padding: 14px 6px; }
-    .folio { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
-    .brand { font-size: 8px; color: #999; margin-top: 4px; }
+    @page { size: letter portrait; margin: 8mm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #2B1113; margin: 0; padding: 0; }
+    table.sheet { width: 100%; border-collapse: separate; border-spacing: 6mm 4mm; page-break-after: always; }
+    table.sheet.last { page-break-after: auto; }
+    table.sheet td { width: 85.6mm; height: 54mm; padding: 0; vertical-align: top; }
+    /* Tamaño tarjeta: 85.6 x 54 mm */
+    .card { width: 85.6mm; height: 54mm; border: 0.3mm solid #8C1D2B; border-radius: 3mm; text-align: center; }
+    .logo { height: 13mm; margin-top: 3mm; }
+    .folio { font-size: 52px; font-weight: bold; letter-spacing: 2px; line-height: 17mm; margin-top: 1mm; }
+    .tel { font-size: 9px; line-height: 1.35; margin-top: 1mm; }
 </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Lote de {{ $packages->count() }} folios &middot; Paquetería</h1>
-        <p>Merlo Transportes &middot; Generado el {{ now()->format('d/m/Y H:i') }}</p>
-    </div>
-
-    <table class="grid">
-        <tr>
-            @foreach ($packages as $i => $package)
-                <td>
-                    <div class="card">
-                        <div class="folio">{{ $package->folio_label }}</div>
-                        <div class="brand">Merlo Transportes &middot; Paqueteria</div>
-                    </div>
-                </td>
-                @if (($i + 1) % 4 === 0 && ! $loop->last)
-                    </tr><tr>
-                @endif
+    @foreach ($packages->chunk(8) as $page)
+        <table class="sheet {{ $loop->last ? 'last' : '' }}">
+            @foreach ($page->chunk(2) as $row)
+                <tr>
+                    @foreach ($row as $package)
+                        <td><div class="card">
+                            <img class="logo" src="{{ public_path('Logo.png') }}">
+                            <div class="folio">{{ $package->folio_label }}</div>
+                            <div class="tel"><b>WhatsApp:</b> 444 300 9923<br><b>Oficina:</b> 444 814 6688 &middot; 444 812 1651</div>
+                        </div></td>
+                    @endforeach
+                    @if ($row->count() < 2)
+                        <td></td>
+                    @endif
+                </tr>
             @endforeach
-        </tr>
-    </table>
+        </table>
+    @endforeach
 </body>
 </html>

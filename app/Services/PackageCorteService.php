@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Package;
 use App\Models\PackageCorte;
+use App\Models\PackageGroup;
 use App\Models\PackagePayment;
 use Illuminate\Support\Carbon;
 
@@ -16,6 +18,21 @@ class PackageCorteService
     public function payments(Carbon $date)
     {
         return PackagePayment::with('payable', 'user')->whereDate('paid_at', $date)->orderBy('paid_at')->get();
+    }
+
+    /**
+     * Envíos ya entregados con saldo por cobrar (los de Clientes y los
+     * registrados sin folio), para la lista impresa del corte.
+     *
+     * @return \Illuminate\Support\Collection<int, Package|PackageGroup>
+     */
+    public function pendingUnits()
+    {
+        $groups = PackageGroup::with('packages')->get()
+            ->filter(fn (PackageGroup $g) => $g->packages->contains('status', Package::STATUS_ENTREGADO));
+        $packages = Package::whereNull('package_group_id')->where('status', Package::STATUS_ENTREGADO)->get();
+
+        return $groups->concat($packages)->filter(fn ($u) => $u->pendingAmount() > 0)->values();
     }
 
     public function confirm(Carbon $date, ?int $userId): PackageCorte

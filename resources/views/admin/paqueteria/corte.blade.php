@@ -20,6 +20,7 @@
             <input type="date" name="fecha" value="{{ $date->format('Y-m-d') }}" class="mt-1 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm">
         </label>
         <button type="submit" class="rounded-xl bg-[#2B1113]/5 px-4 py-2 text-xs font-bold text-[#2B1113] hover:bg-[#2B1113]/10">Ver</button>
+        <a href="{{ route('admin.paqueteria.corte.imprimir', ['fecha' => $date->format('Y-m-d')]) }}" target="_blank" class="rounded-xl bg-white px-4 py-2 text-xs font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5">Imprimir lista</a>
     </form>
 
     <div class="rounded-2xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
@@ -36,7 +37,7 @@
                     $unit = $p->payable;
                     $folios = $unit instanceof \App\Models\PackageGroup ? $unit->packages->sortBy('folio_number')->pluck('folio_label')->implode(', ') : $unit?->folio_label;
                 @endphp
-                <li class="flex justify-between py-2"><span class="text-[#2B1113]/70">{{ $p->paid_at->format('H:i') }} · {{ $unit?->client_name }} · {{ $folios }}</span><span class="font-semibold text-[#2B1113]">{{ $money($p->amount) }}</span></li>
+                <li class="flex justify-between py-2"><span class="text-[#2B1113]/70">{{ $p->paid_at->format('H:i') }} · {{ $unit?->client_name }} · {{ $folios ?: 'Sin folio' }}</span><span class="font-semibold text-[#2B1113]">{{ $money($p->amount) }}</span></li>
             @empty
                 <li class="py-4 text-[#2B1113]/50">No hubo cobros este día.</li>
             @endforelse

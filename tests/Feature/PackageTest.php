@@ -534,3 +534,32 @@ test('the rest of paquetería stays behind login: only the QR form is public', f
     $this->get(route('admin.paqueteria.qr-universal'))->assertRedirect(route('login'));
     $this->post(route('admin.paqueteria.folios.store'), ['qty' => 5])->assertRedirect(route('login'));
 });
+
+test('a delivered package without folio can be registered with only name, cost and amount owed', function () {
+    $user = paqueteriaUser();
+
+    $this->actingAs($user)->post(route('admin.paqueteria.sin-folio.store'), [
+        'client_name' => 'Doña Mary', 'price' => 200, 'owed' => 80,
+    ])->assertRedirect(route('admin.paqueteria.sin-folio.create'));
+
+    $package = Package::firstOrFail();
+    expect($package->folio_number)->toBeNull();
+    expect($package->status)->toBe(Package::STATUS_ENTREGADO);
+    expect((float) $package->amount_paid)->toBe(120.0);
+    expect($package->pendingAmount())->toBe(80.0);
+    // No se da de alta en Clientes, pero lo pagado sí queda como cobro del día y lo debido sale en el corte impreso.
+    expect($package->package_client_id)->toBeNull();
+    expect(\App\Models\PackageClient::count())->toBe(0);
+    expect((float) \App\Models\PackagePayment::sum('amount'))->toBe(120.0);
+    Http::assertNothingSent();
+
+    $this->actingAs($user)->get(route('admin.paqueteria.corte.imprimir'))->assertOk()
+        ->assertSee('Doña Mary')->assertSee('Sin folio')->assertSee('$120.00')->assertSee('$80.00');
+});
+
+test('owed amount cannot exceed the cost for a no-folio package', function () {
+    $this->actingAs(paqueteriaUser())->post(route('admin.paqueteria.sin-folio.store'), [
+        'client_name' => 'X', 'price' => 100, 'owed' => 150,
+    ])->assertSessionHasErrors('owed');
+    expect(Package::count())->toBe(0);
+});

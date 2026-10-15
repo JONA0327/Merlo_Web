@@ -23,6 +23,18 @@ class AdminPackageCorteController extends Controller
         ]);
     }
 
+    /** Lista imprimible: quién pagó ese día y quién sigue debiendo. */
+    public function print(Request $request, PackageCorteService $service): View
+    {
+        $date = Carbon::parse($request->query('fecha', today()->toDateString()))->startOfDay();
+
+        return view('admin.paqueteria.corte-imprimir', [
+            'date' => $date,
+            'payments' => $service->payments($date),
+            'pending' => $service->pendingUnits(),
+        ]);
+    }
+
     public function store(Request $request, PackageCorteService $service): RedirectResponse
     {
         $data = $request->validate(['fecha' => ['required', 'date']]);

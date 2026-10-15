@@ -27,6 +27,9 @@
             <a href="{{ route('admin.paqueteria.folios.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                 Imprimir guía de folios
             </a>
+            <a href="{{ route('admin.paqueteria.sin-folio.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
+                Registrar entregado sin folio
+            </a>
             <a href="{{ route('admin.paqueteria.registrar.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
                 <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
                 Registrar nuevo
@@ -106,7 +109,7 @@
                 <tbody class="divide-y divide-black/5">
                     @foreach ($packages as $package)
                         <tr>
-                            <td class="px-5 py-3 font-mono text-xs font-bold text-[#2B1113]">{{ $package->folio_label ?? $package->tracking_code }}</td>
+                            <td class="px-5 py-3 font-mono text-xs font-bold text-[#2B1113]">{{ $package->folio_label ?? ($package->delivered_at && ! $package->phone && ! $package->displayPhone() ? 'Sin folio' : $package->tracking_code) }}</td>
                             <td class="px-5 py-3 text-[#2B1113]/80">
                                 {{ $package->displayClientName() ?? '—' }}
                                 @if ($package->isGrouped())
