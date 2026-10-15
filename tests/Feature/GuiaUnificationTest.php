@@ -366,3 +366,141 @@ test('provisioning "de planta" apartados does not duplicate a seat after the dat
     StandingReservation::where('bus_unit_seat_id', $seatA)->update(['weekdays' => null]);
     expect(StandingReservation::provisionGuideReservations($guide2))->toBe(0);
 });
+
+// ---------------------------------------------------------------------------
+// "Especial" with a mode (ida / redondo / regreso — same price) and the
+// colors of the printed list.
+// ---------------------------------------------------------------------------
+
+function especialStore(array $over = []): array
+{
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    \App\Models\TripTicketPrice::create(['landing_route_id' => $trip->id, 'trip_type' => 'especial', 'price' => 1800]);
+
+    test()->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.store', $guide), $over + [
+            'travel_date' => $trip->day->toDateString(),
+            'customer_name' => 'Especial', 'customer_phone' => '4444416578', 'trip_type' => 'especial',
+            'paid' => '1', 'payment_method' => [$seats[0]->id => 'cash', $seats[1]->id => 'cash'],
+            'seat_ids' => [$seats[0]->id, $seats[1]->id],
+        ])->assertSessionHas('success');
+
+    return [$trip, $seats, $guide, SeatReservation::where('trip_type', 'especial')->orderBy('id')->get()];
+}
+
+test('an especial defaults to redondo: both legs, own green color', function () {
+    [, , , $rows] = especialStore();
+
+    expect($rows)->toHaveCount(2);
+    $r = $rows->first();
+    expect($r->especial_mode)->toBe('round_trip')
+        ->and($r->leg)->toBe('outbound')
+        ->and($r->needsBothLegs())->toBeTrue()
+        ->and($r->colorKey())->toBe('especial')
+        ->and($r->trip_type_label)->toBe(\App\Models\TripTicketPrice::tripTypes()['especial']);
+});
+
+test('an especial "solo ida" is one leg and blue; the price is the same', function () {
+    [, , , $rows] = especialStore(['especial_mode' => 'one_way']);
+
+    $r = $rows->first();
+    expect($r->especial_mode)->toBe('one_way')
+        ->and($r->leg)->toBe('outbound')
+        ->and($r->needsBothLegs())->toBeFalse()
+        ->and($r->colorKey())->toBe('ida')
+        ->and($r->trip_type_label)->toContain('solo ida')
+        ->and((float) $r->unit_price)->toBe(900.0); // mancuerna 1800 split over 2 seats, same as a redondo especial
+});
+
+test('an especial "solo regreso" sits on the return leg and is red', function () {
+    [, , , $rows] = especialStore(['especial_mode' => 'return']);
+
+    $r = $rows->first();
+    expect($r->leg)->toBe('return')
+        ->and($r->needsBothLegs())->toBeFalse()
+        ->and($r->colorKey())->toBe('regreso')
+        ->and($r->trip_type_label)->toContain('solo regreso');
+});
+
+test('a rescheduled return (ida row on the return leg) is red, a plain ida is blue', function () {
+    $ida = new SeatReservation(['trip_type' => 'one_way', 'leg' => 'outbound']);
+    $rescheduled = new SeatReservation(['trip_type' => 'one_way', 'leg' => 'return', 'source_reservation_id' => 99]);
+    $redondo = new SeatReservation(['trip_type' => 'round_trip', 'leg' => 'outbound']);
+
+    expect($ida->colorKey())->toBe('ida')
+        ->and($rescheduled->colorKey())->toBe('regreso')
+        ->and($redondo->colorKey())->toBe('redondo');
+});
+
+test('check-in only waits for both legs on a redondo especial', function () {
+    [, , , $rows] = especialStore(['especial_mode' => 'one_way']);
+    $ida = $rows->first();
+
+    expect(SeatReservation::pendingCheckIn()->pluck('id'))->toContain($ida->id);
+    $ida->update(['outbound_verified_at' => now()]);
+    expect(SeatReservation::pendingCheckIn()->pluck('id'))->not->toContain($ida->id);
+
+    $redondo = SeatReservation::create([
+        'landing_route_id' => $ida->landing_route_id, 'bus_unit_seat_id' => $rows->last()->bus_unit_seat_id, 'trip_type' => 'especial',
+        'leg' => 'return', 'unit_price' => 1, 'customer_name' => 'X', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+    ]);
+    $legacy = SeatReservation::create([ // an especial created before the mode existed: NULL = redondo
+        'landing_route_id' => $ida->landing_route_id, 'bus_unit_seat_id' => \App\Models\BusUnitSeat::where('bus_unit_id', $ida->landingRoute->bus_unit_id)->whereNotIn('id', $rows->pluck('bus_unit_seat_id'))->value('id'), 'trip_type' => 'especial',
+        'leg' => 'outbound', 'unit_price' => 1, 'customer_name' => 'Y', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+        'outbound_verified_at' => now(),
+    ]);
+    // the return-leg especial (mode null→redondo but on the return leg) and the legacy one are still pending
+    expect(SeatReservation::pendingCheckIn()->pluck('id'))->toContain($legacy->id);
+});
+
+test('the printed list paints each especial by what it is and "de planta" in purple', function () {
+    [$trip, $seats, $guide] = especialStore(['especial_mode' => 'return']);
+    SeatReservation::create([
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[2]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 1, 'customer_name' => 'Planta', 'customer_phone' => '4444416578', 'status' => 'pending',
+        'payment_status' => 'pending', 'notes' => 'Asiento de planta',
+    ]);
+
+    $trip->busUnit->forceFill(['canvas_width' => 300, 'canvas_height' => 100])->save();
+    $response = $this->actingAs(guiaAdmin())->get(route('admin.guias.manifest', [$guide, 'fecha' => $trip->day->toDateString()]));
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toContain('pdf');
+});
+
+test('the open-trip seat map receives who holds each seat (hover tooltip)', function () {
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    SeatReservation::create([
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[0]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 100, 'customer_name' => 'María Pérez', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'completed',
+    ]);
+    SeatReservation::create([ // a failed payment does not hold the seat
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[1]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 100, 'customer_name' => 'Pago Fallido', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'failed',
+    ]);
+
+    $html = $this->actingAs(guiaAdmin())
+        ->get(route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]))
+        ->assertOk()->getContent();
+
+    preg_match('/seatHolders: (\{.*?\}),?
+/s', $html, $m);
+    $holders = json_decode($m[1] ?? '{}', true);
+
+    expect($holders)->toHaveKey((string) $seats[0]->id)
+        ->and($holders[$seats[0]->id][0])->toContain('María Pérez')->toContain('Pagado')
+        ->and($holders)->not->toHaveKey((string) $seats[1]->id); // failed payment holds nothing
+});
+
+test('the staged (no trip yet) seat map receives who holds each seat on that date', function () {
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(15)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    guiaStaged($guide, $a, $d, '1');
+
+    $html = $this->actingAs(guiaAdmin())
+        ->get(route('admin.guias.show', [$guide, 'fecha' => $d]))
+        ->assertOk()->getContent();
+
+    expect($html)->toContain('seatHolders')->and($html)->toContain('Cliente 1'.$d)->and($html)->toContain('Pendiente');
+});

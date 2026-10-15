@@ -349,6 +349,7 @@ class AdminTripGuideController extends Controller
             // never anything "already synced" to show here anymore.
             'syncedForDate' => collect(),
             'hasPendingForDate' => $pendingForDate->isNotEmpty(),
+            'seatHolders' => $this->seatHolderLabels($guide->pendingSeatReservations()->whereDate('travel_date', $date->toDateString())->with('user')->get()),
         ]);
     }
 
@@ -361,6 +362,30 @@ class AdminTripGuideController extends Controller
      * the two templates into one is a later, lower-risk pass once every
      * action (store, sendTicket, etc.) has moved over too.
      */
+    /**
+     * Who holds each seat, for the hover tooltip on the seat map:
+     * seat id => ["NOMBRE · Categoría · Pagado|Pendiente", ...] (a seat can
+     * carry an ida AND a regreso). Payments that failed/were refunded don't
+     * hold a seat.
+     *
+     * @param  \Illuminate\Support\Collection<int, SeatReservation>  $reservations
+     * @return array<int, array<int, string>>
+     */
+    private function seatHolderLabels($reservations): array
+    {
+        return $reservations
+            ->reject(fn (SeatReservation $r) => in_array($r->payment_status, [
+                SeatReservation::PAYMENT_FAILED,
+                SeatReservation::PAYMENT_REFUNDED,
+                SeatReservation::PAYMENT_CHARGEBACK,
+            ], true))
+            ->groupBy('bus_unit_seat_id')
+            ->map(fn ($rows) => $rows->map(fn (SeatReservation $r) => $r->customer_display_name
+                .' · '.$r->trip_type_label
+                .' · '.($r->isPaymentCompleted() ? 'Pagado' : 'Pendiente'))->values()->all())
+            ->all();
+    }
+
     private function showOpenTrip(TripGuide $guide, LandingRoute $landingRoute): View
     {
         $landingRoute->load('busUnit.seats', 'prices');
@@ -464,6 +489,7 @@ class AdminTripGuideController extends Controller
                 ->map(fn ($g) => $g->pluck('bus_unit_seat_id')->unique()->values()),
             'standingSeatIds' => $standingSeatIds,
             'standingBySeat' => $standingBySeat,
+            'seatHolders' => $this->seatHolderLabels($landingRoute->seatReservations()->with('user')->get()),
             'busUnits' => BusUnit::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
@@ -482,6 +508,8 @@ class AdminTripGuideController extends Controller
             'customer_email' => ['nullable', 'email', 'max:180'],
             'customer_phone' => ['required', 'string', 'max:20'],
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            // Only meaningful for 'especial' (same price: ida, redondo or regreso).
+            'especial_mode' => ['nullable', 'string', 'in:one_way,round_trip,return'],
             'travel_date' => ['required', 'date', 'after_or_equal:'.$guide->date_from->toDateString(), 'before_or_equal:'.$guide->date_to->toDateString()],
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
@@ -555,7 +583,8 @@ class AdminTripGuideController extends Controller
         $estimatedUnitPrice = TripTicketPrice::estimateUnitPrice($guide->from, $guide->to, $dateBusUnitId, $data['trip_type'], count($data['seat_ids']));
 
         $tripType = $data['trip_type'];
-        $leg = $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND;
+        $legAttrs = SeatReservation::legAttributesFor($tripType, $data['especial_mode'] ?? null);
+        $leg = $legAttrs['leg'];
 
         // A physical seat can't be double-booked for the same LEG on the
         // same date, regardless of which guide staged it. But an
@@ -594,7 +623,7 @@ class AdminTripGuideController extends Controller
         }
 
         try {
-            $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice, $estimatedUnitPrice) {
+            $root = DB::transaction(function () use ($guide, $data, $request, $tripType, $leg, $legAttrs, $date, $isCashPending, $methodsBySeat, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice, $estimatedUnitPrice) {
                 $root = null;
                     $abonoLeft = (float) ($data['abono'] ?? 0);
                 foreach ($data['seat_ids'] as $seatId) {
@@ -610,7 +639,8 @@ class AdminTripGuideController extends Controller
                         'travel_date' => $date->toDateString(),
                         'bus_unit_seat_id' => $seatId,
                         'trip_type' => $tripType,
-                        'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
+                        'especial_mode' => $legAttrs['especial_mode'],
+                        'leg' => $leg,
                         // Estimated off the global default price — the
                         // real one isn't known until the trip itself
                         // exists; TripGuide::linkTrip() recomputes it for
@@ -770,6 +800,7 @@ class AdminTripGuideController extends Controller
         Customer::remember($data['customer_name'], $data['customer_phone'], $data['customer_email'] ?? null);
 
         $tripType = $data['trip_type'];
+        $legAttrs = SeatReservation::legAttributesFor($tripType, $data['especial_mode'] ?? null);
         $isPaid = (bool) $data['paid'];
         $methodsBySeat = $data['payment_method'];
         if ($tripType === TripTicketPrice::TYPE_ESPECIAL) {
@@ -850,7 +881,7 @@ class AdminTripGuideController extends Controller
         }
 
         try {
-            $root = DB::transaction(function () use ($openTrip, $data, $request, $tripType, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
+            $root = DB::transaction(function () use ($openTrip, $data, $request, $tripType, $legAttrs, $unitPrice, $isCashPending, $methodsBySeat, $transferReference, $blockingReservations, $returnDatesBySeat, $returnPaidBySeat, $allowsReturnDate, $regresoPrice) {
                 $root = null;
                 $abonoLeft = (float) ($data['abono'] ?? 0);
                 foreach ($data['seat_ids'] as $seatId) {
@@ -864,7 +895,8 @@ class AdminTripGuideController extends Controller
                         'bus_unit_seat_id' => $seatId,
                         'user_id' => null,
                         'trip_type' => $tripType,
-                        'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
+                        'especial_mode' => $legAttrs['especial_mode'],
+                        'leg' => $legAttrs['leg'],
                         'unit_price' => $unitPrice,
                         'abono' => $seatAbono,
                         'customer_name' => $data['customer_name'],
@@ -1301,6 +1333,7 @@ class AdminTripGuideController extends Controller
 
         $data = $request->validate([
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            'especial_mode' => ['nullable', 'string', 'in:one_way,round_trip,return'],
             'payment_method' => ['required', 'string', 'in:transfer,cash,card,tbd'],
             'payment_status' => ['required', 'string', 'in:pending,completed'],
             'regreso_date' => ['nullable', 'date', 'after_or_equal:today'],
@@ -1317,9 +1350,8 @@ class AdminTripGuideController extends Controller
         }
         $before = $reservation->trip_type.'|'.$reservation->payment_method.'|'.$reservation->payment_status;
 
-        $reservation->update([
+        $reservation->update(SeatReservation::legAttributesFor($tripType, $data['especial_mode'] ?? null) + [
             'trip_type' => $tripType,
-            'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
             'unit_price' => $trip->seatPriceFor($tripType),
             'payment_method' => $data['payment_method'],
             'payment_status' => $data['payment_status'],
@@ -1387,6 +1419,7 @@ class AdminTripGuideController extends Controller
 
         $data = $request->validate([
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
+            'especial_mode' => ['nullable', 'string', 'in:one_way,round_trip,return'],
             'payment_method' => ['required', 'string', 'in:transfer,cash,card,tbd'],
             'payment_status' => ['required', 'string', 'in:pending,completed'],
         ]);
@@ -1396,9 +1429,8 @@ class AdminTripGuideController extends Controller
         $route = $reservation->outboundRouteInfo();
         $groupIds = $reservation->groupMembers()->pluck('id');
 
-        $reservation->update([
+        $reservation->update(SeatReservation::legAttributesFor($tripType, $data['especial_mode'] ?? null) + [
             'trip_type' => $tripType,
-            'leg' => $tripType === TripTicketPrice::TYPE_REGRESO ? SeatReservation::LEG_RETURN : SeatReservation::LEG_OUTBOUND,
             'unit_price' => TripTicketPrice::estimateUnitPrice($route['from'], $route['to'], (int) $route['bus_unit_id'], $tripType, 1),
             'payment_method' => $data['payment_method'],
             'payment_status' => $data['payment_status'],

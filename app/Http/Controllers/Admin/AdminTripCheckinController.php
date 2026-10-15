@@ -195,7 +195,7 @@ class AdminTripCheckinController extends Controller
      */
     public function verifyReturn(Request $request, SeatReservation $reservation): RedirectResponse
     {
-        if ($reservation->isOneWay() && ! $reservation->isReturnLeg()) {
+        if ($reservation->isSingleLeg() && ! $reservation->isReturnLeg()) {
             return $this->backWithError($reservation, 'Este boleto es solo de ida — no tiene vuelta que registrar.');
         }
 

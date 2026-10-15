@@ -38,6 +38,11 @@ class SeatReservation extends Model
     public const LEG_OUTBOUND = 'outbound';
     public const LEG_RETURN = 'return';
 
+    // What an "especial" actually covers (it is charged the same either way).
+    public const ESPECIAL_ONE_WAY = 'one_way';
+    public const ESPECIAL_ROUND_TRIP = 'round_trip';
+    public const ESPECIAL_RETURN = 'return';
+
     protected $fillable = [
         'landing_route_id',
         'trip_guide_id',
@@ -45,6 +50,7 @@ class SeatReservation extends Model
         'bus_unit_seat_id',
         'user_id',
         'trip_type',
+        'especial_mode',
         'leg',
         'unit_price',
         'abono',
@@ -259,7 +265,62 @@ class SeatReservation extends Model
      */
     public function needsBothLegs(): bool
     {
-        return $this->isRoundTrip() || $this->isEspecial();
+        return $this->isRoundTrip() || ($this->isEspecial() && $this->especialMode() === self::ESPECIAL_ROUND_TRIP);
+    }
+
+    /**
+     * Covers a single outbound leg: an ida, or an especial "solo ida". (A
+     * return-leg row is handled separately through isReturnLeg().)
+     */
+    public function isSingleLeg(): bool
+    {
+        return $this->isOneWay() || ($this->isEspecial() && $this->especialMode() === self::ESPECIAL_ONE_WAY);
+    }
+
+    /**
+     * Which legs an especial covers: ida, redondo or regreso (same price).
+     * Null for any other category; a NULL column (every especial created
+     * before the mode existed) means redondo, as it always behaved.
+     */
+    public function especialMode(): ?string
+    {
+        return $this->isEspecial() ? ($this->especial_mode ?: self::ESPECIAL_ROUND_TRIP) : null;
+    }
+
+    /**
+     * The mode to store (and the leg it implies) for a given category — a
+     * regreso-mode especial sits on the return leg like any other regreso.
+     *
+     * @return array{especial_mode: ?string, leg: string}
+     */
+    public static function legAttributesFor(string $tripType, ?string $especialMode): array
+    {
+        $mode = $tripType === TripTicketPrice::TYPE_ESPECIAL ? ($especialMode ?: self::ESPECIAL_ROUND_TRIP) : null;
+
+        return [
+            'especial_mode' => $mode,
+            'leg' => $tripType === TripTicketPrice::TYPE_REGRESO || $mode === self::ESPECIAL_RETURN ? self::LEG_RETURN : self::LEG_OUTBOUND,
+        ];
+    }
+
+    /**
+     * Color key used by the printed lists: regreso is red even when it was
+     * rescheduled, ida is blue, redondo is neutral, and an especial takes
+     * the color of what it really is (ida blue, regreso red, redondo its
+     * own green). "De planta" (purple) is decided by the caller — it lives
+     * on the group's root notes, not on every seat.
+     */
+    public function colorKey(): string
+    {
+        return match (true) {
+            $this->isReturnLeg(), $this->isRegreso() => 'regreso',
+            $this->isEspecial() => match ($this->especialMode()) {
+                self::ESPECIAL_ONE_WAY => 'ida',
+                default => 'especial',
+            },
+            $this->isOneWay() => 'ida',
+            default => 'redondo',
+        };
     }
 
     /**
@@ -295,6 +356,14 @@ class SeatReservation extends Model
 
     public function getTripTypeLabelAttribute(): string
     {
+        if ($this->isEspecial()) {
+            return (TripTicketPrice::tripTypes()[TripTicketPrice::TYPE_ESPECIAL] ?? 'Especial').match ($this->especialMode()) {
+                self::ESPECIAL_ONE_WAY => ' · solo ida',
+                self::ESPECIAL_RETURN => ' · solo regreso',
+                default => '',
+            };
+        }
+
         if ($this->isReturnLeg()) {
             // Two different flows both produce a leg=return row: the
             // existing admin resale (always carries source_reservation_id)
@@ -327,6 +396,7 @@ class SeatReservation extends Model
             $this->isOneWay() && $this->source_reservation_id !== null => 'bg-orange-100 text-orange-800 ring-1 ring-orange-200',
             $this->trip_type === TripTicketPrice::TYPE_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
             $this->trip_type === TripTicketPrice::TYPE_REGRESO => 'bg-red-100 text-red-800 ring-1 ring-red-200',
+            $this->isEspecial() && $this->especialMode() === self::ESPECIAL_ONE_WAY => 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
             $this->trip_type === TripTicketPrice::TYPE_ESPECIAL => 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
             default => 'bg-[#FFFBF6] text-[#2B1113]/70 ring-1 ring-black/10',
         };
@@ -368,7 +438,7 @@ class SeatReservation extends Model
         if ($this->isReturnLeg()) {
             return $this->isReturnVerified();
         }
-        if ($this->isOneWay()) {
+        if ($this->isSingleLeg()) {
             return $this->isOutboundVerified();
         }
         return $this->isOutboundVerified() && $this->isReturnVerified();
@@ -1277,18 +1347,23 @@ class SeatReservation extends Model
     {
         return $query->where(function ($q) {
             $q->where(function ($q1) {
-                $q1->whereIn('trip_type', [TripTicketPrice::TYPE_ONE_WAY, TripTicketPrice::TYPE_REGRESO])
+                $q1->whereIn('trip_type', [TripTicketPrice::TYPE_ONE_WAY, TripTicketPrice::TYPE_REGRESO, TripTicketPrice::TYPE_ESPECIAL])
                     ->where('leg', self::LEG_RETURN)
                     ->whereNull('return_verified_at');
             })->orWhere(function ($q2) {
-                $q2->where('trip_type', TripTicketPrice::TYPE_ONE_WAY)
+                // A "solo ida" especial is one leg too.
+                $q2->where(fn ($t) => $t->where('trip_type', TripTicketPrice::TYPE_ONE_WAY)
+                        ->orWhere(fn ($e) => $e->where('trip_type', TripTicketPrice::TYPE_ESPECIAL)->where('especial_mode', self::ESPECIAL_ONE_WAY)))
                     ->where('leg', '!=', self::LEG_RETURN)
                     ->whereNull('outbound_verified_at');
             })->orWhere(function ($q3) {
-                // "especial" is treated like round_trip for check-in:
-                // both legs must be verified, regardless of which one
-                // is still missing.
-                $q3->whereIn('trip_type', [TripTicketPrice::TYPE_ROUND_TRIP, TripTicketPrice::TYPE_ESPECIAL])
+                // A redondo "especial" (also the default for the ones created
+                // before the mode existed) is treated like round_trip for
+                // check-in: both legs must be verified, regardless of which
+                // one is still missing.
+                $q3->where(fn ($t) => $t->where('trip_type', TripTicketPrice::TYPE_ROUND_TRIP)
+                        ->orWhere(fn ($e) => $e->where('trip_type', TripTicketPrice::TYPE_ESPECIAL)
+                            ->where(fn ($m) => $m->whereNull('especial_mode')->orWhere('especial_mode', self::ESPECIAL_ROUND_TRIP))))
                     ->where(function ($q4) {
                         $q4->whereNull('outbound_verified_at')
                             ->orWhereNull('return_verified_at');

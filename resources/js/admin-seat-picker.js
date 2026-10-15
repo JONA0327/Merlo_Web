@@ -333,6 +333,54 @@ config.seats.forEach((seat) => {
     }
 });
 
+// Hover tooltip: who holds the seat under the pointer. Seats that are already
+// taken are not "listening" in Konva (they can't be clicked), so the seat is
+// found by position from the layout instead of through Konva's events.
+const seatHolders = config.seatHolders ?? {};
+const holderTip = document.createElement('div');
+holderTip.setAttribute('role', 'tooltip');
+holderTip.style.cssText = 'position:fixed;z-index:60;display:none;pointer-events:none;max-width:260px;'
+    + 'padding:6px 10px;border-radius:10px;background:#2B1113;color:#fff;font:600 12px/1.35 system-ui,sans-serif;'
+    + 'box-shadow:0 6px 18px rgba(0,0,0,.25);';
+document.body.appendChild(holderTip);
+
+function seatAtPoint(clientX, clientY) {
+    const box = stage.container().getBoundingClientRect();
+    const scale = stage.scaleX() || 1;
+    const x = (clientX - box.left) / scale - contentOffset.x;
+    const y = (clientY - box.top) / scale - contentOffset.y;
+
+    return config.seats.find((s) => x >= s.pos_x && x <= s.pos_x + (s.width ?? SEAT_SIZE)
+        && y >= s.pos_y && y <= s.pos_y + (s.height ?? SEAT_SIZE));
+}
+
+function hideHolderTip() {
+    holderTip.style.display = 'none';
+}
+
+stage.container().addEventListener('mousemove', (e) => {
+    const seat = seatAtPoint(e.clientX, e.clientY);
+    const holders = seat ? seatHolders[seat.id] : null;
+    if (! holders || holders.length === 0) {
+        hideHolderTip();
+        return;
+    }
+    holderTip.replaceChildren();
+    const title = document.createElement('div');
+    title.textContent = `Asiento ${seat.label}`;
+    title.style.cssText = 'font-size:10px;letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin-bottom:2px;';
+    holderTip.appendChild(title);
+    holders.forEach((line) => {
+        const row = document.createElement('div');
+        row.textContent = line; // textContent: names are user input
+        holderTip.appendChild(row);
+    });
+    holderTip.style.display = 'block';
+    holderTip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - holderTip.offsetWidth - 8)}px`;
+    holderTip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - holderTip.offsetHeight - 8)}px`;
+});
+stage.container().addEventListener('mouseleave', hideHolderTip);
+
 stage.on('click tap', (e) => {
     // Clicks on empty canvas deselect everything.
     if (e.target === stage) {

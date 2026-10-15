@@ -10,29 +10,30 @@
     $seatsByDeck = $seats->groupBy('deck');
     $seatsByDeck = $unit->has_upper_deck ? $seatsByDeck->sortKeysDesc() : $seatsByDeck->sortKeys();
 
+    // Flat "printed sheet" design: no pills/checkboxes, ruled lines, colors
+    // only for meaning — name color = ticket type, green background = paid.
+    //
     // A4 PORTRAIT as DomPDF really renders it: about 673x954 CSS px (measured
-    // from real output; a browser's 794x1123 would overflow).
-    // Sheet layout, per deck: each printed row of 4 seats = a block of 2 lines;
-    // at its left the row's seat boxes (1 2 | 3 4), then the two name columns.
+    // from real output; a browser's 794x1123 would overflow). Per deck, each
+    // printed row of 4 seats is a block of 2 lines: at its left the row's
+    // seat boxes (1 2 | 3 4), then the two name columns.
     $pageW = 673;
     $pageH = 954;
     $bodyPad = 16;
     $headerH = 66;   // title, date, legend
-    $mapColW = 118;  // the seat boxes of one row
-    $cellWidth = ($pageW - 2 * $bodyPad - $mapColW) / 2 - 16; // px of one name cell
+    $mapColW = 104;  // the seat boxes of one row
+    $cellWidth = ($pageW - 2 * $bodyPad - $mapColW) / 2 - 12; // px of one name cell
 
     // Estimated printed height of the list at a given font: a seat's line wraps
-    // to 2+ lines when its names + payment badges are wider than the cell.
+    // to 2+ lines when its names (+ pending amount) are wider than the cell.
     $estimateHeight = function (int $fs, int $pad) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit) {
-        $lineH = $fs + 2 * $pad + 3.5; // measured: ~14px per line at fs 9, pad 1
-        $badgeFont = max(7, $fs - 2); // same rule as .pay-badge
-        $cellLines = function ($seat) use ($reservationsBySeat, $fs, $badgeFont, $cellWidth) {
-            $width = 5.0 * $fs; // checkbox + seat badge
+        $lineH = $fs + 2 * $pad + 3;
+        $small = max(7, $fs - 2); // amount font
+        $cellLines = function ($seat) use ($reservationsBySeat, $fs, $small, $cellWidth) {
+            $width = 2.4 * $fs + 8; // seat number
             foreach ($reservationsBySeat->get($seat->id, collect()) as $r) {
-                // measured from real output: name ~0.5em/char; badge = 20px of padding/margin
-                // + text (~8.9 x its font for "PENDIENTE $1,100.00", ~3.5 x for "PAGADO")
-                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs
-                    + ($r->isPaymentCompleted() ? 14 + 3.5 * $badgeFont : 20 + 8.9 * $badgeFont) + 8;
+                // name ~0.5em/char; pending amount "$1,100.00" ~9 chars of the small font
+                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs + ($r->isPaymentCompleted() ? 0 : 9 * 0.5 * $small + 6) + 10;
             }
 
             return max(1, (int) ceil($width / $cellWidth));
@@ -45,7 +46,7 @@
                 $right = $block->slice(2, 2)->values();
                 for ($i = 0, $n = max($left->count(), $right->count()); $i < $n; $i++) {
                     $lines = max($left->has($i) ? $cellLines($left[$i]) : 1, $right->has($i) ? $cellLines($right[$i]) : 1);
-                    $total += $lines * $lineH + ($i === $n - 1 ? $pad + 1.5 : 0);
+                    $total += $lines * $lineH + ($i === $n - 1 ? 2 : 0);
                 }
             }
         }
@@ -55,69 +56,70 @@
 
     // Everything must fit on ONE sheet: the biggest font whose estimated
     // height fits (falls through to the smallest if nothing does).
-    $padFor = fn (int $f) => $f >= 13 ? 3 : ($f >= 11 ? 2 : 1); // vertical padding grows with the font
+    $budget = $pageH - 2 * $bodyPad - $headerH - 10;
     $fs = 7;
     foreach ([15, 14, 13, 12, 11, 10, 9, 8] as $candidate) {
-        if ($estimateHeight($candidate, $padFor($candidate)) <= $pageH - 2 * $bodyPad - $headerH - 10) {
+        if ($estimateHeight($candidate, 1) <= $budget) {
             $fs = $candidate;
             break;
         }
     }
-    $tight = $fs <= 10;
-    $pad = $padFor($fs);
-    // Leftover height goes to row padding (more air between lines) instead of
-    // an unused strip at the bottom of the sheet; only 80% of the estimated
-    // slack, and at most 4px per side, to stay safely on one page.
+    $pad = 1;
+    // Leftover height goes to row padding (air between lines) instead of an
+    // unused strip at the bottom; only 80% of the estimated slack, at most 4px.
     $printedLines = $seatsByDeck->sum(fn ($d) => $d->chunk(4)->sum(fn ($b) => min($b->count(), 2)));
-    $slack = $pageH - 2 * $bodyPad - $headerH - 10 - $estimateHeight($fs, $pad);
-    $pad += max(0, min(4, (int) floor($slack * 0.8 / max(1, 2 * $printedLines))));
-    $lineH = $fs + 2 * $pad + 3.5;
-    $boxW = max(20, (int) round(($mapColW - 14) / 4)); // one seat box
+    $pad += max(0, min(4, (int) floor(($budget - $estimateHeight($fs, 1)) * 0.8 / max(1, 2 * $printedLines))));
+    $lineH = $fs + 2 * $pad + 3;
+    $small = max(7, $fs - 2);
+    $boxW = max(18, (int) round(($mapColW - 14) / 4)); // one seat box
 @endphp
 <style>
     /* The body's own padding is the margin: DomPDF's default page margin on top of it pushed a full list onto a 2nd sheet. */
     @page { margin: 0; }
     body { font-family: Helvetica, Arial, sans-serif; color: #2B1113; margin: 0; padding: {{ $bodyPad }}px; font-size: 12px; }
-    .header h1 { font-size: {{ $tight ? 15 : 18 }}px; margin: 0 0 2px 0; }
+    .header h1 { font-size: 15px; margin: 0 0 2px 0; }
     .header p { font-size: 11px; color: #6b5c5e; margin: 0 0 2px 0; }
-    .header .meta { font-size: 9px; color: #9a8a8c; margin-top: {{ $tight ? 3 : 8 }}px; }
-    table.manifest { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    table.manifest td { padding: {{ $pad }}px 8px; vertical-align: middle; }
-    table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth + 16) }}px; }
-    table.manifest td.col-left { border-right: 1px solid #c9bfc1; }
-    table.manifest tr.block-end td { border-bottom: 1px solid #c9bfc1; padding-bottom: {{ $pad + 2 }}px; }
-    table.manifest tr.block-shaded td { background: #FFFBF6; }
-    .seat-badge { display: inline-block; border: 1px solid #8C1D2B; border-radius: 4px; padding: {{ $tight ? 0 : 1 }}px 6px; font-weight: bold; font-size: {{ $fs }}px; margin-right: 6px; width: 22px; text-align: center; }
-    .name { font-weight: bold; font-size: {{ $fs }}px; }
-    .name.ida { color: #075985; }
-    .name.regreso { color: #991b1b; }
-    .name.especial { color: #065f46; }
-    .name.redondo { color: #2B1113; }
-    .name-sep { font-weight: bold; font-size: {{ $fs }}px; color: #9a8a8c; margin: 0 3px; }
-    .check-col { width: 18px; }
-    .box { display: inline-block; width: {{ $tight ? 10 : 13 }}px; height: {{ $tight ? 10 : 13 }}px; border: 1px solid #2B1113; }
-    /* A cada fila de 4 asientos: sus recuadros (1 2 | 3 4) a la izquierda y los nombres a la derecha. */
-    table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 8px {{ $pad }}px 0; white-space: nowrap; border-bottom: 1px solid #c9bfc1; }
-    .mbox { display: inline-block; width: {{ $boxW }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; vertical-align: middle; margin-right: 1px; }
-    .mbox.gap { margin-left: 8px; }
-    .mbox.ida { background: #bae6fd; border-color: #075985; }
-    .mbox.regreso { background: #fecaca; border-color: #991b1b; }
-    .mbox.especial { background: #a7f3d0; border-color: #065f46; }
-    .mbox.redondo { background: #e5d5d7; border-color: #2B1113; }
-    table.manifest tr { page-break-inside: avoid; }
-    .deck-title { font-size: 12px; font-weight: bold; margin: 10px 0 2px 0; color: #2B1113; }
-    .legend { margin-top: {{ $tight ? 3 : 8 }}px; }
-    .empty { padding: 18px; text-align: center; color: #9a8a8c; }
-    .pay-badge { display: inline-block; border-radius: 10px; padding: {{ $tight ? 0 : 1 }}px 8px; font-size: {{ max(7, $fs - 2) }}px; font-weight: bold; margin-left: 4px; }
-    .pay-badge.paid { background: #d1fae5; color: #065f46; }
-    .pay-badge.pending { background: #fef3c7; color: #92400e; }
-    .pay-badge.especial { background: #d1fae5; color: #065f46; border: 1px solid #065f46; }
+    .header .meta { font-size: 9px; color: #9a8a8c; margin-top: 3px; }
+    .legend { margin-top: 4px; }
     .legend-item { display: inline-block; margin-right: 14px; font-size: 9px; font-weight: bold; }
     .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
     .legend-dot.ida { background: #075985; }
     .legend-dot.regreso { background: #991b1b; }
     .legend-dot.especial { background: #065f46; }
     .legend-dot.redondo { background: #2B1113; }
+    .legend-dot.planta { background: #6B21A8; }
+    .legend-paid { display: inline-block; width: 14px; height: 8px; background: #c8e6c1; border: 1px solid #8fbf86; margin-right: 4px; }
+    .deck-title { font-size: 12px; font-weight: bold; margin: 8px 0 2px 0; color: #2B1113; }
+    .empty { padding: 18px; text-align: center; color: #9a8a8c; }
+
+    /* Hoja plana: renglones con línea, sin etiquetas ni casillas. */
+    table.manifest { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    table.manifest tr { page-break-inside: avoid; }
+    table.manifest td { padding: {{ $pad }}px 6px; vertical-align: middle; border-bottom: 1px solid #c9bfc1; font-size: {{ $fs }}px; }
+    table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth + 12) }}px; }
+    table.manifest td.col-left { border-right: 1px solid #8a7f81; }
+    table.manifest tr.block-end td { border-bottom: 1px solid #6b5c5e; }
+    table.manifest td.paid { background: #c8e6c1; }
+    .seat-no { display: inline-block; width: {{ round(2.4 * $fs) }}px; font-weight: bold; }
+    .name { font-weight: bold; }
+    .name.ida { color: #075985; }
+    .name.regreso { color: #991b1b; }
+    .name.especial { color: #065f46; }
+    .name.redondo { color: #2B1113; }
+    .name.planta { color: #6B21A8; }
+    .name-sep { font-weight: bold; color: #6b5c5e; margin: 0 2px; }
+    .amount { font-size: {{ $small }}px; font-weight: bold; color: #92400e; margin-left: 3px; }
+    .tag { font-size: {{ $small }}px; font-weight: bold; color: #065f46; margin-left: 3px; }
+
+    /* Recuadros de la fila (1 2 | 3 4) a la izquierda, planos y coloreados por tipo. */
+    table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 6px {{ $pad }}px 0; white-space: nowrap; border-bottom: 1px solid #6b5c5e; }
+    .mbox { display: inline-block; width: {{ $boxW }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; vertical-align: middle; margin-right: 1px; }
+    .mbox.gap { margin-left: 8px; }
+    .mbox.ida { background: #bae6fd; border-color: #075985; }
+    .mbox.regreso { background: #fecaca; border-color: #991b1b; }
+    .mbox.especial { background: #a7f3d0; border-color: #065f46; }
+    .mbox.redondo { background: #e5d5d7; border-color: #2B1113; }
+    .mbox.planta { background: #e9d5ff; border-color: #6B21A8; }
 </style>
 </head>
 <body>
@@ -136,6 +138,9 @@
             <span class="legend-item"><span class="legend-dot redondo"></span>Redondo</span>
             <span class="legend-item"><span class="legend-dot especial"></span>Especial</span>
             <span class="legend-item"><span class="legend-dot regreso"></span>Regreso</span>
+            <span class="legend-item"><span class="legend-dot planta"></span>Predeterminado</span>
+            <span class="legend-item"><span class="legend-paid"></span>Pagado</span>
+            <span class="legend-item"><span style="color: #92400e;">$ pendiente</span></span>
         </p>
     </div>
 
@@ -143,36 +148,23 @@
         <p class="empty">Esta unidad no tiene asientos configurados.</p>
     @else
         @php
-            $mapTypeClass = function ($seatId) use ($reservationsBySeat) {
+            // Colors: "de planta" purple > any regreso red (even rescheduled) >
+            // ida blue > redondo neutral; an especial takes the color of what it
+            // really is (see SeatReservation::colorKey()). A planta group is
+            // flagged on its root's notes only, hence the lookup by root id.
+            $plantaRootIds = $reservationsBySeat->flatten(1)
+                ->filter(fn ($r) => str_starts_with((string) $r->notes, 'Asiento de planta'))
+                ->map(fn ($r) => $r->groupRootId())
+                ->all();
+            $typeClass = fn ($r) => in_array($r->groupRootId(), $plantaRootIds, true) ? 'planta' : $r->colorKey();
+            $mapTypeClass = function ($seatId) use ($reservationsBySeat, $typeClass) {
                 $r = $reservationsBySeat->get($seatId, collect())->first();
-                if (! $r) {
-                    return '';
-                }
 
-                return match ($r->trip_type) {
-                    \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'ida',
-                    \App\Models\TripTicketPrice::TYPE_REGRESO => 'regreso',
-                    \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'especial',
-                    default => 'redondo',
-                };
+                return $r ? $typeClass($r) : '';
             };
-        @endphp
-
-        @foreach ($seatsByDeck as $deck => $deckSeats)
-        @if ($unit->has_upper_deck)
-            <p class="deck-title">{{ $deckNames[$deck] ?? $deck }} &nbsp; UNIDAD {{ $unit->name }}</p>
-        @endif
-        @php
-            // Matches the bus's real seat distribution: every 4 consecutive
-            // seats form one printed block — the first 2 stack in the left
-            // column, the next 2 stack in the right column (1/2 left,
-            // 3/4 right; 5/6 left, 7/8 right; ...), with a divider line
-            // between blocks. $seats already arrives sorted by label and
-            // includes every bookable seat, not just the occupied ones.
-            $blocks = $deckSeats->chunk(4);
             // "Especial" seats are sold as a mancuerna (2+ seats, ONE charge) —
-            // only they get the ESPECIAL tag, and the payment badge prints once
-            // per group (on its first seat) so the pair isn't charged as two.
+            // only they get the ESPECIAL tag, and the amount prints once per
+            // group (on its first seat) so the pair isn't charged as two.
             $especialGroups = $reservationsBySeat->flatten(1)
                 ->filter(fn ($r) => $r->trip_type === \App\Models\TripTicketPrice::TYPE_ESPECIAL)
                 ->groupBy(fn ($r) => $r->groupRootId())
@@ -185,75 +177,68 @@
                 $isFirst = $group->first()->id === $r->id;
                 $labels = $group->map(fn ($x) => $x->seat?->label)->filter()->implode(' + ');
 
-                return ['first' => $isFirst, 'labels' => $labels, 'total' => $group->sum(fn ($x) => (float) $x->unit_price), 'abono' => $group->sum(fn ($x) => (float) $x->abono)];
-            };
-            $typeClass = fn ($r) => match ($r->trip_type) {
-                \App\Models\TripTicketPrice::TYPE_ONE_WAY => 'ida',
-                \App\Models\TripTicketPrice::TYPE_REGRESO => 'regreso',
-                \App\Models\TripTicketPrice::TYPE_ESPECIAL => 'especial',
-                default => 'redondo',
+                $mode = match ($group->first()->especialMode()) {
+                    \App\Models\SeatReservation::ESPECIAL_ONE_WAY => 'IDA ',
+                    \App\Models\SeatReservation::ESPECIAL_RETURN => 'REGRESO ',
+                    default => '',
+                };
+
+                return ['first' => $isFirst, 'labels' => $mode.$labels, 'total' => $group->sum(fn ($x) => (float) $x->unit_price), 'abono' => $group->sum(fn ($x) => (float) $x->abono)];
             };
         @endphp
 
-        <table class="manifest">
-            <tbody>
-                @foreach ($blocks as $blockIndex => $block)
-                    @php
-                        $left = $block->slice(0, 2)->values();
-                        $right = $block->slice(2, 2)->values();
-                        $lineCount = max($left->count(), $right->count());
-                        $shaded = $blockIndex % 2 === 1;
-                    @endphp
-                    @for ($line = 0; $line < $lineCount; $line++)
-                        <tr class="{{ $shaded ? 'block-shaded' : '' }} {{ $line === $lineCount - 1 ? 'block-end' : '' }}">
-                            @if ($line === 0)
-                                <td class="map-cell" rowspan="{{ $lineCount }}">
-                                    @foreach ($block as $k => $mseat)
-                                        <span class="mbox {{ $mapTypeClass($mseat->id) }} {{ $k === 2 ? 'gap' : '' }}" style="height: {{ round($lineCount * $lineH - 4) }}px;">{{ $mseat->label }}</span>
-                                    @endforeach
-                                </td>
-                            @endif
-                            <td class="col-left">
-                                @if ($left->has($line))
-                                    @php $seatReservations = $reservationsBySeat->get($left[$line]->id, collect()); @endphp
-                                    <span class="check-col"><span class="box"></span></span>
-                                    <span class="seat-badge">{{ $left[$line]->label }}</span>
-                                    @foreach ($seatReservations as $r)
-                                        @if (! $loop->first)<span class="name-sep">/</span>@endif
-                                        <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
-                                        @php $esp = $especialTag($r); @endphp
-                                        @if ($esp)
-                                            <span class="pay-badge especial">ESPECIAL {{ $esp['labels'] }}</span>
-                                        @endif
-                                        @if (! $esp || $esp['first'])
-                                            <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}@if (! $r->isPaymentCompleted()) ${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}@endif</span>
-                                        @endif
-                                    @endforeach
+        @foreach ($seatsByDeck as $deck => $deckSeats)
+            @if ($unit->has_upper_deck)
+                <p class="deck-title">{{ $deckNames[$deck] ?? $deck }} &nbsp; UNIDAD {{ $unit->name }}</p>
+            @endif
+
+            <table class="manifest">
+                <tbody>
+                    {{-- Every 4 consecutive seats = one printed row: the first 2
+                         stack in the left column, the next 2 in the right one
+                         (1/2 left, 3/4 right; 5/6 left, 7/8 right; ...). --}}
+                    @foreach ($deckSeats->chunk(4) as $block)
+                        @php
+                            $sides = [$block->slice(0, 2)->values(), $block->slice(2, 2)->values()];
+                            $lineCount = max($sides[0]->count(), $sides[1]->count());
+                        @endphp
+                        @for ($line = 0; $line < $lineCount; $line++)
+                            <tr class="{{ $line === $lineCount - 1 ? 'block-end' : '' }}">
+                                @if ($line === 0)
+                                    <td class="map-cell" rowspan="{{ $lineCount }}">
+                                        @foreach ($block as $k => $mseat)
+                                            <span class="mbox {{ $mapTypeClass($mseat->id) }} {{ $k === 2 ? 'gap' : '' }}" style="height: {{ round($lineCount * $lineH - 3) }}px;">{{ $mseat->label }}</span>
+                                        @endforeach
+                                    </td>
                                 @endif
-                            </td>
-                            <td class="col-right">
-                                @if ($right->has($line))
-                                    @php $seatReservations = $reservationsBySeat->get($right[$line]->id, collect()); @endphp
-                                    <span class="check-col"><span class="box"></span></span>
-                                    <span class="seat-badge">{{ $right[$line]->label }}</span>
-                                    @foreach ($seatReservations as $r)
-                                        @if (! $loop->first)<span class="name-sep">/</span>@endif
-                                        <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
-                                        @php $esp = $especialTag($r); @endphp
-                                        @if ($esp)
-                                            <span class="pay-badge especial">ESPECIAL {{ $esp['labels'] }}</span>
+                                @foreach ($sides as $sideIndex => $side)
+                                    @php
+                                        $seat = $side->get($line);
+                                        $seatReservations = $seat ? $reservationsBySeat->get($seat->id, collect()) : collect();
+                                        $allPaid = $seatReservations->isNotEmpty() && $seatReservations->every(fn ($r) => $r->isPaymentCompleted());
+                                    @endphp
+                                    <td class="{{ $sideIndex === 0 ? 'col-left' : 'col-right' }} {{ $allPaid ? 'paid' : '' }}">
+                                        @if ($seat)
+                                            <span class="seat-no">{{ $seat->label }}</span>
+                                            @foreach ($seatReservations as $r)
+                                                @if (! $loop->first)<span class="name-sep">/</span>@endif
+                                                <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
+                                                @php $esp = $especialTag($r); @endphp
+                                                @if ($esp)
+                                                    <span class="tag">ESPECIAL {{ $esp['labels'] }}</span>
+                                                @endif
+                                                @if (! $r->isPaymentCompleted() && (! $esp || $esp['first']))
+                                                    <span class="amount">${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}</span>
+                                                @endif
+                                            @endforeach
                                         @endif
-                                        @if (! $esp || $esp['first'])
-                                            <span class="pay-badge {{ $r->isPaymentCompleted() ? 'paid' : 'pending' }}">{{ $r->isPaymentCompleted() ? 'PAGADO' : 'PENDIENTE' }}@if (! $r->isPaymentCompleted()) ${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}@endif</span>
-                                        @endif
-                                    @endforeach
-                                @endif
-                            </td>
-                        </tr>
-                    @endfor
-                @endforeach
-            </tbody>
-        </table>
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endfor
+                    @endforeach
+                </tbody>
+            </table>
         @endforeach
     @endif
 </body>

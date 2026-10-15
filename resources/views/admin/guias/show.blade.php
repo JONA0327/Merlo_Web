@@ -122,6 +122,29 @@
                     <p class="mt-1 text-[10px] text-[#2B1113]/40">El precio exacto se confirma cuando se abra el viaje real para esta fecha.</p>
                 </label>
 
+                <label id="admin-especial-mode" class="mt-3 hidden block">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">El especial es de</span>
+                    <select name="especial_mode" class="mt-1 w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2.5 text-sm font-bold text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
+                        @foreach ([
+                            \App\Models\SeatReservation::ESPECIAL_ROUND_TRIP => 'Redondo',
+                            \App\Models\SeatReservation::ESPECIAL_ONE_WAY => 'Solo ida',
+                            \App\Models\SeatReservation::ESPECIAL_RETURN => 'Solo regreso',
+                        ] as $mode => $modeLabel)
+                            <option value="{{ $mode }}">{{ $modeLabel }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-[10px] text-[#2B1113]/40">Se cobra igual (mancuerna); solo cambia qué tramos cubre y su color.</p>
+                </label>
+                <script>
+                    (function () {
+                        const type = document.getElementById('admin-trip-type-select');
+                        const wrap = document.getElementById('admin-especial-mode');
+                        const sync = () => wrap.classList.toggle('hidden', type.value !== 'especial');
+                        type.addEventListener('change', sync);
+                        sync();
+                    })();
+                </script>
+
                 <div id="admin-zone-picker" class="mt-3 hidden">
                     <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Zonas disponibles</span>
                     <p class="mt-0.5 text-[10px] text-[#2B1113]/40">Clic en una zona para seleccionar sus asientos en el plano.</p>
@@ -290,6 +313,11 @@
                                                             <option value="{{ $type }}" {{ $member->trip_type === $type ? 'selected' : '' }}>{{ $label }}</option>
                                                         @endforeach
                                                     </select>
+                                                    <select name="especial_mode" title="Si es especial: de ida, redondo o de regreso" class="rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        @foreach ([\App\Models\SeatReservation::ESPECIAL_ROUND_TRIP => 'Esp. redondo', \App\Models\SeatReservation::ESPECIAL_ONE_WAY => 'Esp. solo ida', \App\Models\SeatReservation::ESPECIAL_RETURN => 'Esp. solo regreso'] as $mode => $modeLabel)
+                                                            <option value="{{ $mode }}" {{ ($member->especialMode() ?? 'round_trip') === $mode ? 'selected' : '' }}>{{ $modeLabel }}</option>
+                                                        @endforeach
+                                                    </select>
                                                     <select name="payment_method" class="rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
                                                         <option value="transfer" {{ $member->payment_method === 'transfer' ? 'selected' : '' }}>Transfer</option>
                                                         <option value="cash" {{ $member->payment_method === 'cash' ? 'selected' : '' }}>Efectivo</option>
@@ -388,6 +416,8 @@
             // seat on this date — painted as taken so they stay visible.
             takenIds: {!! json_encode($syncedForDate->pluck('bus_unit_seat_id')->unique()->values()) !!},
             seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
+            // Who holds each seat (hover tooltip on the map).
+            seatHolders: {!! json_encode($seatHolders, JSON_UNESCAPED_UNICODE) !!},
         };
     </script>
     @vite(['resources/js/admin-seat-picker.js'])
