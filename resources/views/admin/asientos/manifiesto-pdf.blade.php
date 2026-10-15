@@ -5,36 +5,41 @@
 <title>Lista de asientos</title>
 @php
     $unit = $trip->busUnit;
-    $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
-    $seatsByDeck = $seats->groupBy('deck')->sortKeys();
+    $deckNames = ['lower' => 'P. INFERIOR', 'upper' => 'P. SUPERIOR'];
+    // Same order as the printed sheet: SUPERIOR first, INFERIOR below.
+    $seatsByDeck = $seats->groupBy('deck');
+    $seatsByDeck = $unit->has_upper_deck ? $seatsByDeck->sortKeysDesc() : $seatsByDeck->sortKeys();
 
     // A4 PORTRAIT as DomPDF really renders it: about 673x954 CSS px (measured
-    // from real output; a browser's 794x1123 would overflow). Layout, top to
-    // bottom: header, map row (decks side by side + legend), then the list in
-    // two columns using the full width.
+    // from real output; a browser's 794x1123 would overflow).
+    // Sheet layout, per deck: each printed row of 4 seats = a block of 2 lines;
+    // at its left the row's seat boxes (1 2 | 3 4), then the two name columns.
     $pageW = 673;
     $pageH = 954;
     $bodyPad = 16;
-    $headerH = 54;
-    $legendW = 150;
-    $cellWidth = ($pageW - 2 * $bodyPad) / 2 - 16; // px of one list cell
+    $headerH = 66;   // title, date, legend
+    $mapColW = 118;  // the seat boxes of one row
+    $cellWidth = ($pageW - 2 * $bodyPad - $mapColW) / 2 - 16; // px of one name cell
 
     // Estimated printed height of the list at a given font: a seat's line wraps
     // to 2+ lines when its names + payment badges are wider than the cell.
-    $estimateHeight = function (int $fs, int $pad) use ($seats, $reservationsBySeat, $cellWidth, $unit) {
+    $estimateHeight = function (int $fs, int $pad) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit) {
         $lineH = $fs + 2 * $pad + 3.5; // measured: ~14px per line at fs 9, pad 1
-        $cellLines = function ($seat) use ($reservationsBySeat, $fs, $cellWidth) {
-            $width = 7.1 * $fs; // checkbox + seat badge
+        $badgeFont = max(7, $fs - 2); // same rule as .pay-badge
+        $cellLines = function ($seat) use ($reservationsBySeat, $fs, $badgeFont, $cellWidth) {
+            $width = 5.0 * $fs; // checkbox + seat badge
             foreach ($reservationsBySeat->get($seat->id, collect()) as $r) {
-                // name ~0.54em/char, "PENDIENTE $1,100.00" badge ~13.5em, "PAGADO" ~5.7em
-                $width += mb_strlen((string) $r->customer_display_name) * 0.54 * $fs + ($r->isPaymentCompleted() ? 5.7 : 13.5) * $fs + 12;
+                // measured from real output: name ~0.5em/char; badge = 20px of padding/margin
+                // + text (~8.9 x its font for "PENDIENTE $1,100.00", ~3.5 x for "PAGADO")
+                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs
+                    + ($r->isPaymentCompleted() ? 14 + 3.5 * $badgeFont : 20 + 8.9 * $badgeFont) + 8;
             }
 
             return max(1, (int) ceil($width / $cellWidth));
         };
         $total = 0;
-        foreach ($seats->groupBy('deck') as $deckSeats) {
-            $total += $unit->has_upper_deck ? 22 : 0; // deck title
+        foreach ($seatsByDeck as $deckSeats) {
+            $total += $unit->has_upper_deck ? 24 : 0; // deck title
             foreach ($deckSeats->chunk(4) as $block) {
                 $left = $block->slice(0, 2)->values();
                 $right = $block->slice(2, 2)->values();
@@ -48,45 +53,26 @@
         return $total;
     };
 
-    // Everything must fit on ONE sheet: take the biggest font for which the
-    // list still fits under the header + map; within a font, the biggest map.
-    // (Estimates only; the loop falls through to the smallest if nothing fits.)
-    // First pass keeps the map reasonably big (>= 210px tall); only if even the
-    // smallest font can't fit like that does it shrink the map too.
+    // Everything must fit on ONE sheet: the biggest font whose estimated
+    // height fits (falls through to the smallest if nothing does).
+    $padFor = fn (int $f) => $f >= 13 ? 3 : ($f >= 11 ? 2 : 1); // vertical padding grows with the font
     $fs = 7;
-    $mapCap = 120;
-    foreach ([[300, 270, 240, 210], [180, 150, 130]] as $caps) {
-        foreach ([14, 13, 12, 11, 10, 9, 8] as $candidate) {
-            $listH = $estimateHeight($candidate, $candidate >= 11 ? 3 : 1);
-            foreach ($caps as $cap) {
-                if ($listH <= $pageH - 2 * $bodyPad - $headerH - ($cap + 14) - 12 - 8) {
-                    $fs = $candidate;
-                    $mapCap = $cap;
-                    break 3;
-                }
-            }
+    foreach ([15, 14, 13, 12, 11, 10, 9, 8] as $candidate) {
+        if ($estimateHeight($candidate, $padFor($candidate)) <= $pageH - 2 * $bodyPad - $headerH - 10) {
+            $fs = $candidate;
+            break;
         }
     }
     $tight = $fs <= 10;
-    $pad = $fs >= 11 ? 3 : 1;
-
-    // Map: each deck cropped to the bounding box of its seats (the canvas is
-    // mostly empty space), decks side by side, scaled to the height cap.
-    $mapBlocks = collect(); // per deck: ['seats', 'minX', 'minY', 'scale', 'w', 'h']
-    if ($seats->isNotEmpty()) {
-        $decks = $seatsByDeck->count();
-        $boxMaxW = ($pageW - 2 * $bodyPad - $legendW - 12 * ($decks - 1)) / $decks - 12;
-        $titleH = $unit->has_upper_deck ? 14 : 0;
-        $mapBlocks = $seatsByDeck->map(function ($g) use ($boxMaxW, $mapCap, $titleH) {
-            $minX = $g->min('pos_x');
-            $minY = $g->min('pos_y');
-            $w = max(1, $g->max(fn ($x) => $x->pos_x + $x->width) - $minX);
-            $h = max(1, $g->max(fn ($x) => $x->pos_y + $x->height) - $minY);
-            $scale = min($boxMaxW / $w, ($mapCap - $titleH - 12) / $h);
-
-            return ['seats' => $g, 'minX' => $minX, 'minY' => $minY, 'scale' => $scale, 'w' => round($w * $scale) + 12, 'h' => round($h * $scale) + 12];
-        });
-    }
+    $pad = $padFor($fs);
+    // Leftover height goes to row padding (more air between lines) instead of
+    // an unused strip at the bottom of the sheet; only 80% of the estimated
+    // slack, and at most 4px per side, to stay safely on one page.
+    $printedLines = $seatsByDeck->sum(fn ($d) => $d->chunk(4)->sum(fn ($b) => min($b->count(), 2)));
+    $slack = $pageH - 2 * $bodyPad - $headerH - 10 - $estimateHeight($fs, $pad);
+    $pad += max(0, min(4, (int) floor($slack * 0.8 / max(1, 2 * $printedLines))));
+    $lineH = $fs + 2 * $pad + 3.5;
+    $boxW = max(20, (int) round(($mapColW - 14) / 4)); // one seat box
 @endphp
 <style>
     /* The body's own padding is the margin: DomPDF's default page margin on top of it pushed a full list onto a 2nd sheet. */
@@ -96,7 +82,8 @@
     .header p { font-size: 11px; color: #6b5c5e; margin: 0 0 2px 0; }
     .header .meta { font-size: 9px; color: #9a8a8c; margin-top: {{ $tight ? 3 : 8 }}px; }
     table.manifest { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    table.manifest td { padding: {{ $pad }}px 8px; vertical-align: middle; width: 50%; }
+    table.manifest td { padding: {{ $pad }}px 8px; vertical-align: middle; }
+    table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth + 16) }}px; }
     table.manifest td.col-left { border-right: 1px solid #c9bfc1; }
     table.manifest tr.block-end td { border-bottom: 1px solid #c9bfc1; padding-bottom: {{ $pad + 2 }}px; }
     table.manifest tr.block-shaded td { background: #FFFBF6; }
@@ -109,23 +96,17 @@
     .name-sep { font-weight: bold; font-size: {{ $fs }}px; color: #9a8a8c; margin: 0 3px; }
     .check-col { width: 18px; }
     .box { display: inline-block; width: {{ $tight ? 10 : 13 }}px; height: {{ $tight ? 10 : 13 }}px; border: 1px solid #2B1113; }
-    /* Plano arriba (pisos lado a lado) con la leyenda a la derecha; la lista abajo.
-       Tablas y no floats: DomPDF estira filas junto a un float. */
-    table.top { width: 100%; border-collapse: collapse; margin-top: 6px; }
-    table.top td { vertical-align: top; padding: 0 12px 0 0; }
-    table.top td.legend-cell { width: {{ $legendW }}px; padding: 0; }
-    .legend-cell .legend-item { display: block; margin: 0 0 4px 0; }
-    .legend-cell .stats { font-size: 9px; color: #6b5c5e; margin-top: 8px; }
-    table.manifest { margin-top: 0; }
+    /* A cada fila de 4 asientos: sus recuadros (1 2 | 3 4) a la izquierda y los nombres a la derecha. */
+    table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 8px {{ $pad }}px 0; white-space: nowrap; border-bottom: 1px solid #c9bfc1; }
+    .mbox { display: inline-block; width: {{ $boxW }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; vertical-align: middle; margin-right: 1px; }
+    .mbox.gap { margin-left: 8px; }
+    .mbox.ida { background: #bae6fd; border-color: #075985; }
+    .mbox.regreso { background: #fecaca; border-color: #991b1b; }
+    .mbox.especial { background: #a7f3d0; border-color: #065f46; }
+    .mbox.redondo { background: #e5d5d7; border-color: #2B1113; }
     table.manifest tr { page-break-inside: avoid; }
-    .map-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #6b5c5e; margin: 0 0 4px 0; }
-    .map-box { position: relative; border: 1px solid #c9bfc1; background: #FFFBF6; }
-    .map-seat { position: absolute; border: 1px solid #15803D; background: #ffffff; text-align: center; font-size: 7px; font-weight: bold; color: #2B1113; overflow: hidden; }
-    .map-seat.ida { background: #bae6fd; border-color: #075985; }
-    .map-seat.regreso { background: #fecaca; border-color: #991b1b; }
-    .map-seat.especial { background: #a7f3d0; border-color: #065f46; }
-    .map-seat.redondo { background: #e5d5d7; border-color: #2B1113; }
-    .deck-title { font-size: 12px; font-weight: bold; margin: 6px 0 0 0; color: #8C1D2B; }
+    .deck-title { font-size: 12px; font-weight: bold; margin: 10px 0 2px 0; color: #2B1113; }
+    .legend { margin-top: {{ $tight ? 3 : 8 }}px; }
     .empty { padding: 18px; text-align: center; color: #9a8a8c; }
     .pay-badge { display: inline-block; border-radius: 10px; padding: {{ $tight ? 0 : 1 }}px 8px; font-size: {{ max(7, $fs - 2) }}px; font-weight: bold; margin-left: 4px; }
     .pay-badge.paid { background: #d1fae5; color: #065f46; }
@@ -150,6 +131,12 @@
             <p>Regreso: {{ $trip->return_date->toSpanishLongDate() }}</p>
         @endif
         <p class="meta">Merlo Transportes &middot; Generado el {{ now()->toSpanishLongDate() }} {{ now()->format('H:i') }} &middot; {{ $seats->count() }} asiento{{ $seats->count() === 1 ? '' : 's' }} &middot; {{ $reservationsBySeat->count() }} ocupado{{ $reservationsBySeat->count() === 1 ? '' : 's' }}</p>
+        <p class="legend">
+            <span class="legend-item"><span class="legend-dot ida"></span>Ida</span>
+            <span class="legend-item"><span class="legend-dot redondo"></span>Redondo</span>
+            <span class="legend-item"><span class="legend-dot especial"></span>Especial</span>
+            <span class="legend-item"><span class="legend-dot regreso"></span>Regreso</span>
+        </p>
     </div>
 
     @if ($seats->isEmpty())
@@ -171,35 +158,9 @@
             };
         @endphp
 
-        <table class="top"><tr>
-            @foreach ($mapBlocks as $deck => $box)
-                <td>
-                    @if ($unit->has_upper_deck)
-                        <p class="map-title">{{ $deckNames[$deck] ?? $deck }}</p>
-                    @endif
-                    <div class="map-box" style="width: {{ $box['w'] }}px; height: {{ $box['h'] }}px;">
-                        @foreach ($box['seats'] as $seat)
-                            @php
-                                $sw = max(8, round($seat->width * $box['scale']));
-                                $sh = max(8, round($seat->height * $box['scale']));
-                            @endphp
-                            <div class="map-seat {{ $mapTypeClass($seat->id) }}" style="left: {{ round(($seat->pos_x - $box['minX']) * $box['scale']) + 6 }}px; top: {{ round(($seat->pos_y - $box['minY']) * $box['scale']) + 6 }}px; width: {{ $sw }}px; height: {{ $sh }}px; line-height: {{ $sh }}px; font-size: {{ max(7, min(14, round($sh * 0.45))) }}px;">{{ $seat->label }}</div>
-                        @endforeach
-                    </div>
-                </td>
-            @endforeach
-            <td class="legend-cell">
-                <span class="legend-item"><span class="legend-dot ida"></span>Ida</span>
-                <span class="legend-item"><span class="legend-dot redondo"></span>Redondo</span>
-                <span class="legend-item"><span class="legend-dot especial"></span>Especial</span>
-                <span class="legend-item"><span class="legend-dot regreso"></span>Regreso</span>
-                <p class="stats">{{ $seats->count() }} asientos<br>{{ $reservationsBySeat->count() }} ocupados</p>
-            </td>
-        </tr></table>
-
         @foreach ($seatsByDeck as $deck => $deckSeats)
         @if ($unit->has_upper_deck)
-            <p class="deck-title">{{ $deckNames[$deck] ?? $deck }}</p>
+            <p class="deck-title">{{ $deckNames[$deck] ?? $deck }} &nbsp; UNIDAD {{ $unit->name }}</p>
         @endif
         @php
             // Matches the bus's real seat distribution: every 4 consecutive
@@ -245,6 +206,13 @@
                     @endphp
                     @for ($line = 0; $line < $lineCount; $line++)
                         <tr class="{{ $shaded ? 'block-shaded' : '' }} {{ $line === $lineCount - 1 ? 'block-end' : '' }}">
+                            @if ($line === 0)
+                                <td class="map-cell" rowspan="{{ $lineCount }}">
+                                    @foreach ($block as $k => $mseat)
+                                        <span class="mbox {{ $mapTypeClass($mseat->id) }} {{ $k === 2 ? 'gap' : '' }}" style="height: {{ round($lineCount * $lineH - 4) }}px;">{{ $mseat->label }}</span>
+                                    @endforeach
+                                </td>
+                            @endif
                             <td class="col-left">
                                 @if ($left->has($line))
                                     @php $seatReservations = $reservationsBySeat->get($left[$line]->id, collect()); @endphp
