@@ -199,30 +199,32 @@ function computeContentBounds(seats) {
 }
 
 // Double-deck units: each floor is laid out on its own in the editor (they can
-// even share coordinates), so the map stacks them — SUPERIOR on top, INFERIOR
-// below — and writes the floor's label above each one. Done BEFORE the content
-// bounds are measured; it moves the seats' positions in `config.seats` in
-// place, so everything else (hover tooltip, neighbours) sees the same layout.
-// A single-floor unit is drawn exactly as saved, with no label.
+// even share coordinates), so the map puts them side by side — SUPERIOR on the
+// left, INFERIOR to its right, tops aligned — and writes the floor's label above
+// each one. Done BEFORE the content bounds are measured; it moves the seats'
+// positions in `config.seats` in place, so everything else (hover tooltip,
+// neighbours) sees the same layout. A single-floor unit is drawn exactly as
+// saved, with no label.
 const DECK_TITLES = { upper: 'PISO SUPERIOR', lower: 'PISO INFERIOR' };
 const deckLabels = [];
 
 if (config.hasUpperDeck) {
     const DECK_GAP = 46;
-    let cursorY = 22;
+    const DECK_TOP = 22; // room for the label above the seats
+    let cursorX = 0;
     ['upper', 'lower'].forEach((deck) => {
         const onDeck = config.seats.filter((s) => (s.deck ?? 'lower') === deck);
         if (onDeck.length === 0) return;
 
         const minX = Math.min(...onDeck.map((s) => s.pos_x));
         const minY = Math.min(...onDeck.map((s) => s.pos_y));
-        const maxY = Math.max(...onDeck.map((s) => s.pos_y + (s.height ?? SEAT_SIZE)));
+        const maxX = Math.max(...onDeck.map((s) => s.pos_x + (s.width ?? SEAT_SIZE)));
         onDeck.forEach((s) => {
-            s.pos_x -= minX;
-            s.pos_y = s.pos_y - minY + cursorY;
+            s.pos_x = s.pos_x - minX + cursorX;
+            s.pos_y = s.pos_y - minY + DECK_TOP;
         });
-        deckLabels.push({ text: DECK_TITLES[deck], x: 0, y: cursorY - 18 });
-        cursorY += (maxY - minY) + DECK_GAP;
+        deckLabels.push({ text: DECK_TITLES[deck], x: cursorX, y: DECK_TOP - 18 });
+        cursorX += (maxX - minX) + DECK_GAP;
     });
 }
 
