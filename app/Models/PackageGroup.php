@@ -44,6 +44,12 @@ class PackageGroup extends Model
         return $this->hasMany(Package::class);
     }
 
+    /** Additional evidence photos of the registration (the first is photo_path). */
+    public function extraPhotos(): HasMany
+    {
+        return $this->hasMany(PackagePhoto::class);
+    }
+
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -82,11 +82,19 @@
                 @endif
 
                 @if ($package->displayPhotoPath())
+                    @php $extraPhotos = $package->evidencePhotos(); @endphp
                     <div class="mt-5">
-                        <p class="text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">Foto de evidencia</p>
-                        <a href="{{ route('admin.paqueteria.paquetes.photo', $package) }}" target="_blank" class="mt-2 block w-40 overflow-hidden rounded-xl ring-1 ring-black/5">
-                            <img src="{{ route('admin.paqueteria.paquetes.photo', $package) }}" alt="Evidencia de {{ $package->folio_label }}" class="h-40 w-40 object-cover">
-                        </a>
+                        <p class="text-xs font-bold uppercase tracking-wide text-[#2B1113]/40">{{ $extraPhotos->isEmpty() ? 'Foto de evidencia' : 'Fotos de evidencia ('.($extraPhotos->count() + 1).')' }}</p>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <a href="{{ route('admin.paqueteria.paquetes.photo', $package) }}" target="_blank" class="block w-40 overflow-hidden rounded-xl ring-1 ring-black/5">
+                                <img src="{{ route('admin.paqueteria.paquetes.photo', $package) }}" alt="Evidencia de {{ $package->folio_label }}" class="h-40 w-40 object-cover">
+                            </a>
+                            @foreach ($extraPhotos as $extra)
+                                <a href="{{ route('admin.paqueteria.paquetes.extra-photo', [$package, $extra]) }}" target="_blank" class="block w-40 overflow-hidden rounded-xl ring-1 ring-black/5">
+                                    <img src="{{ route('admin.paqueteria.paquetes.extra-photo', [$package, $extra]) }}" alt="Evidencia {{ $loop->iteration + 1 }} de {{ $package->folio_label }}" class="h-40 w-40 object-cover">
+                                </a>
+                            @endforeach
+                        </div>
                     </div>
                 @endif
             </div>

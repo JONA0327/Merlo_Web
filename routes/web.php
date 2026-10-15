@@ -245,6 +245,7 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::post('/paqueteria/buscar', [AdminPackageController::class, 'lookup'])->name('paqueteria.paquetes.lookup');
     Route::get('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'show'])->name('paqueteria.paquetes.show');
     Route::get('/paqueteria/paquetes/{package}/foto', [AdminPackageController::class, 'photo'])->name('paqueteria.paquetes.photo');
+    Route::get('/paqueteria/paquetes/{package}/fotos/{photo}', [AdminPackageController::class, 'extraPhoto'])->name('paqueteria.paquetes.extra-photo');
     Route::post('/paqueteria/paquetes/{package}/estado', [AdminPackageController::class, 'updateStatus'])->name('paqueteria.paquetes.update-status');
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
     Route::post('/paqueteria/paquetes/{package}/entregar', [AdminPackageDeliveryController::class, 'store'])->name('paqueteria.paquetes.deliver');

@@ -155,6 +155,22 @@ class Package extends Model
         return $this->isGrouped() ? $this->group->photo_path : $this->photo_path;
     }
 
+    public function extraPhotos(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PackagePhoto::class);
+    }
+
+    /**
+     * The additional evidence photos of this registration (the group's when
+     * it was bundled), oldest first. The first photo is displayPhotoPath().
+     *
+     * @return \Illuminate\Support\Collection<int, PackagePhoto>
+     */
+    public function evidencePhotos(): \Illuminate\Support\Collection
+    {
+        return ($this->isGrouped() ? $this->group->extraPhotos : $this->extraPhotos)->sortBy('id')->values();
+    }
+
     public function getFolioLabelAttribute(): ?string
     {
         return $this->folio_number === null ? null : PackageFolioSequence::formatFolio($this->folio_number);

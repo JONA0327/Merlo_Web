@@ -124,13 +124,8 @@
     table.mrow { width: {{ $mapTableW }}px; table-layout: fixed; border-collapse: collapse; }
     table.mrow td { width: {{ $cellW }}px; padding: 0 {{ $gap / 2 }}px; border: 0; vertical-align: middle; }
     table.mrow td.aisle { width: {{ $aisleW }}px; padding: 0; } /* the pasillo keeps its space but is not drawn */
-    .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; height: {{ $boxH }}px; }
-    .mbox.empty { border-color: transparent; background: transparent; }
-    .mbox.ida { background: #bae6fd; border-color: #075985; }
-    .mbox.regreso { background: #fecaca; border-color: #991b1b; }
-    .mbox.especial { background: #a7f3d0; border-color: #065f46; }
-    .mbox.redondo { background: #e5d5d7; border-color: #2B1113; }
-    .mbox.planta { background: #e9d5ff; border-color: #6B21A8; }
+    /* Casillas sin color (el color va en los nombres); solo borde y el número un poco más grande. */
+    .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 10px; font-weight: bold; line-height: 11px; text-align: left; height: {{ $boxH }}px; }
 </style>
 </head>
 <body>

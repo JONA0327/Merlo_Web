@@ -7,6 +7,7 @@ use App\Models\Package;
 use App\Models\PackageClient;
 use App\Models\PackageFolioSequence;
 use App\Models\PackageGroup;
+use App\Models\PackagePhoto;
 use App\Models\PackageQrBatch;
 use App\Services\EvolutionWhatsAppService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -86,11 +87,20 @@ class AdminPackageController extends Controller
             'qty' => ['required', 'integer', 'min:1', 'max:50'],
             'phone' => ['required', 'string', 'max:20'],
             'price' => ['nullable', 'numeric', 'min:0'],
-            'photo' => ['required', 'image', 'max:8192'],
+            // One or several evidence photos: `photos[]` (new form) or the
+            // single `photo` field (kept so older clients keep working).
+            'photo' => ['required_without:photos', 'nullable', 'image', 'max:8192'],
+            'photos' => ['required_without:photo', 'nullable', 'array', 'min:1', 'max:10'],
+            'photos.*' => ['image', 'max:8192'],
         ]);
 
         $qty = (int) $validated['qty'];
-        $photoPath = $this->storeEvidencePhoto($request->file('photo'));
+        $paths = collect([$request->file('photo')])->merge($request->file('photos', []))->filter()
+            ->map(fn (UploadedFile $file) => $this->storeEvidencePhoto($file))->values();
+        // The first photo stays in photo_path (what everything already reads);
+        // the rest go to package_photos, attached to the package or its group.
+        $photoPath = $paths->first();
+        $extraPaths = $paths->slice(1);
 
         $client = PackageClient::forRegistration($validated['client_name'], $validated['phone']);
         $collectedBy = $request->user()->id;
@@ -98,7 +108,7 @@ class AdminPackageController extends Controller
         $isGroup = false;
         $root = null;
 
-        DB::transaction(function () use ($qty, $validated, $photoPath, $client, $collectedBy, $collectedAt, &$isGroup, &$root) {
+        DB::transaction(function () use ($qty, $validated, $photoPath, $extraPaths, $client, $collectedBy, $collectedAt, &$isGroup, &$root) {
             $packages = $this->claimOrMintFolios($qty, $collectedBy);
 
             if ($qty === 1) {
@@ -114,6 +124,7 @@ class AdminPackageController extends Controller
                     'collected_at' => $collectedAt,
                 ]);
 
+                $extraPaths->each(fn (string $path) => $package->extraPhotos()->create(['path' => $path]));
                 $root = $package;
 
                 return;
@@ -128,6 +139,8 @@ class AdminPackageController extends Controller
                 'package_client_id' => $client->id,
                 'created_by' => $collectedBy,
             ]);
+
+            $extraPaths->each(fn (string $path) => $group->extraPhotos()->create(['path' => $path]));
 
             $packages->each(fn (Package $package) => $package->update([
                 'package_group_id' => $group->id,
@@ -367,6 +380,17 @@ class AdminPackageController extends Controller
         Storage::disk('local')->put($path, file_get_contents($file->getRealPath()));
 
         return $path;
+    }
+
+    /** One of the additional evidence photos of this package's registration. */
+    public function extraPhoto(Package $package, PackagePhoto $photo)
+    {
+        $belongs = $package->isGrouped()
+            ? $photo->package_group_id === $package->package_group_id
+            : $photo->package_id === $package->id;
+        abort_unless($belongs && Storage::disk('local')->exists($photo->path), 404);
+
+        return Storage::disk('local')->response($photo->path);
     }
 
     public function photo(Package $package)

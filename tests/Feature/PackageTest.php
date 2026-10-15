@@ -367,3 +367,87 @@ test('PackageFolioSequence reserves contiguous, ever-increasing ranges', functio
     expect([$secondStart, $secondEnd])->toBe([6, 8]);
     expect(PackageFolioSequence::formatFolio($firstStart))->toBe('F-000001');
 });
+
+// ---------------------------------------------------------------------------
+// Several evidence photos per registration
+// ---------------------------------------------------------------------------
+
+test('registering a single package with several photos keeps the first as photo_path and the rest as extra photos', function () {
+    Storage::fake('local');
+    $staff = paqueteriaUser();
+
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), [
+        'client_name' => 'Juan Pérez', 'qty' => 1, 'phone' => '4444416578',
+        'photos' => [
+            UploadedFile::fake()->image('a.jpg'),
+            UploadedFile::fake()->image('b.jpg'),
+            UploadedFile::fake()->image('c.jpg'),
+        ],
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $package = Package::first();
+    expect($package->photo_path)->not->toBeNull()
+        ->and($package->extraPhotos)->toHaveCount(2)
+        ->and($package->evidencePhotos())->toHaveCount(2);
+    Storage::disk('local')->assertExists($package->photo_path);
+    $package->extraPhotos->each(fn ($p) => Storage::disk('local')->assertExists($p->path));
+});
+
+test('registering several packages with several photos shares them through the group', function () {
+    Storage::fake('local');
+    $staff = paqueteriaUser();
+
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), [
+        'client_name' => 'Ana', 'qty' => 3, 'phone' => '4444416578',
+        'photos' => [UploadedFile::fake()->image('a.jpg'), UploadedFile::fake()->image('b.jpg')],
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $group = PackageGroup::first();
+    expect($group->photo_path)->not->toBeNull()->and($group->extraPhotos)->toHaveCount(1);
+    Package::all()->each(function (Package $p) use ($group) {
+        expect($p->photo_path)->toBeNull()
+            ->and($p->displayPhotoPath())->toBe($group->photo_path)
+            ->and($p->evidencePhotos()->pluck('id')->all())->toBe($group->extraPhotos->pluck('id')->all());
+    });
+});
+
+test('staff can open an extra photo; it is not served through another registration', function () {
+    Storage::fake('local');
+    $staff = paqueteriaUser();
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), [
+        'client_name' => 'Uno', 'qty' => 1, 'phone' => '4444416578',
+        'photos' => [UploadedFile::fake()->image('a.jpg'), UploadedFile::fake()->image('b.jpg')],
+    ]);
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), [
+        'client_name' => 'Dos', 'qty' => 1, 'phone' => '4444416578', 'photo' => UploadedFile::fake()->image('c.jpg'),
+    ]);
+    [$one, $two] = [Package::orderBy('id')->first(), Package::orderBy('id')->skip(1)->first()];
+    $extra = $one->extraPhotos->first();
+
+    $this->actingAs($staff)->get(route('admin.paqueteria.paquetes.extra-photo', [$one, $extra]))->assertOk();
+    $this->actingAs($staff)->get(route('admin.paqueteria.paquetes.extra-photo', [$two, $extra]))->assertNotFound();
+
+    $cliente = User::factory()->create(['role' => User::ROLE_CLIENTE, 'email_verified_at' => now()]);
+    $this->actingAs($cliente)->get(route('admin.paqueteria.paquetes.extra-photo', [$one, $extra]))->assertForbidden();
+
+    $this->actingAs($staff)->get(route('admin.paqueteria.paquetes.show', $one))->assertOk()
+        ->assertSee(route('admin.paqueteria.paquetes.extra-photo', [$one, $extra]), false);
+});
+
+test('photo validation: at least one image, at most ten, images only', function () {
+    Storage::fake('local');
+    $staff = paqueteriaUser();
+    $base = ['client_name' => 'X', 'qty' => 1, 'phone' => '4444416578'];
+
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), $base)->assertSessionHasErrors('photo');
+
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), $base + [
+        'photos' => array_map(fn ($i) => UploadedFile::fake()->image("$i.jpg"), range(1, 11)),
+    ])->assertSessionHasErrors('photos');
+
+    $this->actingAs($staff)->post(route('admin.paqueteria.registrar.store'), $base + [
+        'photos' => [UploadedFile::fake()->create('nota.pdf', 10, 'application/pdf')],
+    ])->assertSessionHasErrors('photos.0');
+
+    expect(Package::count())->toBe(0);
+});

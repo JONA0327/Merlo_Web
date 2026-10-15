@@ -5,8 +5,36 @@
         <p class="mt-1 text-sm text-[#2B1113]/60">Captura los datos del cliente — se le asigna un folio por cada paquete (contiguo, ej. del F-000101 al F-000105) y se le avisa por WhatsApp.</p>
     </div>
 
+    <script>
+        // The File objects live in a closure (not in Alpine's reactive state):
+        // a reactive Proxy around a File breaks DataTransfer.items.add().
+        function photoPicker() {
+            let files = [];
+            return {
+                previews: [],
+                max: 10,
+                add(event) {
+                    files = [...files, ...Array.from(event.target.files)].slice(0, this.max);
+                    this.refresh(event.target);
+                },
+                remove(index) {
+                    files.splice(index, 1);
+                    this.refresh(this.$refs.photos);
+                },
+                refresh(input) {
+                    this.previews.forEach((url) => URL.revokeObjectURL(url));
+                    this.previews = files.map((file) => URL.createObjectURL(file));
+                    // The input is what gets submitted: keep it equal to everything picked so far.
+                    const transfer = new DataTransfer();
+                    files.forEach((file) => transfer.items.add(file));
+                    input.files = transfer.files;
+                },
+            };
+        }
+    </script>
+
     <div
-        x-data="{ photoPreview: null }"
+        x-data="photoPicker()"
         class="max-w-xl rounded-2xl bg-white p-6 sm:p-8 ring-1 ring-black/5 shadow-sm"
     >
         <form method="POST" action="{{ route('admin.paqueteria.registrar.store') }}" enctype="multipart/form-data" class="space-y-5">
@@ -47,22 +75,27 @@
             </div>
 
             <div>
-                <x-input-label value="Foto de evidencia (obligatoria)" />
-                <p class="mt-1 text-xs text-[#2B1113]/50">Una sola foto que cubra todo el registro (ej. la pila completa) — ayuda a evitar extravíos.</p>
-                <label class="mt-2 flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-black/15 bg-[#FFFBF6] hover:border-[#8C1D2B]/40 transition-colors">
-                    <img x-show="photoPreview" x-cloak :src="photoPreview" class="h-full w-full object-cover">
-                    <svg x-show="! photoPreview" class="h-7 w-7 text-[#2B1113]/25" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 3a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd"/></svg>
-                    <input
-                        type="file"
-                        name="photo"
-                        accept="image/*"
-                        capture="environment"
-                        required
-                        class="hidden"
-                        @change="photoPreview = $event.target.files[0] ? URL.createObjectURL($event.target.files[0]) : null"
-                    >
-                </label>
+                <x-input-label value="Fotos de evidencia (mínimo 1)" />
+                <p class="mt-1 text-xs text-[#2B1113]/50">Sube una o varias fotos (hasta 10) que cubran todo el registro (ej. la pila completa, cada paquete, la etiqueta) — ayuda a evitar extravíos. Puedes tomar o elegir fotos varias veces: se van sumando.</p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <template x-for="(url, i) in previews" :key="url">
+                        <div class="relative h-24 w-24 overflow-hidden rounded-xl ring-1 ring-black/10">
+                            <img :src="url" alt="Foto de evidencia" class="h-full w-full object-cover">
+                            <button type="button" @click="remove(i)" aria-label="Quitar foto" class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#2B1113]/80 text-xs font-bold text-white hover:bg-[#8C1D2B]">&times;</button>
+                        </div>
+                    </template>
+                    <label x-show="previews.length < max" class="flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-black/15 bg-[#FFFBF6] text-[#2B1113]/40 hover:border-[#8C1D2B]/40 transition-colors">
+                        <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 3a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd"/></svg>
+                        <span class="text-[10px] font-bold">Agregar</span>
+                        <input type="file" name="photos[]" accept="image/*" multiple required x-ref="photos" class="hidden" @change="add($event)">
+                    </label>
+                </div>
+                <p class="mt-1 text-xs text-[#2B1113]/50"><span x-text="previews.length"></span> / <span x-text="max"></span> fotos</p>
                 <x-input-error :messages="$errors->get('photo')" class="mt-2" />
+                <x-input-error :messages="$errors->get('photos')" class="mt-2" />
+                @foreach ($errors->get('photos.*') as $messages)
+                    <x-input-error :messages="$messages" class="mt-1" />
+                @endforeach
             </div>
 
             <div class="flex justify-end gap-3 pt-2">
