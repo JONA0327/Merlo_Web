@@ -11,7 +11,7 @@
     $seatsByDeck = $unit->has_upper_deck ? $seatsByDeck->sortKeysDesc() : $seatsByDeck->sortKeys();
 
     // Flat "printed sheet" design: no pills/checkboxes, ruled lines, colors
-    // only for meaning — name color = ticket type, green background = paid.
+    // only for meaning — name color = ticket type, green highlight = especial, green dot = paid.
     //
     // A4 PORTRAIT as DomPDF really renders it: about 673x954 CSS px (measured
     // from real output; a browser's 794x1123 would overflow). Per deck, each
@@ -33,7 +33,7 @@
             $width = 2.4 * $fs + 8; // seat number
             foreach ($reservationsBySeat->get($seat->id, collect()) as $r) {
                 // name ~0.5em/char; pending amount "$1,100.00" ~9 chars of the small font
-                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs + ($r->isPaymentCompleted() ? 0 : 9 * 0.5 * $small + 6) + 10;
+                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs + ($r->isPaymentCompleted() ? 10 : 9 * 0.5 * $small + 6) + 10;
             }
 
             return max(1, (int) ceil($width / $cellWidth));
@@ -96,7 +96,8 @@
     .legend-dot.especial { background: #065f46; }
     .legend-dot.redondo { background: #2B1113; }
     .legend-dot.planta { background: #6B21A8; }
-    .legend-paid { display: inline-block; width: 14px; height: 8px; background: #c8e6c1; border: 1px solid #8fbf86; margin-right: 4px; }
+    .legend-esp { display: inline-block; width: 14px; height: 8px; background: #c8e6c1; border: 1px solid #8fbf86; margin-right: 4px; }
+    .legend-dot.paid { background: #16a34a; }
     .deck-title { font-size: 12px; font-weight: bold; margin: 8px 0 2px 0; color: #2B1113; }
     .empty { padding: 18px; text-align: center; color: #9a8a8c; }
 
@@ -107,7 +108,8 @@
     table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth + 12) }}px; }
     table.manifest td.col-left { border-right: 1px solid #8a7f81; }
     table.manifest tr.block-end td { border-bottom: 1px solid #6b5c5e; }
-    table.manifest td.paid { background: #c8e6c1; }
+    table.manifest td.esp { background: #c8e6c1; }
+    .paid-dot { display: inline-block; width: {{ max(6, (int) round($fs * 0.7)) }}px; height: {{ max(6, (int) round($fs * 0.7)) }}px; border-radius: 50%; background: #16a34a; margin-left: 4px; }
     .seat-no { display: inline-block; width: {{ round(2.4 * $fs) }}px; font-weight: bold; }
     .name { font-weight: bold; }
     .name.ida { color: #075985; }
@@ -145,7 +147,8 @@
             <span class="legend-item"><span class="legend-dot especial"></span>Especial</span>
             <span class="legend-item"><span class="legend-dot regreso"></span>Regreso</span>
             <span class="legend-item"><span class="legend-dot planta"></span>Predeterminado</span>
-            <span class="legend-item"><span class="legend-paid"></span>Pagado</span>
+            <span class="legend-item"><span class="legend-esp"></span>Especial (resaltado)</span>
+            <span class="legend-item"><span class="legend-dot paid"></span>Pagado</span>
             <span class="legend-item"><span style="color: #92400e;">$ pendiente</span></span>
         </p>
     </div>
@@ -229,14 +232,14 @@
                                     @php
                                         $seat = $side->get($line);
                                         $seatReservations = $seat ? $reservationsBySeat->get($seat->id, collect()) : collect();
-                                        $allPaid = $seatReservations->isNotEmpty() && $seatReservations->every(fn ($r) => $r->isPaymentCompleted());
+                                        $hasEspecial = $seatReservations->contains(fn ($r) => $r->isEspecial());
                                     @endphp
-                                    <td class="{{ $sideIndex === 0 ? 'col-left' : 'col-right' }} {{ $allPaid ? 'paid' : '' }}">
+                                    <td class="{{ $sideIndex === 0 ? 'col-left' : 'col-right' }} {{ $hasEspecial ? 'esp' : '' }}">
                                         @if ($seat)
                                             <span class="seat-no">{{ $seat->label }}</span>
                                             @foreach ($seatReservations as $r)
                                                 @if (! $loop->first)<span class="name-sep">/</span>@endif
-                                                <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>
+                                                <span class="name {{ $typeClass($r) }}">{{ $r->customer_display_name }}</span>@if ($r->isPaymentCompleted())<span class="paid-dot"></span>@endif
                                                 @php $esp = $especialTag($r); @endphp
                                                 @if ($esp)
                                                     <span class="tag">ESPECIAL {{ $esp['labels'] }}</span>
