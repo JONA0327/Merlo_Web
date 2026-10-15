@@ -15,9 +15,6 @@
             <p class="mt-1 text-sm text-[#2B1113]/60">Registra y da seguimiento a los envíos de paquetería.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <a href="{{ route('admin.paqueteria.clientes') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
-                Clientes
-            </a>
             <a href="{{ route('admin.paqueteria.corte') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                 Corte del día
             </a>
@@ -44,10 +41,67 @@
     @endif
 
     <div class="mb-6 inline-flex rounded-xl bg-black/5 p-1">
-        <a href="{{ route('admin.paqueteria', ['tab' => 'activos']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'activos' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
+        <a href="{{ route('admin.paqueteria') }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $vista === 'clientes' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
+            Clientes
+        </a>
+        <a href="{{ route('admin.paqueteria', ['vista' => 'folios']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $vista === 'folios' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
+            Folios
+        </a>
+    </div>
+
+    @if ($vista === 'clientes')
+    <div class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <form method="GET" action="{{ route('admin.paqueteria') }}" class="flex flex-col sm:flex-row gap-3">
+            @if ($filtro === 'en_curso')<input type="hidden" name="filtro" value="en_curso">@endif
+            <input type="text" name="q" value="{{ $search }}" autofocus placeholder="Buscar cliente por nombre o teléfono…" class="flex-1 rounded-xl border-black/10 focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
+            <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2B1113] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#2B1113]/90 transition-colors">Buscar</button>
+        </form>
+    </div>
+
+    <div class="mb-6 flex flex-wrap gap-2">
+        <a href="{{ route('admin.paqueteria', array_filter(['q' => $search])) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $filtro === 'todos' ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">Todos</a>
+        <a href="{{ route('admin.paqueteria', array_filter(['filtro' => 'en_curso', 'q' => $search])) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $filtro === 'en_curso' ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">Con paquetes en curso</a>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+        <table class="min-w-full divide-y divide-black/5 text-sm">
+            <thead class="bg-black/[0.02]">
+                <tr>
+                    <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Cliente</th>
+                    <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Teléfono</th>
+                    <th class="px-5 py-3 text-right font-bold text-[#2B1113]/60">Paquetes en curso</th>
+                    <th class="px-5 py-3 text-right font-bold text-[#2B1113]/60">Pendiente de pago</th>
+                    <th class="px-5 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-black/5">
+                @forelse ($clients as $c)
+                    <tr>
+                        <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $c->name }}</td>
+                        <td class="px-5 py-3 text-[#2B1113]/70">{{ $c->phone_formatted }}</td>
+                        <td class="px-5 py-3 text-right">
+                            @if ($c->en_curso > 0)
+                                <span class="rounded-full bg-[#F5B301]/15 px-2.5 py-1 text-xs font-bold text-[#8C6B00]">{{ $c->en_curso }}</span>
+                            @else
+                                <span class="text-[#2B1113]/30">—</span>
+                            @endif
+                        </td>
+                        <td class="px-5 py-3 text-right font-semibold {{ $c->pending > 0 ? 'text-red-600' : 'text-[#2B1113]/40' }}">${{ number_format($c->pending, 2) }}</td>
+                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.clientes.show', $c) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Ver</a></td>
+                    </tr>
+                @empty
+                    <tr><td colspan="5" class="px-5 py-8 text-center text-[#2B1113]/50">{{ $search || $filtro === 'en_curso' ? 'No hay clientes con ese filtro.' : 'Todavía no hay clientes. Registra un paquete para empezar.' }}</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+    <div class="mt-6">{{ $clients->links() }}</div>
+    @else
+    <div class="mb-6 inline-flex rounded-xl bg-black/5 p-1">
+        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'activos']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'activos' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
             Activos
         </a>
-        <a href="{{ route('admin.paqueteria', ['tab' => 'historial']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'historial' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
+        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'historial']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'historial' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
             Historial
         </a>
     </div>
@@ -75,11 +129,11 @@
     </div>
 
     <div class="mb-6 flex flex-wrap gap-2">
-        <a href="{{ route('admin.paqueteria', ['tab' => $tab]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ ! $status ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
+        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => $tab]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ ! $status ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
             Todos
         </a>
         @foreach ($statuses as $option)
-            <a href="{{ route('admin.paqueteria', ['tab' => $tab, 'status' => $option]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $status === $option ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
+            <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => $tab, 'status' => $option]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $status === $option ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
                 {{ $statusMeta[$option]['label'] }}
             </a>
         @endforeach
@@ -147,5 +201,6 @@
         <div class="mt-6">
             {{ $packages->links() }}
         </div>
+    @endif
     @endif
 </x-admin-layout>

@@ -266,6 +266,8 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::get('/paqueteria/corte', [AdminPackageCorteController::class, 'show'])->name('paqueteria.corte');
     Route::get('/paqueteria/corte/imprimir', [AdminPackageCorteController::class, 'print'])->name('paqueteria.corte.imprimir');
     Route::post('/paqueteria/corte', [AdminPackageCorteController::class, 'store'])->name('paqueteria.corte.store');
+    Route::post('/paqueteria/corte/egresos', [AdminPackageCorteController::class, 'storeExpense'])->name('paqueteria.corte.expenses.store');
+    Route::delete('/paqueteria/corte/egresos/{expense}', [AdminPackageCorteController::class, 'destroyExpense'])->name('paqueteria.corte.expenses.destroy');
 });
 
 // OpenPay webhook route removed: OpenPay is disabled for now, so

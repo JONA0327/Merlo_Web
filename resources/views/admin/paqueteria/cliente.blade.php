@@ -49,10 +49,16 @@
                 @forelse ($packages as $p)
                     <tr class="border-b border-black/5">
                         <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $p->folio_label ?? 'Sin folio' }}</td>
-                        <td class="px-5 py-3 text-[#2B1113]/70">{{ $statusLabel[$p->status] ?? $p->status }}</td>
+                        <td class="px-5 py-3">
+                            @if (in_array($p->status, ['recolectado', 'en_recorrido'], true))
+                                <span class="rounded-full bg-[#F5B301]/15 px-2.5 py-1 text-xs font-bold text-[#8C6B00]">{{ $statusLabel[$p->status] }}</span>
+                            @else
+                                <span class="text-[#2B1113]/70">{{ $statusLabel[$p->status] ?? $p->status }}</span>
+                            @endif
+                        </td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->collected_at?->format('d/m/Y') ?? '—' }}</td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->delivered_at?->format('d/m/Y') ?? '—' }}</td>
-                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.paquetes.show', $p) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Ver</a></td>
+                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.paquetes.show', $p) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">{{ in_array($p->status, ['recolectado', 'en_recorrido'], true) ? 'Ver / entregar' : 'Ver' }}</a></td>
                     </tr>
                 @empty
                     <tr><td colspan="5" class="px-5 py-8 text-center text-[#2B1113]/50">Sin paquetes todavía.</td></tr>

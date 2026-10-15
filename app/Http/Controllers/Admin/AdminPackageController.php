@@ -25,8 +25,13 @@ use Throwable;
 
 class AdminPackageController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        // Vista principal: clientes. Los folios sueltos se ven en ?vista=folios.
+        if ($request->query('vista') !== 'folios') {
+            return $this->clientsIndex($request);
+        }
+
         $tab = $request->query('tab') === 'historial' ? 'historial' : 'activos';
         $tabStatuses = $tab === 'historial' ? Package::HISTORY_STATUSES : Package::ACTIVE_STATUSES;
 
@@ -41,11 +46,44 @@ class AdminPackageController extends Controller
             ->withQueryString();
 
         return view('admin.paqueteria', [
+            'vista' => 'folios',
             'packages' => $packages,
             'statuses' => $tabStatuses,
             'status' => $status,
             'tab' => $tab,
         ]);
+    }
+
+    private function clientsIndex(Request $request): View|RedirectResponse
+    {
+        $search = trim((string) $request->query('q'));
+        $filtro = $request->query('filtro') === 'en_curso' ? 'en_curso' : 'todos';
+
+        // Si lo escrito es un folio (F-000101), va directo a ese paquete.
+        if (preg_match('/^F-?\s*0*(\d+)$/i', $search, $m) && ($package = Package::where('folio_number', (int) $m[1])->first())) {
+            return redirect()->route('admin.paqueteria.paquetes.show', $package);
+        }
+
+        $enCurso = [Package::STATUS_RECOLECTADO, Package::STATUS_EN_RECORRIDO];
+
+        $clients = PackageClient::query()
+            ->when($search, fn ($q) => $q->where(fn ($w) => $w
+                ->where('name', 'like', "%{$search}%")
+                // el teléfono solo se busca si lo escrito trae dígitos (si no, '%%' coincidiría con todos)
+                ->when(preg_replace('/\D/', '', $search) !== '', fn ($w) => $w->orWhere('phone', 'like', '%'.preg_replace('/\D/', '', $search).'%'))))
+            ->when($filtro === 'en_curso', fn ($q) => $q->where(fn ($w) => $w
+                ->whereHas('packages', fn ($p) => $p->whereIn('status', $enCurso))
+                ->orWhereHas('groups.packages', fn ($p) => $p->whereIn('status', $enCurso))))
+            ->orderBy('name')
+            ->paginate(20)
+            ->withQueryString();
+
+        $clients->getCollection()->each(function (PackageClient $c) {
+            $c->setAttribute('en_curso', $c->enCursoQuery()->count());
+            $c->setAttribute('pending', $c->pendingAmount());
+        });
+
+        return view('admin.paqueteria', ['vista' => 'clientes', 'clients' => $clients, 'search' => $search, 'filtro' => $filtro]);
     }
 
     /**

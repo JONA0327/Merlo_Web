@@ -38,6 +38,14 @@ class PackageClient extends Model
         return static::firstOrCreate(['name' => $name, 'phone' => null]);
     }
 
+    /** Paquetes del cliente que siguen en camino (recolectados o en recorrido), sueltos o en un envío conjunto. */
+    public function enCursoQuery()
+    {
+        return Package::query()
+            ->where(fn ($q) => $q->where('package_client_id', $this->id)->orWhereIn('package_group_id', $this->groups()->select('id')))
+            ->whereIn('status', [Package::STATUS_RECOLECTADO, Package::STATUS_EN_RECORRIDO]);
+    }
+
     public function packages(): HasMany
     {
         return $this->hasMany(Package::class);

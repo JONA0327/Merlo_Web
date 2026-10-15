@@ -20,7 +20,8 @@ class AdminPackageClientController extends Controller
             ->withCount(['packages', 'groups'])
             ->when($search, fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$search}%")
-                ->orWhere('phone', 'like', '%'.preg_replace('/\D/', '', $search).'%')))
+                // el teléfono solo se busca si lo escrito trae dígitos (si no, '%%' coincidiría con todos)
+                ->when(preg_replace('/\D/', '', $search) !== '', fn ($w) => $w->orWhere('phone', 'like', '%'.preg_replace('/\D/', '', $search).'%'))))
             ->orderBy('name')
             ->paginate(20)
             ->withQueryString();

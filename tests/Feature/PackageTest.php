@@ -92,11 +92,11 @@ test('the paqueteria dashboard separates active packages from the permanent hist
     $active = Package::factory()->create(['status' => Package::STATUS_EN_RECORRIDO, 'folio_number' => 501]);
     $delivered = Package::factory()->create(['status' => Package::STATUS_ENTREGADO, 'folio_number' => 502]);
 
-    $activosResponse = $this->actingAs($staff)->get(route('admin.paqueteria', ['tab' => 'activos']));
+    $activosResponse = $this->actingAs($staff)->get(route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'activos']));
     $activosResponse->assertSee($active->folio_label);
     $activosResponse->assertDontSee($delivered->folio_label);
 
-    $historialResponse = $this->actingAs($staff)->get(route('admin.paqueteria', ['tab' => 'historial']));
+    $historialResponse = $this->actingAs($staff)->get(route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'historial']));
     $historialResponse->assertSee($delivered->folio_label);
     $historialResponse->assertDontSee($active->folio_label);
 });

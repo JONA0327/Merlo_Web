@@ -51,6 +51,19 @@
                 </tbody>
             </table>
 
+            <h2 class="mt-8 text-base font-bold">Egresos ({{ $expenses->count() }}) · {{ $money($expenses->sum('amount')) }}</h2>
+            <table class="mt-2 w-full text-sm">
+                <thead><tr class="border-b-2 border-black/20 text-left text-xs uppercase"><th class="py-1 pr-2">Concepto</th><th class="text-right">Cantidad</th></tr></thead>
+                <tbody>
+                    @forelse ($expenses as $e)
+                        <tr class="border-b border-black/10"><td class="py-1 pr-2">{{ $e->concept }}</td><td class="text-right font-semibold">{{ $money($e->amount) }}</td></tr>
+                    @empty
+                        <tr><td colspan="2" class="py-3 text-[#2B1113]/50">Sin egresos.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+            <p class="mt-2 text-right text-sm font-bold">Queda: {{ $money($payments->sum('amount') - $expenses->sum('amount')) }}</p>
+
             <h2 class="mt-8 text-base font-bold">Pendientes ({{ $pending->count() }}) · {{ $money($pending->sum(fn ($u) => $u->pendingAmount())) }}</h2>
             <table class="mt-2 w-full text-sm">
                 <thead><tr class="border-b-2 border-black/20 text-left text-xs uppercase"><th class="py-1 pr-2">Cliente</th><th class="pr-2">Folio</th><th class="pr-2">Teléfono</th><th class="pr-2">Entregado</th><th class="text-right">Debe</th></tr></thead>

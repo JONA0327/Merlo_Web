@@ -109,3 +109,55 @@ test('the daily corte sums that day payments and posts them to Control', functio
     expect(\App\Models\PackageCorte::count())->toBe(1);
     Http::assertSent(fn ($r) => str_contains($r->url(), '/api/merlo/cortes-paqueteria') && $r['total_amount'] == 100.0 && $r['payments_count'] == 1);
 });
+
+test('the daily corte sends that day expenses to Control and only that day expenses', function () {
+    config(['services.control_reportes.url' => 'http://control.test', 'services.control_reportes.token' => 'tok']);
+
+    $this->actingAs($this->staff)->post(route('admin.paqueteria.corte.expenses.store'), ['fecha' => today()->toDateString(), 'concept' => 'Gasolina', 'amount' => 150.5])->assertRedirect();
+    $this->actingAs($this->staff)->post(route('admin.paqueteria.corte.expenses.store'), ['fecha' => Carbon::yesterday()->toDateString(), 'concept' => 'De ayer', 'amount' => 40])->assertRedirect();
+
+    $corte = app(PackageCorteService::class)->confirm(today(), $this->staff->id);
+
+    expect((float) $corte->expenses_amount)->toBe(150.5);
+    expect($corte->expenses_count)->toBe(1);
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/api/merlo/cortes-paqueteria')
+        && count($r['expenses']) === 1 && $r['expenses'][0]['concept'] === 'Gasolina' && $r['expenses'][0]['amount'] == 150.5);
+});
+
+test('an expense needs a concept and a positive amount, and can be removed', function () {
+    $this->actingAs($this->staff)->post(route('admin.paqueteria.corte.expenses.store'), ['fecha' => today()->toDateString(), 'concept' => '', 'amount' => 0])
+        ->assertSessionHasErrors(['concept', 'amount']);
+    expect(\App\Models\PackageExpense::count())->toBe(0);
+
+    $this->actingAs($this->staff)->post(route('admin.paqueteria.corte.expenses.store'), ['fecha' => today()->toDateString(), 'concept' => 'Comida', 'amount' => 90]);
+    $expense = \App\Models\PackageExpense::first();
+    $this->actingAs($this->staff)->delete(route('admin.paqueteria.corte.expenses.destroy', $expense))->assertRedirect();
+
+    expect(\App\Models\PackageExpense::count())->toBe(0);
+});
+
+test('the paqueteria main page lists clients, not folios, and filters by packages in progress', function () {
+    $ana = PackageClient::forRegistration('Ana Lopez', '444 111 2222');
+    $beto = PackageClient::forRegistration('Beto Ruiz', '444 333 4444');
+    Package::factory()->create(['folio_number' => 701, 'status' => Package::STATUS_RECOLECTADO, 'package_client_id' => $ana->id]);
+    Package::factory()->create(['folio_number' => 702, 'status' => Package::STATUS_ENTREGADO, 'package_client_id' => $beto->id]);
+    Package::factory()->create(['folio_number' => 703, 'status' => Package::STATUS_SIN_ASIGNAR]);
+
+    $this->actingAs($this->staff)->get(route('admin.paqueteria'))
+        ->assertOk()->assertSee('Ana Lopez')->assertSee('Beto Ruiz')->assertSee('444 111 2222')->assertDontSee('F-000703');
+
+    $this->actingAs($this->staff)->get(route('admin.paqueteria', ['filtro' => 'en_curso']))
+        ->assertSee('Ana Lopez')->assertDontSee('Beto Ruiz');
+
+    // El listado de folios sigue disponible como vista aparte.
+    $this->actingAs($this->staff)->get(route('admin.paqueteria', ['vista' => 'folios']))->assertSee('F-000703');
+});
+
+test('searching clients by name does not match everyone, and a folio jumps to its package', function () {
+    PackageClient::forRegistration('Ana Lopez', '444 111 2222');
+    PackageClient::forRegistration('Beto Ruiz', '444 333 4444');
+    $package = Package::factory()->create(['folio_number' => 710, 'status' => Package::STATUS_RECOLECTADO]);
+
+    $this->actingAs($this->staff)->get(route('admin.paqueteria', ['q' => 'Beto']))->assertSee('Beto Ruiz')->assertDontSee('Ana Lopez');
+    $this->actingAs($this->staff)->get(route('admin.paqueteria', ['q' => 'F-000710']))->assertRedirect(route('admin.paqueteria.paquetes.show', $package));
+});
