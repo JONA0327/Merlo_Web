@@ -21,7 +21,7 @@
     $pageH = 954;
     $bodyPad = 16;
     $headerH = 66;   // title, date, legend
-    $mapColW = 104;  // the seat boxes of one row
+    $mapColW = 128;  // the seat boxes of one row
     $cellWidth = ($pageW - 2 * $bodyPad - $mapColW) / 2 - 12; // px of one name cell
 
     // Estimated printed height of the list at a given font: a seat's line wraps
@@ -71,8 +71,15 @@
     $pad += max(0, min(4, (int) floor(($budget - $estimateHeight($fs, 1)) * 0.8 / max(1, 2 * $printedLines))));
     $lineH = $fs + 2 * $pad + 3;
     $small = max(7, $fs - 2);
-    $aisleW = 16; // the pasillo between the two pairs
-    $boxW = (int) floor(($mapColW - $aisleW - 8) / 4); // one seat box (fixed: every row lines up)
+    // Seat boxes: every column has an explicit pixel width (DomPDF otherwise
+    // shares the width unevenly and the boxes come out crooked), every box
+    // has the same size in every row, and there is a visible gap between seats.
+    $aisleW = 16;                                              // the pasillo between the two pairs
+    $gap = 6;                                                  // space between neighbouring seats (3px each side)
+    $boxW = (int) floor(($mapColW - $aisleW - 4 * $gap) / 4); // one seat box
+    $cellW = $boxW + $gap;
+    $mapTableW = 4 * $cellW + $aisleW;
+    $boxH = (int) round(2 * $lineH - 3);                       // same height for ALL boxes
 @endphp
 <style>
     /* The body's own padding is the margin: DomPDF's default page margin on top of it pushed a full list onto a 2nd sheet. */
@@ -114,10 +121,10 @@
 
     /* Recuadros de la fila (1 2 | 3 4) a la izquierda, planos y coloreados por tipo. */
     table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 6px {{ $pad }}px 0; border-bottom: 1px solid #6b5c5e; vertical-align: middle; }
-    table.mrow { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px 0; }
-    table.mrow td { padding: 0; border: 0; vertical-align: middle; }
-    table.mrow td.aisle { width: {{ $aisleW }}px; background: #efe9ea; }
-    .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; }
+    table.mrow { width: {{ $mapTableW }}px; table-layout: fixed; border-collapse: collapse; }
+    table.mrow td { width: {{ $cellW }}px; padding: 0 {{ $gap / 2 }}px; border: 0; vertical-align: middle; }
+    table.mrow td.aisle { width: {{ $aisleW }}px; padding: 0; background: #e4dcde; }
+    .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; height: {{ $boxH }}px; }
     .mbox.empty { border-color: transparent; background: transparent; }
     .mbox.ida { background: #bae6fd; border-color: #075985; }
     .mbox.regreso { background: #fecaca; border-color: #991b1b; }
@@ -212,14 +219,13 @@
                                     <td class="map-cell" rowspan="{{ $lineCount }}">
                                         {{-- Left pair | pasillo | right pair: fixed columns, so the
                                              aisle and the boxes line up in every row. --}}
-                                        @php $boxH = round($lineCount * $lineH - 3); @endphp
                                         <table class="mrow"><tr>
                                             @foreach ([0, 1] as $i)
-                                                <td>@if ($sides[0]->has($i))<div class="mbox {{ $mapTypeClass($sides[0][$i]->id) }}" style="height: {{ $boxH }}px;">{{ $sides[0][$i]->label }}</div>@endif</td>
+                                                <td>@if ($sides[0]->has($i))<div class="mbox {{ $mapTypeClass($sides[0][$i]->id) }}">{{ $sides[0][$i]->label }}</div>@endif</td>
                                             @endforeach
-                                            <td class="aisle" style="height: {{ $boxH }}px;"></td>
+                                            <td class="aisle"></td>
                                             @foreach ([0, 1] as $i)
-                                                <td>@if ($sides[1]->has($i))<div class="mbox {{ $mapTypeClass($sides[1][$i]->id) }}" style="height: {{ $boxH }}px;">{{ $sides[1][$i]->label }}</div>@endif</td>
+                                                <td>@if ($sides[1]->has($i))<div class="mbox {{ $mapTypeClass($sides[1][$i]->id) }}">{{ $sides[1][$i]->label }}</div>@endif</td>
                                             @endforeach
                                         </tr></table>
                                     </td>
