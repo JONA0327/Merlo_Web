@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LandingRoute;
 use App\Models\SeatReservation;
 use App\Models\TripCorte;
+use App\Models\TripTicketPrice;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -29,31 +30,37 @@ class TripCorteService
         $externalSeats ??= (int) ($saved->external_seats ?? 0);
         $externalAmount ??= (float) ($saved->external_amount ?? 0);
 
+        // Cada renglón es un asiento. Cuenta la ida y los "solo regreso" (venta propia, con su
+        // precio); el regreso que acompaña a una ida/redondo no, porque ese ya está cobrado en la ida.
         $rows = $trip->seatReservations()
-            ->where('leg', SeatReservation::LEG_OUTBOUND)
+            ->where(fn ($q) => $q->where('leg', SeatReservation::LEG_OUTBOUND)->orWhere('trip_type', TripTicketPrice::TYPE_REGRESO))
             ->where('status', '!=', SeatReservation::STATUS_CANCELLED)
             ->whereIn('payment_status', [SeatReservation::PAYMENT_COMPLETED, SeatReservation::PAYMENT_PENDING])
             ->whereNull('return_voided_at')
-            ->get(['unit_price', 'abono', 'payment_status', 'created_at']);
+            ->get(['unit_price', 'abono', 'payment_status', 'created_at', 'trip_type']);
 
-        $sold = $rows->where('payment_status', SeatReservation::PAYMENT_COMPLETED);
+        // Precio del asiento: el del renglón; si quedó en 0 (por definir), el precio del viaje para su categoría.
+        $price = fn ($r) => (float) $r->unit_price > 0 ? (float) $r->unit_price : $trip->seatPriceFor($r->trip_type);
+
         $apartados = $rows->where('payment_status', SeatReservation::PAYMENT_PENDING);
-        $late = $sold->filter(fn ($r) => $trip->day && $r->created_at->toDateString() >= $trip->day->toDateString());
+        $late = $rows->filter(fn ($r) => $trip->day && $r->created_at->toDateString() >= $trip->day->toDateString());
         $total = $trip->busUnit?->bookableSeatsCount() ?? 0;
 
         return [
             'fecha' => $trip->day?->toDateString(),
             'total_seats' => $total,
-            'sold_seats' => $sold->count(),
+            // Vendidos = todos los reservados (pagados + apartados), cada uno a su precio.
+            'sold_seats' => $rows->count(),
             'late_sold_seats' => $late->count(),
             'apartado_seats' => $apartados->count(),
             'free_seats' => max(0, $total - $rows->count() - $externalSeats),
             'external_seats' => $externalSeats,
             'external_amount' => round($externalAmount, 2),
-            'sold_amount' => round($sold->sum('unit_price'), 2),
-            'late_amount' => round($late->sum('unit_price'), 2),
+            'sold_amount' => round($rows->sum($price), 2),
+            'late_amount' => round($late->sum($price), 2),
+            // Parte de lo anterior que ya se cobró como abono (no se suma otra vez).
             'abonos_amount' => round($apartados->sum('abono'), 2),
-            'total_cost' => round($rows->sum('unit_price') + $externalAmount, 2),
+            'total_cost' => round($rows->sum($price) + $externalAmount, 2),
         ];
     }
 
@@ -62,7 +69,7 @@ class TripCorteService
     {
         $data = $this->summarize($trip, $externalSeats, $externalAmount);
 
-        $libres = $data['total_seats'] - ($data['sold_seats'] + $data['apartado_seats']);
+        $libres = $data['total_seats'] - $data['sold_seats'];
         if ($externalSeats > $libres) {
             throw new RuntimeException("Solo hay {$libres} asientos libres: no puedes registrar {$externalSeats} vendidos fuera del sistema.");
         }

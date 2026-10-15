@@ -64,10 +64,10 @@
         </div>
         <dl class="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
             @foreach ([
-                ['Asientos vendidos', $corte['sold_seats'] + $corte['external_seats']],
+                ['Asientos vendidos (con apartados)', ($corte['sold_seats'] + $corte['external_seats']).' ('.($corte['sold_seats'] - $corte['apartado_seats']).' pagados, '.$corte['apartado_seats'].' apartados'.($corte['external_seats'] ? ', '.$corte['external_seats'].' sin apartar en guía' : '').')'],
                 ['Total vendido', $money($corte['sold_amount'] + $corte['external_amount'])],
-                ['Abonos', $money($corte['abonos_amount'])],
-                ['Vendido fuera del sistema', $corte['external_seats'].' asientos · '.$money($corte['external_amount'])],
+                ['Abonos ya recibidos', $money($corte['abonos_amount'])],
+                ['Vendido sin apartar en guía', $corte['external_seats'].' asientos · '.$money($corte['external_amount'])],
             ] as [$label, $value])
                 <div class="rounded-2xl bg-[#FFFBF6] p-3">
                     <dt class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">{{ $label }}</dt>
@@ -76,14 +76,16 @@
             @endforeach
         </dl>
 
+        <p class="mt-3 text-xs text-[#2B1113]/50">Incluye los asientos apartados, al precio de su categoría en este viaje. Los abonos ya están dentro del total.</p>
+
         <form method="POST" action="{{ route('admin.viajes.corte', $trip) }}" class="mt-4 flex flex-wrap items-end gap-3" onsubmit="return confirm('¿Confirmar el corte y enviarlo a Control Reportes?')">
             @csrf
             <label class="block">
-                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Asientos vendidos fuera del sistema</span>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Asientos vendidos sin apartar en guía</span>
                 <input type="number" name="external_seats" min="0" max="{{ $corte['free_seats'] + $corte['external_seats'] }}" value="{{ $corte['external_seats'] }}" class="mt-1 w-40 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
             </label>
             <label class="block">
-                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Dinero cobrado fuera del sistema</span>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Dinero cobrado de esos asientos</span>
                 <input type="number" step="0.01" name="external_amount" min="0" value="{{ $corte['external_amount'] }}" class="mt-1 w-44 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
             </label>
             <label class="block">
