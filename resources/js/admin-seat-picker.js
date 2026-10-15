@@ -198,6 +198,34 @@ function computeContentBounds(seats) {
     return { minX, minY, width: maxX - minX, height: maxY - minY };
 }
 
+// Double-deck units: each floor is laid out on its own in the editor (they can
+// even share coordinates), so the map stacks them — SUPERIOR on top, INFERIOR
+// below — and writes the floor's label above each one. Done BEFORE the content
+// bounds are measured; it moves the seats' positions in `config.seats` in
+// place, so everything else (hover tooltip, neighbours) sees the same layout.
+// A single-floor unit is drawn exactly as saved, with no label.
+const DECK_TITLES = { upper: 'PISO SUPERIOR', lower: 'PISO INFERIOR' };
+const deckLabels = [];
+
+if (config.hasUpperDeck) {
+    const DECK_GAP = 46;
+    let cursorY = 22;
+    ['upper', 'lower'].forEach((deck) => {
+        const onDeck = config.seats.filter((s) => (s.deck ?? 'lower') === deck);
+        if (onDeck.length === 0) return;
+
+        const minX = Math.min(...onDeck.map((s) => s.pos_x));
+        const minY = Math.min(...onDeck.map((s) => s.pos_y));
+        const maxY = Math.max(...onDeck.map((s) => s.pos_y + (s.height ?? SEAT_SIZE)));
+        onDeck.forEach((s) => {
+            s.pos_x -= minX;
+            s.pos_y = s.pos_y - minY + cursorY;
+        });
+        deckLabels.push({ text: DECK_TITLES[deck], x: 0, y: cursorY - 18 });
+        cursorY += (maxY - minY) + DECK_GAP;
+    });
+}
+
 const contentBounds = computeContentBounds(config.seats);
 const contentOffset = {
     x: -contentBounds.minX + CONTENT_PADDING,
@@ -313,6 +341,19 @@ function buildSeatNode(seat) {
 
     return { group, rect, text, returnAccent };
 }
+
+deckLabels.forEach((label) => {
+    layer.add(new Konva.Text({
+        x: label.x,
+        y: label.y,
+        text: label.text,
+        fontSize: 11,
+        fontStyle: 'bold',
+        letterSpacing: 1,
+        fill: '#8C1D2B',
+        listening: false,
+    }));
+});
 
 config.seats.forEach((seat) => {
     const node = buildSeatNode(seat);

@@ -228,15 +228,24 @@
                                     <button type="button" id="select-all" class="rounded-md bg-white px-2 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5" title="Ctrl+A">Seleccionar todo</button>
                                     <button type="button" id="selection-delete" class="rounded-md bg-red-50 px-2 py-1.5 text-[11px] font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40" title="Supr/Backspace" disabled>Eliminar</button>
                                 </div>
-                                @if ($busUnit->has_upper_deck)
-                                    <div class="border-t border-black/5 pt-2 mt-2">
-                                        <p class="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Piso</p>
-                                        <div class="flex rounded-md bg-white p-0.5 ring-1 ring-black/10">
-                                            <button type="button" id="deck-lower" class="deck-tab flex-1 rounded px-2 py-1 text-[11px] font-bold transition-colors">Planta baja</button>
-                                            <button type="button" id="deck-upper" class="deck-tab flex-1 rounded px-2 py-1 text-[11px] font-bold transition-colors">Planta alta</button>
-                                        </div>
+                                {{-- Piso de la selección: selecciona un área (o todo) y márcala
+                                     como Superior o Inferior. Sin marcar nada, la unidad es de
+                                     un solo piso. La etiqueta se muestra en la guía. --}}
+                                <div class="border-t border-black/5 pt-2 mt-2">
+                                    <p class="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Piso de la selección</p>
+                                    <div class="grid grid-cols-2 gap-1.5">
+                                        <button type="button" id="assign-deck-upper" class="rounded-md bg-white px-2 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40" disabled>Superior</button>
+                                        <button type="button" id="assign-deck-lower" class="rounded-md bg-white px-2 py-1.5 text-[11px] font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40" disabled>Inferior</button>
                                     </div>
-                                @endif
+                                    <p class="mt-1 text-[10px] text-[#2B1113]/40">Sin piso asignado, la unidad se toma como de un solo piso.</p>
+                                </div>
+                                <div id="deck-tabs" class="border-t border-black/5 pt-2 mt-2 {{ $busUnit->has_upper_deck ? '' : 'hidden' }}">
+                                    <p class="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#2B1113]/40">Ver piso</p>
+                                    <div class="flex rounded-md bg-white p-0.5 ring-1 ring-black/10">
+                                        <button type="button" id="deck-lower" class="deck-tab flex-1 rounded px-2 py-1 text-[11px] font-bold transition-colors">Inferior</button>
+                                        <button type="button" id="deck-upper" class="deck-tab flex-1 rounded px-2 py-1 text-[11px] font-bold transition-colors">Superior</button>
+                                    </div>
+                                </div>
                             </div>
                         </details>
 

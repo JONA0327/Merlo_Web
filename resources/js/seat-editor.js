@@ -232,6 +232,9 @@ const gridPrefixInput = document.getElementById('grid-prefix');
 const gridGenerateButton = document.getElementById('grid-generate');
 const deckLowerTab = document.getElementById('deck-lower');
 const deckUpperTab = document.getElementById('deck-upper');
+const deckTabsWrap = document.getElementById('deck-tabs');
+const assignUpperButton = document.getElementById('assign-deck-upper');
+const assignLowerButton = document.getElementById('assign-deck-lower');
 const zoomOutButton = document.getElementById('view-zoom-out');
 const zoomInButton = document.getElementById('view-zoom-in');
 const zoomResetButton = document.getElementById('view-zoom-reset');
@@ -287,6 +290,20 @@ function reportError(context, error) {
 
 let tempIdCounter = 0;
 let currentDeck = 'lower';
+
+// "Doble piso" is the unit's checkbox. With it off the unit is ONE floor
+// whatever the seats' stored deck says: nothing is hidden and new seats
+// always go to 'lower'.
+const doubleDeckCheckbox = unitDataForm?.querySelector('input[name="has_upper_deck"]') ?? null;
+function isDoubleDeck() {
+    return doubleDeckCheckbox ? doubleDeckCheckbox.checked : Boolean(config.hasUpperDeck);
+}
+function inCurrentView(group) {
+    return ! isDoubleDeck() || group.getAttr('seatDeck') === currentDeck;
+}
+function deckForNewSeat() {
+    return isDoubleDeck() ? currentDeck : 'lower';
+}
 let panMode = false;
 const selectedGroups = new Set();
 let pendingClickNarrowGroup = null;
@@ -363,7 +380,7 @@ function nextSequentialNumber(prefix) {
     let max = 0;
 
     allSeatGroups()
-        .filter((group) => group.getAttr('seatDeck') === currentDeck)
+        .filter(inCurrentView)
         .forEach((group) => {
             const match = (group.getAttr('seatLabel') ?? '').match(pattern);
             if (match) max = Math.max(max, parseInt(match[1], 10));
@@ -383,7 +400,7 @@ function nextSequentialNumber(prefix) {
  */
 function nextGridOriginY() {
     const placed = allSeatGroups().filter((group) =>
-        group.getAttr('seatDeck') === currentDeck
+        inCurrentView(group)
         && group.getAttr('seatType') !== 'outline'
         && group.getAttr('seatType') !== 'divider'
     );
@@ -396,7 +413,7 @@ function nextGridOriginY() {
 function uniqueLabel(baseLabel, excludeGroup = null) {
     const existing = new Set(
         allSeatGroups()
-            .filter((group) => group.getAttr('seatDeck') === currentDeck && group !== excludeGroup)
+            .filter((group) => inCurrentView(group) && group !== excludeGroup)
             .map((group) => group.getAttr('seatLabel'))
     );
 
@@ -518,7 +535,7 @@ function buildSeatGroup(seat) {
     group.setAttr('zone', seat.zone ?? null);
     group.setAttr('borderWidth', seat.border_width ?? 2);
     group.setAttr('seatColor', seat.color ?? null);
-    group.visible((seat.deck ?? 'lower') === currentDeck);
+    group.visible(! isDoubleDeck() || (seat.deck ?? 'lower') === currentDeck);
 
     renderShapeVisuals(group);
 
@@ -531,6 +548,8 @@ function refreshSeatVisual(group) {
 
 function syncSelectionUI() {
     deleteSelectionButton.disabled = selectedGroups.size === 0;
+    if (assignUpperButton) assignUpperButton.disabled = selectedGroups.size === 0;
+    if (assignLowerButton) assignLowerButton.disabled = selectedGroups.size === 0;
     outlineColorInput.disabled = true;
 
     // The resize handles only make sense for exactly one shape at a time —
@@ -667,13 +686,16 @@ function handleDocumentClickOutside(evt) {
 
 document.addEventListener('click', handleDocumentClickOutside);
 
+// Shows every seat in single-floor mode, only the current floor's otherwise.
+function applyDeckVisibility() {
+    allSeatGroups().forEach((group) => group.visible(inCurrentView(group)));
+}
+
 function switchDeck(deck) {
     clearSelection();
     currentDeck = deck;
 
-    allSeatGroups().forEach((group) => {
-        group.visible(group.getAttr('seatDeck') === deck);
-    });
+    applyDeckVisibility();
 
     if (deckLowerTab && deckUpperTab) {
         const activeClasses = ['bg-[#8C1D2B]', 'text-white'];
@@ -698,6 +720,41 @@ if (deckLowerTab && deckUpperTab) {
     deckUpperTab.addEventListener('click', () => switchDeck('upper'));
     switchDeck('lower');
 }
+
+function syncDeckTabsVisibility() {
+    deckTabsWrap?.classList.toggle('hidden', ! isDoubleDeck());
+    if (deckLowerTab && deckUpperTab) switchDeck(currentDeck);
+}
+doubleDeckCheckbox?.addEventListener('change', syncDeckTabsVisibility);
+
+// "Piso de la selección": mark the selected area (or everything) as Superior /
+// Inferior. That turns the unit into a double-deck one; with nothing marked it
+// stays a single floor. The label then shows up on the guide's map.
+const DECK_NAMES = { upper: 'Superior', lower: 'Inferior' };
+
+function assignSelectionToDeck(deck) {
+    if (selectedGroups.size === 0) return;
+    const moving = [...selectedGroups];
+
+    // Labels are unique per floor: refuse a move that would put two seats with
+    // the same label on the same floor (it would fail when saving).
+    const staying = allSeatGroups().filter((g) => ! selectedGroups.has(g) && g.getAttr('seatDeck') === deck);
+    const taken = new Set(staying.map((g) => g.getAttr('seatLabel')));
+    const clash = moving.find((g) => g.getAttr('seatKind') !== 'object' && taken.has(g.getAttr('seatLabel')));
+    if (clash) {
+        setStatus(`El asiento ${clash.getAttr('seatLabel')} ya existe en el piso ${DECK_NAMES[deck].toLowerCase()} — renómbralo antes de moverlo.`, 'text-red-600');
+        return;
+    }
+
+    moving.forEach((g) => g.setAttr('seatDeck', deck));
+    if (doubleDeckCheckbox) doubleDeckCheckbox.checked = true;
+    syncDeckTabsVisibility();
+    switchDeck(deck); // jump to the floor they were just sent to
+    setStatus(`${moving.length} elemento${moving.length === 1 ? '' : 's'} marcado${moving.length === 1 ? '' : 's'} como piso ${DECK_NAMES[deck].toLowerCase()}. Guarda la distribución para aplicarlo.`, 'text-emerald-600');
+}
+
+assignUpperButton?.addEventListener('click', () => assignSelectionToDeck('upper'));
+assignLowerButton?.addEventListener('click', () => assignSelectionToDeck('lower'));
 
 /* ---------- Zoom & pan ---------- */
 
@@ -1113,7 +1170,7 @@ addButton.addEventListener('click', () => {
             label: uniqueLabel(`A${tempIdCounter}`),
             kind: 'seat',
             type: 'normal',
-            deck: currentDeck,
+            deck: deckForNewSeat(),
             shape: 'rect',
             width: SEAT_SIZE,
             height: SEAT_SIZE,
@@ -1148,7 +1205,7 @@ objectAddButton.addEventListener('click', () => {
             label: uniqueLabel(OBJECT_DEFAULT_LABELS[kind] ?? 'OBJETO'),
             kind: 'object',
             type: kind,
-            deck: currentDeck,
+            deck: deckForNewSeat(),
             shape: 'rect',
             width,
             height,
@@ -1206,7 +1263,7 @@ gridGenerateButton.addEventListener('click', () => {
                     label,
                     kind: 'seat',
                     type: 'normal',
-                    deck: currentDeck,
+                    deck: deckForNewSeat(),
                     shape: 'rect',
                     width: SEAT_SIZE,
                     height: SEAT_SIZE,

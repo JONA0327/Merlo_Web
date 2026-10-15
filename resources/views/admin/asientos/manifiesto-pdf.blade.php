@@ -123,7 +123,7 @@
     table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 6px {{ $pad }}px 0; border-bottom: 1px solid #6b5c5e; vertical-align: middle; }
     table.mrow { width: {{ $mapTableW }}px; table-layout: fixed; border-collapse: collapse; }
     table.mrow td { width: {{ $cellW }}px; padding: 0 {{ $gap / 2 }}px; border: 0; vertical-align: middle; }
-    table.mrow td.aisle { width: {{ $aisleW }}px; padding: 0; background: #e4dcde; }
+    table.mrow td.aisle { width: {{ $aisleW }}px; padding: 0; } /* the pasillo keeps its space but is not drawn */
     .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 7px; font-weight: bold; line-height: 8px; text-align: left; height: {{ $boxH }}px; }
     .mbox.empty { border-color: transparent; background: transparent; }
     .mbox.ida { background: #bae6fd; border-color: #075985; }
