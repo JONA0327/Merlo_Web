@@ -187,6 +187,7 @@
                         @endif
                     </p>
                     @error('regreso_date') <p class="mt-1 text-[11px] font-medium text-red-600">{{ $message }}</p> @enderror
+                    <p id="admin-regreso-taken-note" class="mt-2 hidden text-[11px] font-semibold"></p>
                 </div>
 
                 <div id="admin-zone-picker" class="mt-3 hidden">
@@ -596,6 +597,9 @@
             idaOnlySeatIds: {!! json_encode($idaOnlySeatIds) !!},
             tripReturnDate: @json($trip->return_date?->toDateString()),
             seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
+            // "Regreso otro día": which seats already have a regreso on that date.
+            regresoTakenUrl: @json(route('admin.guias.regreso-taken', $guide)),
+            tripDate: @json($trip->day?->toDateString()),
             // Who holds each seat (hover tooltip on the map).
             seatHolders: {!! json_encode($seatHolders, JSON_UNESCAPED_UNICODE) !!},
         };

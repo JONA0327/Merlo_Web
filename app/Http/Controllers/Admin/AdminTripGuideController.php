@@ -18,6 +18,7 @@ use App\Services\EvolutionWhatsAppService;
 use App\Services\TicketImageService;
 use App\Services\TripCorteService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -1020,6 +1021,67 @@ class AdminTripGuideController extends Controller
         return $redirect->with($allSent ? 'success' : 'error', $allSent
             ? "Apartado creado y boleto{$plural} enviado{$plural} por WhatsApp a {$summary}."
             : "Apartado creado para {$summary}, pero no se pudo enviar el boleto por WhatsApp automáticamente.");
+    }
+
+    /**
+     * Seats that already have a regreso staged for the day a "regreso otro día"
+     * would land on — the same rule SeatReservation::regresoGuideSlot() enforces
+     * when saving. The seat map can't know this on its own (those apartados live
+     * in the guide of ANOTHER date, not in the open trip), so before this it drew
+     * them free and let you pick seats the server then refused ("ya tienen regreso
+     * agendado para esa fecha").
+     *
+     * Seat ids come back in the OPEN trip's bus (mapped by label when the guide
+     * runs another unit).
+     */
+    public function regresoTakenSeats(Request $request, TripGuide $guide): JsonResponse
+    {
+        $data = $request->validate([
+            'fecha' => ['required', 'date'],
+            'regreso_date' => ['required', 'date'],
+        ]);
+
+        $trip = $this->matchingTrip($guide, Carbon::parse($data['fecha'])->startOfDay());
+        abort_unless($trip, 404);
+
+        $day = SeatReservation::regresoDepartureDay($trip, Carbon::parse($data['regreso_date'])->startOfDay());
+
+        // The real trip of that day already exists: the regreso goes on ITS map.
+        if (LandingRoute::where('from', $trip->from)->where('to', $trip->to)->whereDate('day', $day->toDateString())->exists()) {
+            return response()->json([
+                'trip_exists' => true,
+                'day' => $day->toDateString(),
+                'message' => 'Ya existe el viaje del '.$day->format('d/m/Y').' (regreso '.Carbon::parse($data['regreso_date'])->format('d/m/Y').') — aparta el regreso desde ese viaje.',
+                'taken' => [],
+                'holders' => [],
+            ]);
+        }
+
+        $tripSeatsByLabel = $trip->busUnit->seats()->get()->keyBy('label');
+        $holders = [];
+        SeatReservation::whereNull('landing_route_id')
+            ->whereNotNull('trip_guide_id')
+            ->whereDate('travel_date', $day->toDateString())
+            ->where('leg', SeatReservation::LEG_RETURN)
+            ->with(['seat', 'user'])
+            ->get()
+            ->each(function (SeatReservation $r) use ($trip, $tripSeatsByLabel, &$holders) {
+                $seatId = $r->seat?->bus_unit_id === $trip->bus_unit_id
+                    ? $r->bus_unit_seat_id
+                    : $tripSeatsByLabel->get($r->seat?->label)?->id;
+                if ($seatId === null) {
+                    return;
+                }
+                $holders[(int) $seatId][] = $r->customer_display_name.' · '.$r->trip_type_label.' · '.($r->isPaymentCompleted() ? 'Pagado' : 'Pendiente');
+            });
+
+        return response()->json([
+            'trip_exists' => false,
+            'day' => $day->toDateString(),
+            'message' => null,
+            'taken' => array_map('intval', array_keys($holders)),
+            'holders' => $holders,
+        ]);
     }
 
     /**

@@ -523,3 +523,90 @@ test('the apartar form defaults to "no pagado" and payment method "por definir"'
             ->and($html)->toMatch('/<option value="tbd" selected>Por definir<\/option>/');
     }
 });
+
+// ---------------------------------------------------------------------------
+// "Regreso otro día": the seat map must know which seats already have a regreso
+// on that date (they live in another date's guide), instead of letting them be
+// picked and then failing on save.
+// ---------------------------------------------------------------------------
+
+function stagedRegreso(TripGuide $guide, $seatId, string $date, string $name): SeatReservation
+{
+    return SeatReservation::create([
+        'trip_guide_id' => $guide->id, 'bus_unit_seat_id' => $seatId, 'travel_date' => $date,
+        'trip_type' => 'regreso', 'leg' => 'return', 'unit_price' => 100, 'customer_name' => $name,
+        'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'completed',
+    ]);
+}
+
+test('the regreso-otro-día endpoint lists the seats that already have a regreso on that date', function () {
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    $target = now()->addDays(10)->toDateString();
+    $otherDay = now()->addDays(11)->toDateString();
+    $stagedGuide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $trip->bus_unit_id, 'date_from' => $target, 'date_to' => $otherDay]);
+    stagedRegreso($stagedGuide, $seats[0]->id, $target, 'ALEJANDRO URIBE');
+    stagedRegreso($stagedGuide, $seats[2]->id, $target, 'ALEJANDRO URIBE');
+    stagedRegreso($stagedGuide, $seats[1]->id, $otherDay, 'Otro Día'); // another date: not taken for $target
+
+    $json = $this->actingAs(guiaAdmin())
+        ->getJson(route('admin.guias.regreso-taken', [$guide, 'fecha' => $trip->day->toDateString(), 'regreso_date' => $target]))
+        ->assertOk()->json();
+
+    expect($json['trip_exists'])->toBeFalse()
+        ->and($json['taken'])->toEqualCanonicalizing([$seats[0]->id, $seats[2]->id])
+        ->and($json['holders'][$seats[0]->id][0])->toContain('ALEJANDRO URIBE')->toContain('Pagado');
+});
+
+test('the regreso-otro-día endpoint maps seats by label when the guide runs another unit', function () {
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    $target = now()->addDays(10)->toDateString();
+    $other = BusUnit::create(['name' => 'Otra unidad']);
+    $otherSeat = BusUnitSeat::create(['bus_unit_id' => $other->id, 'label' => '2', 'type' => 'normal', 'pos_x' => 0, 'pos_y' => 0]);
+    $stagedGuide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $other->id, 'date_from' => $target, 'date_to' => $target]);
+    stagedRegreso($stagedGuide, $otherSeat->id, $target, 'Por Etiqueta');
+
+    $json = $this->actingAs(guiaAdmin())
+        ->getJson(route('admin.guias.regreso-taken', [$guide, 'fecha' => $trip->day->toDateString(), 'regreso_date' => $target]))
+        ->assertOk()->json();
+
+    expect($json['taken'])->toBe([$seats[1]->id]); // label "2" of the OPEN trip's unit
+});
+
+test('the regreso-otro-día endpoint says so when that date already has its real trip', function () {
+    [$trip, , $guide] = guiaFutureOpenTrip();
+    $target = now()->addDays(10);
+    LandingRoute::create([
+        'from' => 'SLP', 'to' => 'CDMX', 'duration' => '1h', 'price' => '$1', 'available_seats' => 3,
+        'bus_unit_id' => $trip->bus_unit_id, 'is_active' => true, 'day' => $target->toDateString(),
+    ]);
+
+    $json = $this->actingAs(guiaAdmin())
+        ->getJson(route('admin.guias.regreso-taken', [$guide, 'fecha' => $trip->day->toDateString(), 'regreso_date' => $target->toDateString()]))
+        ->assertOk()->json();
+
+    expect($json['trip_exists'])->toBeTrue()->and($json['taken'])->toBe([])->and($json['message'])->toContain('Ya existe el viaje');
+});
+
+test('the regreso-otro-día endpoint needs a trip on that date and a logged-in admin', function () {
+    [, , $guide] = guiaFutureOpenTrip();
+
+    $this->getJson(route('admin.guias.regreso-taken', [$guide, 'fecha' => now()->addDays(4)->toDateString(), 'regreso_date' => now()->addDays(9)->toDateString()]))
+        ->assertUnauthorized();
+    $this->actingAs(guiaAdmin())
+        ->getJson(route('admin.guias.regreso-taken', [$guide, 'fecha' => now()->addDays(30)->toDateString(), 'regreso_date' => now()->addDays(35)->toDateString()]))
+        ->assertNotFound();
+});
+
+test('saving a regreso on a date where a seat already has one is still refused (what the map now prevents)', function () {
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    $target = now()->addDays(10)->toDateString();
+    $stagedGuide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $trip->bus_unit_id, 'date_from' => $target, 'date_to' => $target]);
+    stagedRegreso($stagedGuide, $seats[0]->id, $target, 'Primero');
+
+    $this->actingAs(guiaAdmin())->post(route('admin.guias.reservations.store', $guide), [
+        'travel_date' => $trip->day->toDateString(), 'customer_name' => 'Segundo', 'customer_phone' => '4444416578', 'trip_type' => 'regreso',
+        'regreso_date' => $target, 'paid' => '0', 'payment_method' => [$seats[0]->id => 'tbd'], 'seat_ids' => [$seats[0]->id],
+    ])->assertSessionHas('error');
+
+    expect(SeatReservation::where('customer_name', 'Segundo')->exists())->toBeFalse();
+});

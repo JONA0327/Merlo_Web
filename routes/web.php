@@ -198,6 +198,7 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::delete('/guias/{guide}/reservas/{reservation}/asiento', [AdminTripGuideController::class, 'removeSeat'])->name('guias.reservations.remove-seat');
     Route::post('/guias/{guide}/planta/{standing}/liberar', [AdminTripGuideController::class, 'releaseStanding'])->name('guias.release-standing');
     Route::get('/guias/{guide}/lista', [AdminTripGuideController::class, 'manifest'])->name('guias.manifest');
+    Route::get('/guias/{guide}/regreso-ocupados', [AdminTripGuideController::class, 'regresoTakenSeats'])->name('guias.regreso-taken');
     Route::get('/guias/{guide}/disponibilidad', [AdminTripGuideController::class, 'availability'])->name('guias.availability');
     Route::put('/guias/{guide}/disponibilidad', [AdminTripGuideController::class, 'updateAvailability'])->name('guias.availability.update');
     // Operator-side QR check-in. The {code?} part is optional so

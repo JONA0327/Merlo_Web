@@ -98,6 +98,62 @@ function isRegresoOtherDay() {
         && regresoDateInput.value !== (config.tripReturnDate ?? '');
 }
 
+// "Regreso otro día": the seats that already have a regreso on THAT date live
+// in another date's guide, so the open trip's data can't tell. Ask the server
+// (same rule it applies when saving) and paint/block them here.
+const otherDayTaken = new Set();
+let otherDayHolders = {};
+let otherDayInfo = { tripExists: false, message: null };
+let otherDayRequest = 0;
+const otherDayNote = document.getElementById('admin-regreso-taken-note');
+
+function renderOtherDayNote() {
+    if (! otherDayNote) return;
+    let text = '';
+    let danger = true;
+    if (isRegresoOtherDay()) {
+        if (otherDayInfo.message) {
+            text = otherDayInfo.message;
+        } else if (otherDayTaken.size > 0) {
+            text = `${otherDayTaken.size} asiento${otherDayTaken.size === 1 ? '' : 's'} ya tiene${otherDayTaken.size === 1 ? '' : 'n'} regreso agendado ese día (en rojo) — no se pueden elegir.`;
+        }
+    }
+    otherDayNote.textContent = text;
+    otherDayNote.classList.toggle('hidden', text === '');
+    otherDayNote.classList.toggle('text-red-700', danger);
+}
+
+async function refreshOtherDayTaken() {
+    otherDayTaken.clear();
+    otherDayHolders = {};
+    otherDayInfo = { tripExists: false, message: null };
+    const ticket = ++otherDayRequest;
+
+    if (! isRegresoOtherDay() || ! config.regresoTakenUrl || ! config.tripDate) {
+        renderOtherDayNote();
+        return;
+    }
+
+    try {
+        const query = new URLSearchParams({ fecha: config.tripDate, regreso_date: regresoDateInput.value });
+        const response = await fetch(`${config.regresoTakenUrl}?${query}`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        });
+        if (! response.ok) throw new Error(String(response.status));
+        const data = await response.json();
+        if (ticket !== otherDayRequest) return; // a newer date was picked meanwhile
+        (data.taken ?? []).forEach((id) => otherDayTaken.add(id));
+        otherDayHolders = data.holders ?? {};
+        otherDayInfo = { tripExists: Boolean(data.trip_exists), message: data.message ?? null };
+    } catch (error) {
+        if (ticket !== otherDayRequest) return;
+        // Not fatal: the server still validates when saving.
+        otherDayInfo = { tripExists: false, message: 'No se pudo comprobar qué asientos ya tienen regreso ese día; se validará al guardar.' };
+    }
+    renderOtherDayNote();
+}
+
 function isReleasedForRegreso(seat) {
     if (currentTripType !== 'regreso') return false;
     return isRegresoOtherDay() || releasedSeatIds.has(seat.id) || idaOnlySeatIds.has(seat.id);
@@ -106,6 +162,7 @@ function isReleasedForRegreso(seat) {
 function isSeatSelectable(seat) {
     if (config.tripEnded) return false;
     if (seat.kind === 'object' || seat.type === 'disabled') return false;
+    if (isRegresoOtherDay() && (otherDayInfo.tripExists || otherDayTaken.has(seat.id))) return false;
     if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return false;
     if ((currentTripType === 'regreso' || needsOtherReturnDate(seat.id)) && returnLegSeatIds.has(seat.id)) return false;
     if (seatStatuses[seat.id] && ! isReleasedForRegreso(seat)) return false; // pending or sent
@@ -143,6 +200,7 @@ function colorsFor(seat) {
     }
     if (seat.kind === 'object') return OBJECT_COLORS;
     if (seat.type === 'disabled') return DISABLED_COLORS;
+    if (isRegresoOtherDay() && otherDayTaken.has(seat.id)) return SOLD_COLORS;
     if (takenIds.has(seat.id) && ! isReleasedForRegreso(seat)) return SOLD_COLORS;
     if (currentTripType === 'regreso' && returnLegSeatIds.has(seat.id)) return SOLD_COLORS;
     if (needsOtherReturnDate(seat.id)) return RETURN_TRIP_COLORS;
@@ -403,7 +461,7 @@ function hideHolderTip() {
 
 stage.container().addEventListener('mousemove', (e) => {
     const seat = seatAtPoint(e.clientX, e.clientY);
-    const holders = seat ? seatHolders[seat.id] : null;
+    const holders = seat ? (isRegresoOtherDay() && otherDayTaken.has(seat.id) ? otherDayHolders[seat.id] : seatHolders[seat.id]) : null;
     if (! holders || holders.length === 0) {
         hideHolderTip();
         return;
@@ -744,7 +802,12 @@ function updateForm() {
 // non-matching ones fade to the dimmed color, drops any selection that no
 // longer matches the new type, toggles the zone picker panel, and
 // refreshes the submit-enabled state.
-regresoDateInput?.addEventListener('change', () => setAdminTripType(currentTripType));
+regresoDateInput?.addEventListener('change', async () => {
+    const pending = refreshOtherDayTaken(); // clears the previous date's seats right away
+    setAdminTripType(currentTripType);
+    await pending;
+    setAdminTripType(currentTripType); // repaint with the seats that came back
+});
 
 function setAdminTripType(type) {
     currentTripType = type;
@@ -803,7 +866,15 @@ function selectZone(zoneName) {
 
 const tripTypeSelect = document.getElementById('admin-trip-type-select');
 if (tripTypeSelect) {
-    tripTypeSelect.addEventListener('change', () => setAdminTripType(tripTypeSelect.value));
+    tripTypeSelect.addEventListener('change', async () => {
+        setAdminTripType(tripTypeSelect.value);
+        if (tripTypeSelect.value === 'regreso') {
+            await refreshOtherDayTaken();
+            setAdminTripType(currentTripType);
+        } else {
+            renderOtherDayNote();
+        }
+    });
 }
 
 // Changing the default "Método de pago" select re-applies it to every
