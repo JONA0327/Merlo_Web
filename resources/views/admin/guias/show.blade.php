@@ -230,9 +230,9 @@
     </div>
 
     {{-- ===================== Lista de apartados de la guía (todas las fechas) ===================== --}}
-    <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
+    <div class="mt-6">
         {{-- Lista de apartados --}}
-        <div class="xl:col-span-12 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <div class="rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados pendientes en esta guía</h3>
 
         @include('admin.partials.reservation-filters', ['filters' => $filters, 'keep' => ['fecha' => request('fecha')]])
