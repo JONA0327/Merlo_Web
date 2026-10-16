@@ -231,37 +231,8 @@
 
     {{-- ===================== Lista de apartados de la guía (todas las fechas) ===================== --}}
     <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
-        {{-- Distribución del autobús (un bloque por piso) --}}
-        <div class="xl:col-span-4 space-y-4 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-            <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Distribución · {{ $date->format('d/m/Y') }}</h3>
-            @php
-                $mapDecks = $dateUnit->seats->where('kind', 'seat')->groupBy('deck');
-                $deckNames = ['lower' => 'Piso inferior', 'upper' => 'Piso superior'];
-            @endphp
-            @foreach ($mapDecks->sortKeys() as $deck => $deckSeats)
-                <div>
-                    @if ($dateUnit->has_upper_deck)
-                        <p class="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#2B1113]/60">{{ $deckNames[$deck] ?? $deck }}</p>
-                    @endif
-                    <div class="relative w-full overflow-hidden rounded-2xl border border-black/10 bg-[#FFFBF6]" style="aspect-ratio: {{ $dateUnit->canvas_width }} / {{ $dateUnit->canvas_height }};">
-                        @foreach ($deckSeats as $seat)
-                            @php
-                                $taken = $pendingReservationsForDate->has($seat->id);
-                                $isStanding = $standingSeatIds->contains($seat->id);
-                                $bg = $taken ? 'bg-[#FACC15] border-[#A16207]' : ($isStanding ? 'bg-[#A855F7] border-[#6B21A8]' : 'bg-white border-[#15803D]');
-                            @endphp
-                            <div class="absolute flex items-center justify-center rounded border text-[9px] font-bold text-[#2B1113] {{ $bg }}"
-                                 style="left: {{ $seat->pos_x / $dateUnit->canvas_width * 100 }}%; top: {{ $seat->pos_y / $dateUnit->canvas_height * 100 }}%; width: {{ $seat->width / $dateUnit->canvas_width * 100 }}%; height: {{ $seat->height / $dateUnit->canvas_height * 100 }}%;">
-                                {{ $seat->label }}
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-            @endforeach
-        </div>
-
         {{-- Lista de apartados --}}
-        <div class="xl:col-span-8 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
+        <div class="xl:col-span-12 rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
         <h3 class="font-[Poppins] text-base font-bold text-[#2B1113]">Apartados pendientes en esta guía</h3>
 
         @include('admin.partials.reservation-filters', ['filters' => $filters, 'keep' => ['fecha' => request('fecha')]])
