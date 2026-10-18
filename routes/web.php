@@ -162,7 +162,11 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/pagos/{reservation}/confirmar-efectivo', [AdminPaymentController::class, 'confirmCash'])->name('pagos.confirm-cash');
     Route::get('/pagos/{reservation}/boleto-efectivo', [AdminPaymentController::class, 'cashTicket'])->name('pagos.cash-ticket');
     Route::get('/pagos/{reservation}/boleto-efectivo/imagen', [AdminPaymentController::class, 'cashTicketImage'])->name('pagos.cash-ticket-image');
+    Route::get('/viajes/{landingRoute}/corte', [AdminTripCorteController::class, 'show'])->name('viajes.corte.show');
     Route::post('/viajes/{landingRoute}/corte', [AdminTripCorteController::class, 'store'])->name('viajes.corte');
+    Route::post('/viajes/{landingRoute}/corte/guardar', [AdminTripCorteController::class, 'save'])->name('viajes.corte.save');
+    Route::post('/viajes/{landingRoute}/corte/conceptos', [AdminTripCorteController::class, 'storeLine'])->name('viajes.corte.lines.store');
+    Route::delete('/viajes/{landingRoute}/corte/conceptos/{line}', [AdminTripCorteController::class, 'destroyLine'])->name('viajes.corte.lines.destroy');
     Route::get('/precios', [AdminTripTicketPriceController::class, 'index'])->name('precios.index');
     Route::post('/precios', [AdminTripTicketPriceController::class, 'update'])->name('precios.update');
     Route::get('/guias', [AdminTripGuideController::class, 'index'])->name('guias.index');

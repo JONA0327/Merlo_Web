@@ -469,7 +469,6 @@ class AdminTripGuideController extends Controller
         return view('admin.asientos.show', [
             'corte' => $corte,
             'corteSaved' => TripCorte::where('landing_route_id', $landingRoute->id)->first(),
-            'contratosCompras' => $corteService->contratosCompras(),
             'trip' => $landingRoute,
             'guide' => $guide,
             'reservations' => $reservations,

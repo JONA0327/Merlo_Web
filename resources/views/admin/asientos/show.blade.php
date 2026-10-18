@@ -78,30 +78,11 @@
 
         <p class="mt-3 text-xs text-[#2B1113]/50">Incluye los asientos apartados, al precio de su categoría en este viaje. Los abonos ya están dentro del total.</p>
 
-        <form method="POST" action="{{ route('admin.viajes.corte', $trip) }}" class="mt-4 flex flex-wrap items-end gap-3" onsubmit="return confirm('¿Confirmar el corte y enviarlo a Control Reportes?')">
-            @csrf
-            <label class="block">
-                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Asientos vendidos sin apartar en guía</span>
-                <input type="number" name="external_seats" min="0" max="{{ $corte['free_seats'] + $corte['external_seats'] }}" value="{{ $corte['external_seats'] }}" class="mt-1 w-40 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
-            </label>
-            <label class="block">
-                <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Dinero cobrado de esos asientos</span>
-                <input type="number" step="0.01" name="external_amount" min="0" value="{{ $corte['external_amount'] }}" class="mt-1 w-44 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
-            </label>
-            <label class="block">
-                    <span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Contrato de compras</span>
-                    <select name="contrato_id" required class="mt-1 rounded-xl border border-black/10 bg-[#FFFBF6] px-3 py-2 text-sm text-[#2B1113] outline-none focus:border-[#8C1D2B]">
-                        <option value="">— Selecciona —</option>
-                        @foreach ($contratosCompras as $c)
-                            <option value="{{ $c['id'] }}" @selected($corteSaved?->contrato_id == $c['id'])>{{ $c['folio'] }} · {{ $c['cliente_nombre'] }}</option>
-                        @endforeach
-                    </select>
-                    @if (empty($contratosCompras))
-                        <span class="mt-1 block text-[11px] text-red-600">No se pudieron cargar los contratos de Control.</span>
-                    @endif
-                </label>
-            <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity">{{ $corteSaved?->sent_at ? 'Reenviar corte' : 'Confirmar y enviar a Control' }}</button>
-        </form>
+        <a href="{{ route('admin.viajes.corte.show', $trip) }}" class="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-opacity">
+            Corte del viaje
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd"/></svg>
+        </a>
+        <span class="mt-4 ml-2 text-xs text-[#2B1113]/50">Gastos del día, efectivo y envío a Control.</span>
     </div>
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-start">
