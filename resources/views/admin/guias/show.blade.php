@@ -277,6 +277,13 @@
                                     @foreach ($members as $member)
                                         <details class="mt-2 rounded-lg bg-[#FFFBF6] p-2 ring-1 ring-black/10">
                                             <summary class="cursor-pointer text-[11px] font-semibold text-[#8C1D2B]">Editar asiento {{ $member->seat?->label ?? '—' }}</summary>
+                                            @if ($members->count() > 1)
+                                                <form method="POST" action="{{ route('admin.guias.reservations.remove-seat', [$guide, $member]) }}" class="mt-2" data-confirm="¿Quitar el asiento {{ $member->seat?->label }} de este apartado?">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="text-[10px] font-semibold text-red-600 hover:text-red-700">Quitar solo este asiento</button>
+                                                </form>
+                                            @endif
                                             <form method="POST" action="{{ route('admin.guias.reservations.update-staged', [$guide, $member]) }}" class="mt-2 space-y-2">
                                                 @csrf
                                                 @method('PUT')

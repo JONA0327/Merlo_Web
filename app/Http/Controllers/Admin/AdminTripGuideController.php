@@ -1322,7 +1322,12 @@ class AdminTripGuideController extends Controller
      */
     public function removeSeat(TripGuide $guide, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
-        abort_unless($reservation->landing_route_id !== null, 404);
+        abort_unless($reservation->trip_guide_id === $guide->id || $reservation->landing_route_id !== null, 404);
+
+        if ($reservation->landing_route_id === null) {
+            return $this->removeStagedSeat($guide, $reservation);
+        }
+
         $trip = $reservation->landingRoute;
 
         if ($trip->hasEnded()) {
@@ -1377,6 +1382,40 @@ class AdminTripGuideController extends Controller
     /**
      * Edits an existing real-trip apartado's category/payment — ported
      * from AdminSeatReservationController::updateCategory(). Only
+    /**
+     * Drop ONE seat out of a guide-only (staged) apartado. Nothing was
+     * sent yet, so there is no ticket to resend — the rest of the group
+     * stays staged and goes out when the trip opens.
+     */
+    private function removeStagedSeat(TripGuide $guide, SeatReservation $reservation): RedirectResponse
+    {
+        $group = $reservation->groupMembers();
+
+        if ($group->count() <= 1) {
+            return back()->with('error', 'Este apartado solo tiene un asiento — usa "Borrar" para cancelarlo por completo.');
+        }
+
+        $remaining = $group->reject(fn (SeatReservation $r) => $r->id === $reservation->id)->values();
+        $wasRoot = $reservation->notes === null || ! str_starts_with((string) $reservation->notes, 'group:');
+        $oldNotes = $reservation->notes;
+        $date = $reservation->travel_date;
+        $seatLabel = $reservation->seat?->label ?? '—';
+
+        DB::transaction(function () use ($reservation, $remaining, $wasRoot, $oldNotes) {
+            $reservation->delete();
+
+            if ($wasRoot) {
+                $newRoot = $remaining->first();
+                $newRoot->update(['notes' => $oldNotes]);
+                SeatReservation::whereIn('id', $remaining->skip(1)->pluck('id'))->update(['notes' => 'group:'.$newRoot->id]);
+            }
+        });
+
+        return redirect()
+            ->route('admin.guias.show', [$guide, 'fecha' => $date?->toDateString()])
+            ->with('success', "Asiento {$seatLabel} quitado del apartado de guía.");
+    }
+
      * applies to a reservation already on a real trip.
      */
     public function updateCategory(Request $request, TripGuide $guide, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
