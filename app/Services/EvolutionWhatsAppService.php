@@ -442,7 +442,8 @@ class EvolutionWhatsAppService
             ->filter()
             ->unique(fn ($d) => $d->toDateString())
             ->sortBy(fn ($d) => $d->toDateString())
-            ->map(fn ($d) => $d->toSpanishLongDate());
+            // Se agenda por día de salida; al cliente se le avisa el día siguiente.
+            ->map(fn ($d) => $d->copy()->addDay()->toSpanishLongDate());
 
         if ($rescheduled) {
             $lines[] = '';
