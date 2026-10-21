@@ -823,7 +823,10 @@ class AdminTripGuideController extends Controller
 
         if ($tripType === TripTicketPrice::TYPE_REGRESO && ! empty($data['regreso_date'])) {
             $returnDate = Carbon::parse($data['regreso_date'])->startOfDay();
-            if (! $openTrip->return_date?->isSameDay($returnDate)) {
+            // Same-day regreso on a trip with no return date of its own: it IS this trip's
+            // map, not another guide's, so it's booked right here (no staging).
+            $isThisTripsDay = SeatReservation::regresoDepartureDay($openTrip, $returnDate)->isSameDay($openTrip->day);
+            if (! $openTrip->return_date?->isSameDay($returnDate) && ! $isThisTripsDay) {
                 return $this->stageRegresoInGuide($request, $guide, $openTrip, $data, $returnDate, $unitPrice, $isCashPending, $methodsBySeat);
             }
         }

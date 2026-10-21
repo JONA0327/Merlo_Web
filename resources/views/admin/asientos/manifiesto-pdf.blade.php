@@ -80,6 +80,11 @@
     $cellW = $boxW + $gap;
     $mapTableW = 4 * $cellW + $aisleW;
     $boxH = (int) round(2 * $lineH - 3);                       // same height for ALL boxes
+
+    // Seats per type for the legend (planta > especial > ida/regreso/redondo).
+    $allRes = $reservationsBySeat->flatten(1);
+    $plantaIds = $allRes->filter(fn ($r) => str_starts_with((string) $r->notes, 'Asiento de planta'))->map(fn ($r) => $r->groupRootId())->all();
+    $typeCounts = $allRes->countBy(fn ($r) => in_array($r->groupRootId(), $plantaIds, true) ? 'planta' : ($r->isEspecial() ? 'especial' : $r->colorKey()));
 @endphp
 <style>
     /* The body's own padding is the margin: DomPDF's default page margin on top of it pushed a full list onto a 2nd sheet. */
@@ -142,11 +147,11 @@
         @endif
         <p class="meta">Merlo Transportes &middot; Generado el {{ now()->toSpanishLongDate() }} {{ now()->format('H:i') }} &middot; {{ $seats->count() }} asiento{{ $seats->count() === 1 ? '' : 's' }} &middot; {{ $reservationsBySeat->count() }} ocupado{{ $reservationsBySeat->count() === 1 ? '' : 's' }}</p>
         <p class="legend">
-            <span class="legend-item"><span class="legend-dot ida"></span>Ida</span>
-            <span class="legend-item"><span class="legend-dot redondo"></span>Redondo</span>
-            <span class="legend-item"><span class="legend-dot especial"></span>Especial</span>
-            <span class="legend-item"><span class="legend-dot regreso"></span>Regreso</span>
-            <span class="legend-item"><span class="legend-dot planta"></span>Predeterminado</span>
+            <span class="legend-item"><span class="legend-dot ida"></span>Ida ({{ $typeCounts->get('ida', 0) }})</span>
+            <span class="legend-item"><span class="legend-dot redondo"></span>Redondo ({{ $typeCounts->get('redondo', 0) }})</span>
+            <span class="legend-item"><span class="legend-dot especial"></span>Especial ({{ $typeCounts->get('especial', 0) }})</span>
+            <span class="legend-item"><span class="legend-dot regreso"></span>Regreso ({{ $typeCounts->get('regreso', 0) }})</span>
+            <span class="legend-item"><span class="legend-dot planta"></span>Predeterminado ({{ $typeCounts->get('planta', 0) }})</span>
             <span class="legend-item"><span class="legend-esp"></span>Especial (resaltado)</span>
             <span class="legend-item"><span class="legend-dot paid"></span>Pagado</span>
             <span class="legend-item"><span style="color: #92400e;">$ pendiente</span></span>

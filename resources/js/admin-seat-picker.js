@@ -95,7 +95,9 @@ const regresoDateInput = document.querySelector('#admin-regreso-date input[name=
 function isRegresoOtherDay() {
     return currentTripType === 'regreso'
         && !! regresoDateInput?.value
-        && regresoDateInput.value !== (config.tripReturnDate ?? '');
+        && regresoDateInput.value !== (config.tripReturnDate ?? '')
+        // No return date on the trip: the trip's own day is "this trip", not another one.
+        && ! (! config.tripReturnDate && regresoDateInput.value === config.tripDate);
 }
 
 // "Regreso otro día": the seats that already have a regreso on THAT date live
