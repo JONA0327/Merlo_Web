@@ -1185,12 +1185,16 @@ class AdminTripGuideController extends Controller
      * case (re-dispatches the notification linkTrip() would have sent
      * once every seat in the group is fixed).
      */
-    public function reassignSeat(Request $request, TripGuide $guide, SeatReservation $reservation): RedirectResponse
+    public function reassignSeat(Request $request, TripGuide $guide, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse
     {
         abort_unless($reservation->trip_guide_id === $guide->id || $reservation->landing_route_id !== null, 404);
 
-        $busUnitId = $reservation->landing_route_id !== null
-            ? $reservation->landingRoute->bus_unit_id
+        $onTrip = $reservation->landing_route_id !== null;
+        $trip = $onTrip ? $reservation->landingRoute : null;
+        $day = $onTrip ? $trip->day : $reservation->travel_date;
+
+        $busUnitId = $onTrip
+            ? $trip->bus_unit_id
             : $guide->busUnitIdFor($reservation->travel_date);
 
         $data = $request->validate([
@@ -1200,51 +1204,103 @@ class AdminTripGuideController extends Controller
                 Rule::exists('bus_unit_seats', 'id')->where('bus_unit_id', $busUnitId),
             ],
         ]);
+        $newSeatId = (int) $data['bus_unit_seat_id'];
 
-        if ($reservation->landing_route_id !== null) {
+        // ---- Can this apartado be moved at all?
+        if ($onTrip ? $trip->hasEnded() : $reservation->travel_date?->lt(now()->startOfDay())) {
+            return back()->with('error', 'Ese viaje ya pasó — ya no se puede cambiar el asiento.');
+        }
+        if ($reservation->isOutboundVerified() || $reservation->isReturnVerified()) {
+            return back()->with('error', 'Ese boleto ya fue verificado al abordar — no se puede cambiar de asiento.');
+        }
+        if ($reservation->groupMembers()->contains(fn (SeatReservation $m) => str_starts_with((string) $m->notes, 'Asiento de planta'))) {
+            return back()->with('error', 'Es un asiento de planta (predeterminado): usa "No viaja hoy" y apártalo en otro asiento.');
+        }
+        if ($newSeatId === (int) $reservation->bus_unit_seat_id) {
+            return back()->with('error', 'Ya tiene ese asiento.');
+        }
+        if (! BusUnitSeat::bookable()->where('bus_unit_id', $busUnitId)->whereKey($newSeatId)->exists()) {
+            return back()->with('error', 'Ese asiento no se puede apartar.');
+        }
+
+        $route = $reservation->outboundRouteInfo();
+        $standing = StandingReservation::activeSeatIdsFor($route['from'], $route['to'], (int) $busUnitId, $onTrip ? $trip->id : null, $day?->dayOfWeek);
+        if ($standing->contains($newSeatId)) {
+            return back()->with('error', 'Ese asiento es de planta (predeterminado) — elige otro.');
+        }
+
+        $oldLabel = $reservation->seat?->label ?? '—';
+        $wasMismatch = $reservation->hasSeatMismatch();
+
+        if ($onTrip) {
             $taken = SeatReservation::where('landing_route_id', $reservation->landing_route_id)
                 ->where('id', '!=', $reservation->id)
-                ->where('bus_unit_seat_id', $data['bus_unit_seat_id'])
+                ->where('bus_unit_seat_id', $newSeatId)
                 ->where('leg', $reservation->leg)
                 ->exists();
 
             if ($taken) {
                 return back()->with('error', 'Ese asiento ya está apartado en este viaje.');
             }
+        } else {
+            // Same leg-aware collision rule as storeReservation(): a seat can't
+            // be double-booked for the same leg/date, but an outbound and a
+            // "regreso" can share one.
+            $taken = SeatReservation::whereNull('landing_route_id')
+                ->whereNotNull('trip_guide_id')
+                ->where('trip_guide_id', $guide->id)
+                ->where('id', '!=', $reservation->id)
+                ->where('bus_unit_seat_id', $newSeatId)
+                ->whereDate('travel_date', $reservation->travel_date?->toDateString())
+                ->where('leg', $reservation->leg)
+                ->exists();
 
-            $reservation->update(['bus_unit_seat_id' => $data['bus_unit_seat_id']]);
+            if ($taken) {
+                return back()->with('error', 'Ese asiento ya está apartado para esa fecha.');
+            }
+        }
 
-            $group = $reservation->groupMembers();
-            if ($group->whereNull('ticket_sent_at')->isNotEmpty()) {
+        $reservation->update(['bus_unit_seat_id' => $newSeatId]);
+        $reservation->refresh();
+
+        $redirect = redirect()->route('admin.guias.show', [$guide, 'fecha' => $day?->toDateString()]);
+
+        // A seat that did not even exist on this bus: the customer never got a
+        // valid ticket, so the existing flow sends it (no "antes/ahora" to tell).
+        if ($wasMismatch) {
+            if ($onTrip && $reservation->groupMembers()->whereNull('ticket_sent_at')->isNotEmpty()) {
                 \App\Jobs\SendLinkedTicketNotification::dispatch($reservation->groupRootId());
             }
 
-            return redirect()
-                ->route('admin.guias.show', [$guide, 'fecha' => $reservation->landingRoute->day?->toDateString()])
-                ->with('success', 'Asiento reasignado correctamente.');
+            return $redirect->with('success', 'Asiento reasignado correctamente.');
         }
 
-        // Same leg-aware collision rule as storeReservation(): a seat can't
-        // be double-booked for the same leg/date, but an outbound and a
-        // "regreso" can share one.
-        $taken = SeatReservation::whereNull('landing_route_id')
-            ->whereNotNull('trip_guide_id')
-            ->where('trip_guide_id', $guide->id)
-            ->where('id', '!=', $reservation->id)
-            ->where('bus_unit_seat_id', $data['bus_unit_seat_id'])
-            ->whereDate('travel_date', $reservation->travel_date?->toDateString())
-            ->where('leg', $reservation->leg)
-            ->exists();
+        // ---- Tell the customer about the change.
+        $members = $reservation->groupMembers()->load(['landingRoute', 'seat']);
+        $newLabel = $reservation->seat?->label ?? '—';
+        $notified = true;
 
-        if ($taken) {
-            return back()->with('error', 'Ese asiento ya está apartado para esa fecha.');
+        try {
+            $whatsapp->sendSeatChangeNotice($members, $oldLabel, $newLabel);
+        } catch (\Throwable $e) {
+            Log::warning('Seat change notice failed for reservation '.$reservation->id.': '.$e->getMessage());
+            $notified = false;
         }
 
-        $reservation->update(['bus_unit_seat_id' => $data['bus_unit_seat_id']]);
+        // On a real trip whose ticket was already sent, the paid seats get the
+        // updated ticket (the QR carries the seat) — unpaid ones only need the notice above.
+        if ($onTrip && $members->whereNotNull('ticket_sent_at')->isNotEmpty()) {
+            $paid = $members->filter->isPaymentCompleted()->values();
+            if ($paid->isNotEmpty()) {
+                $notified = $whatsapp->deliverGroup($paid, $ticketImages) && $notified;
+            }
+        }
 
-        return redirect()
-            ->route('admin.guias.show', [$guide, 'fecha' => $reservation->travel_date?->toDateString()])
-            ->with('success', 'Asiento reasignado correctamente.');
+        $summary = "Asiento {$oldLabel} → {$newLabel}.";
+
+        return $redirect->with($notified ? 'success' : 'error', $notified
+            ? $summary.' Se avisó al cliente por WhatsApp.'
+            : $summary.' ⚠ No se pudo avisar por WhatsApp — avísale al cliente (revisa Administración → WhatsApp).');
     }
 
     /**
@@ -1380,9 +1436,6 @@ class AdminTripGuideController extends Controller
     }
 
     /**
-     * Edits an existing real-trip apartado's category/payment — ported
-     * from AdminSeatReservationController::updateCategory(). Only
-    /**
      * Drop ONE seat out of a guide-only (staged) apartado. Nothing was
      * sent yet, so there is no ticket to resend — the rest of the group
      * stays staged and goes out when the trip opens.
@@ -1416,6 +1469,9 @@ class AdminTripGuideController extends Controller
             ->with('success', "Asiento {$seatLabel} quitado del apartado de guía.");
     }
 
+    /**
+     * Edits an existing real-trip apartado's category/payment — ported
+     * from AdminSeatReservationController::updateCategory(). Only
      * applies to a reservation already on a real trip.
      */
     public function updateCategory(Request $request, TripGuide $guide, SeatReservation $reservation, EvolutionWhatsAppService $whatsapp, TicketImageService $ticketImages): RedirectResponse

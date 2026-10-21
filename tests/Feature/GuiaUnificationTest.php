@@ -610,3 +610,133 @@ test('saving a regreso on a date where a seat already has one is still refused (
 
     expect(SeatReservation::where('customer_name', 'Segundo')->exists())->toBeFalse();
 });
+
+// ---------------------------------------------------------------------------
+// Reasignar asiento desde "Editar" (viaje abierto y fechas posteriores en la
+// guía), avisando del cambio al cliente por WhatsApp.
+// ---------------------------------------------------------------------------
+
+function reassignTripReservation(array $attrs = []): array
+{
+    [$trip, $seats, $guide] = guiaFutureOpenTrip();
+    $r = SeatReservation::create($attrs + [
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[0]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 100, 'customer_name' => 'Cambio Asiento', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+    ]);
+
+    return [$trip, $seats, $guide, $r];
+}
+
+test('reassigning a seat on an open trip moves it and tells the customer "antes / ahora"', function () {
+    [, $seats, $guide, $r] = reassignTripReservation();
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.reassign-seat', [$guide, $r]), ['bus_unit_seat_id' => $seats[2]->id])
+        ->assertSessionHas('success');
+
+    expect($r->fresh()->bus_unit_seat_id)->toBe($seats[2]->id);
+    Http::assertSent(fn ($req) => str_contains($req->url(), '/message/sendText/')
+        && str_contains($req['text'], 'cambiamos tu asiento')
+        && str_contains($req['text'], 'Antes: *1*') && str_contains($req['text'], 'Ahora: *3*')
+        && $req['number'] === '524444416578');
+});
+
+test('a paid, already-sent ticket is re-sent with the new seat after a reassignment', function () {
+    [, $seats, $guide, $r] = reassignTripReservation(['payment_status' => 'completed', 'ticket_sent_at' => now(), 'status' => 'sent']);
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.reassign-seat', [$guide, $r]), ['bus_unit_seat_id' => $seats[1]->id])
+        ->assertSessionHas('success');
+
+    $texts = Http::recorded()->map(fn ($pair) => $pair[0]->url())->all();
+    expect(collect($texts)->contains(fn ($u) => str_contains($u, '/message/sendText/')))->toBeTrue();
+    // plus the refreshed ticket (image/media message) for the paid seat
+    expect(collect($texts)->count())->toBeGreaterThan(1);
+});
+
+test('reassigning a staged (later date) apartado moves it and sends the change notice only', function () {
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(15)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    $r = guiaStaged($guide, $a, $d, '1');
+    $target = $a->seats()->where('label', '3')->first();
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.reassign-seat', [$guide, $r]), ['bus_unit_seat_id' => $target->id])
+        ->assertSessionHas('success');
+
+    expect($r->fresh()->bus_unit_seat_id)->toBe($target->id);
+    Http::assertSent(fn ($req) => str_contains($req['text'] ?? '', 'cambiamos tu asiento') && str_contains($req['text'], 'Ahora: *3*'));
+});
+
+test('a failing WhatsApp does not undo the reassignment but warns the admin', function () {
+    Http::swap(new \Illuminate\Http\Client\Factory);
+    Http::fake(['*' => Http::response(['error' => 'down'], 500)]);
+    [, $seats, $guide, $r] = reassignTripReservation();
+
+    $this->actingAs(guiaAdmin())
+        ->post(route('admin.guias.reservations.reassign-seat', [$guide, $r]), ['bus_unit_seat_id' => $seats[1]->id])
+        ->assertSessionHas('error');
+
+    expect($r->fresh()->bus_unit_seat_id)->toBe($seats[1]->id);
+});
+
+test('reassignment is refused for a taken seat, the same seat, a boarded passenger, a de-planta seat or a seat of another bus', function () {
+    [$trip, $seats, $guide, $r] = reassignTripReservation();
+    $other = SeatReservation::create([
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[1]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 100, 'customer_name' => 'Ocupa', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+    ]);
+    $admin = guiaAdmin();
+    $post = fn ($seatId) => $this->actingAs($admin)->post(route('admin.guias.reservations.reassign-seat', [$guide, $r]), ['bus_unit_seat_id' => $seatId]);
+
+    $post($seats[1]->id)->assertSessionHas('error');                       // taken on this trip
+    $post($seats[0]->id)->assertSessionHas('error');                       // same seat
+    [$busB] = guiaTwoBuses();
+    $post($busB->seats()->first()->id)->assertSessionHasErrors('bus_unit_seat_id'); // another unit
+
+    StandingReservation::create([
+        'from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $trip->bus_unit_id, 'bus_unit_seat_id' => $seats[2]->id,
+        'customer_name' => 'Planta', 'customer_phone' => '4444416578', 'trip_type' => 'one_way', 'is_active' => true,
+    ]);
+    $post($seats[2]->id)->assertSessionHas('error');                       // "de planta"
+
+    $r->update(['outbound_verified_at' => now()]);
+    $post($seats[2]->id)->assertSessionHas('error');                       // already boarded
+
+    expect($r->fresh()->bus_unit_seat_id)->toBe($seats[0]->id)->and($other->fresh()->bus_unit_seat_id)->toBe($seats[1]->id);
+    Http::assertNothingSent();
+});
+
+test('the edit panels offer only the free seats to reassign to', function () {
+    [$trip, $seats, $guide, $r] = reassignTripReservation();
+    SeatReservation::create([
+        'landing_route_id' => $trip->id, 'bus_unit_seat_id' => $seats[1]->id, 'trip_type' => 'one_way', 'leg' => 'outbound',
+        'unit_price' => 100, 'customer_name' => 'Ocupa', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'pending',
+    ]);
+
+    $html = $this->actingAs(guiaAdmin())->get(route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]))->assertOk()->getContent();
+
+    expect($html)->toContain('Cambiar de asiento')
+        ->and($html)->toContain('<option value="'.$seats[2]->id.'">3</option>')      // free
+        ->and($html)->not->toContain('<option value="'.$seats[1]->id.'">2</option>'); // taken
+});
+
+test('the staged-date edit panel also offers the free seats of that date', function () {
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(15)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    guiaStaged($guide, $a, $d, '1');
+    guiaStaged($guide, $a, $d, '2');
+
+    $html = $this->actingAs(guiaAdmin())->get(route('admin.guias.show', [$guide, 'fecha' => $d]))->assertOk()->getContent();
+    $free = $a->seats()->where('label', '3')->first();
+    $taken = $a->seats()->where('label', '2')->first();
+
+    expect($html)->toContain('Cambiar de asiento')
+        ->and($html)->toContain('<option value="'.$free->id.'">3</option>')
+        ->and($html)->toContain('Ahora: 1');
+    // seat 2 is held by the other apartado: it must not be offered in the panel of seat 1
+    $panelOfSeat1 = substr($html, strpos($html, 'Ahora: 1'), 600);
+    expect($panelOfSeat1)->not->toContain('<option value="'.$taken->id.'">2</option>');
+});

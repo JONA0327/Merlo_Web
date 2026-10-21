@@ -436,6 +436,25 @@
                                                 <p class="text-[10px] text-[#2B1113]/40">Solo cambia el asiento {{ $member->seat?->label }}. Si ya se había notificado, al guardar se reenvía la información corregida por WhatsApp.</p>
                                                 <button type="submit" class="w-full rounded-lg bg-[#8C1D2B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">Guardar cambios</button>
                                             </form>
+
+                                            @php
+                                                $takenForMove = $takenSeatIdsByLeg->get($member->leg, collect());
+                                                $moveSeats = $currentBusSeats->reject(fn ($s) => $takenForMove->contains($s->id) || $s->id === $member->bus_unit_seat_id);
+                                            @endphp
+                                            <form method="POST" action="{{ route('admin.guias.reservations.reassign-seat', [$guide, $member]) }}" class="mt-2 space-y-1.5 border-t border-black/5 pt-2" data-confirm="¿Cambiar el asiento {{ $member->seat?->label }} por otro? Se le avisa al cliente por WhatsApp.">
+                                                @csrf
+                                                <span class="text-[9px] font-bold uppercase tracking-wider text-[#2B1113]/60">Cambiar de asiento</span>
+                                                <div class="flex gap-1.5">
+                                                    <select name="bus_unit_seat_id" required class="flex-1 rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-[#2B1113]">
+                                                        <option value="">Ahora: {{ $member->seat?->label ?? '—' }} — elige otro…</option>
+                                                        @foreach ($moveSeats as $seatOption)
+                                                            <option value="{{ $seatOption->id }}">{{ $seatOption->label }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button type="submit" class="shrink-0 rounded-lg bg-[#2B1113] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#2B1113]/80 transition-colors">Reasignar</button>
+                                                </div>
+                                                <p class="text-[10px] text-[#2B1113]/40">Se avisa del cambio por WhatsApp.</p>
+                                            </form>
                                         </div>
                                     @endif
 

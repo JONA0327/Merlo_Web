@@ -473,6 +473,67 @@ class EvolutionWhatsAppService
     }
 
     /**
+     * "We changed your seat": tells the customer which seat they had and
+     * which one they have now (whole apartado listed when it has several
+     * seats). Plain text, like the reservation notice.
+     *
+     * @param  Collection<int, SeatReservation>  $group  every seat of the apartado, AFTER the change
+     *
+     * @throws RuntimeException when not configured, no phone on file, or the API call fails.
+     */
+    public function sendSeatChangeNotice(Collection $group, string $fromLabel, string $toLabel): void
+    {
+        $this->assertConfigured();
+
+        $first = $group->first();
+        $number = self::normalizePhone($first->customer_phone);
+        if (! $number) {
+            throw new RuntimeException('El cliente no tiene un número de WhatsApp registrado.');
+        }
+
+        $group->each->loadMissing(['landingRoute', 'tripGuide', 'seat']);
+        $route = $first->outboundRouteInfo();
+        $departureDay = $first->landing_route_id !== null ? $first->landingRoute?->day : $first->travel_date;
+        $departureDate = $departureDay?->toSpanishLongDate() ?? '—';
+        $unitName = BusUnit::find($route['bus_unit_id'])?->name ?? '—';
+
+        $lines = [
+            '*MERLO Transportes* 🚌',
+            '',
+            "Hola {$first->customer_display_name}, cambiamos tu asiento:",
+            '',
+            "*{$route['from']} → {$route['to']}*",
+            ($first->isReturnLeg() ? '🔁 Regreso: *' : '📅 Salida: *').$departureDate.'*',
+            "🚍 Unidad: *{$unitName}*",
+            "💺 Antes: *{$fromLabel}*",
+            "💺 Ahora: *{$toLabel}*",
+        ];
+
+        if ($group->count() > 1) {
+            $lines[] = '💺 Tus asientos: '.$group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
+        }
+
+        foreach ($group->flatMap(fn (SeatReservation $r) => $r->boardingLegendLines())->unique() as $legendLine) {
+            $lines[] = "📍 *{$legendLine}*";
+        }
+
+        $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
+            'number' => $number,
+            'text' => implode("\n", $lines),
+        ]);
+
+        if ($response->failed()) {
+            Log::warning('Evolution API WhatsApp seat change notice failed', [
+                'reservation_id' => $first->id,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('Evolution API respondió con error '.$response->status().'.');
+        }
+    }
+
+    /**
      * Paquetería registration notice — plain text, same sendText pattern
      * as sendReservationNotice() above. $folioRangeLabel is already
      * formatted (e.g. "F-000101 a F-000105" or just "F-000101" for qty=1).
