@@ -70,12 +70,14 @@ class TripTicketPrice extends Model
      */
     public static function estimateUnitPrice(string $from, string $to, int $busUnitId, string $tripType, int $seatCount = self::SEATS_PER_MANCUERNA): float
     {
-        $trip = LandingRoute::where('from', $from)
+        $query = fn () => LandingRoute::where('from', $from)
             ->where('to', $to)
-            ->where('bus_unit_id', $busUnitId)
             ->whereHas('prices', fn ($q) => $q->where('trip_type', $tripType)->where('is_active', true))
-            ->latest('id')
-            ->first();
+            ->latest('id');
+
+        // Prefer a trip on the same bus; when the date uses a bus with no
+        // trip yet (guide date-unit override), borrow from the same route.
+        $trip = $query()->where('bus_unit_id', $busUnitId)->first() ?? $query()->first();
 
         return $trip ? $trip->seatPriceFor($tripType, $seatCount) : 0.0;
     }
