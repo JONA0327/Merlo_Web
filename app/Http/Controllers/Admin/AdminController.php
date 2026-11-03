@@ -20,7 +20,10 @@ class AdminController extends Controller
 
     public function viajes(): View
     {
-        LandingRoute::pruneExpired();
+        // Housekeeping, not part of rendering this page: if it can't write (read-only
+        // DB, transient error) it is logged and the screen still loads. The daily
+        // trips:prune-expired command keeps it strict.
+        rescue(fn () => LandingRoute::pruneExpired());
 
         return view('admin.viajes', [
             'routes' => LandingRoute::query()

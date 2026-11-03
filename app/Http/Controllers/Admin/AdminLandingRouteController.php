@@ -18,7 +18,10 @@ class AdminLandingRouteController extends Controller
 {
     public function index(): View
     {
-        LandingRoute::pruneExpired();
+        // Housekeeping, not part of rendering this page: if it can't write (read-only
+        // DB, transient error) it is logged and the screen still loads. The daily
+        // trips:prune-expired command keeps it strict.
+        rescue(fn () => LandingRoute::pruneExpired());
 
         $routes = LandingRoute::query()
             ->orderBy('sort_order')

@@ -13,27 +13,49 @@
     // Flat "printed sheet" design: no pills/checkboxes, ruled lines, colors
     // only for meaning — name color = ticket type, green highlight = especial, green dot = paid.
     //
-    // A4 PORTRAIT as DomPDF really renders it: about 673x954 CSS px (measured
-    // from real output; a browser's 794x1123 would overflow). Per deck, each
-    // printed row of 4 seats is a block of 2 lines: at its left the row's
-    // seat boxes (1 2 | 3 4), then the two name columns.
-    $pageW = 673;
-    $pageH = 954;
+    // A4 PORTRAIT in DomPDF's CSS px (96 dpi: 1 px = 0.75 pt, so 1 cm = 37.8 px):
+    // 794 x 1122. Measured on the real output: a box declared 46px tall came out
+    // 33.8pt = 46 x 0.735, so these are the true units. Per deck, each printed row
+    // of 4 seats is a block of 2 lines: at its left the row's seat boxes (1 2 | 3 4),
+    // then the two name columns.
+    $pageW = 794;
+    $pageH = 1122;
     $bodyPad = 16;
     $headerH = 66;   // title, date, legend
-    $mapColW = 128;  // the seat boxes of one row
-    $cellWidth = ($pageW - 2 * $bodyPad - $mapColW) / 2 - 12; // px of one name cell
+    $contentW = $pageW - 2 * $bodyPad - 2;                 // px of usable width
+    $budget = $pageH - 2 * $bodyPad - $headerH - 20;       // px for the decks (20px of safety so it never spills to a 2nd sheet)
 
-    // Estimated printed height of the list at a given font: a seat's line wraps
-    // to 2+ lines when its names (+ pending amount) are wider than the cell.
-    $estimateHeight = function (int $fs, int $pad) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit) {
-        $lineH = $fs + 2 * $pad + 3;
-        $small = max(7, $fs - 2); // amount font
+    // Seat boxes are SQUARES of 1.5 cm a side (56.7 px), the same in every
+    // row. If the unit has so many rows that 1.5 cm would not fit on ONE sheet,
+    // they shrink just enough to fit. Every column has an explicit pixel width
+    // (DomPDF otherwise shares it unevenly and the boxes come out crooked).
+    $aisleW = 16;   // the pasillo between the two pairs
+    $gap = 6;       // space between neighbouring seats (3px each side)
+    $blockCount = $seatsByDeck->sum(fn ($d) => (int) ceil($d->count() / 4));
+    $titlesH = $unit->has_upper_deck ? 24 * $seatsByDeck->count() : 0;
+    $boxS = (int) max(24, min(56, floor(($budget - $titlesH) / max(1, $blockCount)) - 6));
+    // CSS cell widths EXCLUDE their padding, so every column below is declared as
+    // content width and the paddings are added up in the totals: map cell =
+    // table + 6px right padding, name cells = content + 12px padding each.
+    $cellW = $boxS + $gap;                                   // one seat column, padding included
+    $mapTableW = 4 * $cellW + $aisleW;
+    $cellWidth = ($contentW - $mapTableW - 6) / 2 - 12;      // px of one name cell (content)
+    $boxBlockH = $boxS + 6; // a block is at least as tall as its box (+ padding, rule, row rounding)
+
+    // Estimated printed height of the decks at a given font: a seat's line wraps
+    // to 2+ lines when its names are wider than the cell, and a block is never
+    // shorter than its seat boxes.
+    $estimateHeight = function (int $fs) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit, $boxBlockH) {
+        $lineH = $fs + 2 + 3;
+        $small = max(7, $fs - 2); // tag font
         $cellLines = function ($seat) use ($reservationsBySeat, $fs, $small, $cellWidth) {
             $width = 2.4 * $fs + 8; // seat number
             foreach ($reservationsBySeat->get($seat->id, collect()) as $r) {
-                // name ~0.5em/char; pending amount "$1,100.00" ~9 chars of the small font
-                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs + ($r->isPaymentCompleted() ? 10 : 9 * 0.5 * $small + 6) + 10;
+                // name ~0.5em/char, paid dot ~10px, "ESPECIAL 35 + 36" tag ~22 chars of the small font
+                $width += mb_strlen((string) $r->customer_display_name) * 0.5 * $fs
+                    + ($r->isPaymentCompleted() ? 10 : 0)
+                    + ($r->isEspecial() ? 22 * 0.55 * $small + 6 : 0)
+                    + 10;
             }
 
             return max(1, (int) ceil($width / $cellWidth));
@@ -44,10 +66,11 @@
             foreach ($deckSeats->chunk(4) as $block) {
                 $left = $block->slice(0, 2)->values();
                 $right = $block->slice(2, 2)->values();
+                $names = 1;
                 for ($i = 0, $n = max($left->count(), $right->count()); $i < $n; $i++) {
-                    $lines = max($left->has($i) ? $cellLines($left[$i]) : 1, $right->has($i) ? $cellLines($right[$i]) : 1);
-                    $total += $lines * $lineH + ($i === $n - 1 ? 2 : 0);
+                    $names += max($left->has($i) ? $cellLines($left[$i]) : 1, $right->has($i) ? $cellLines($right[$i]) : 1) * $lineH;
                 }
+                $total += max($names, $boxBlockH);
             }
         }
 
@@ -56,30 +79,15 @@
 
     // Everything must fit on ONE sheet: the biggest font whose estimated
     // height fits (falls through to the smallest if nothing does).
-    $budget = $pageH - 2 * $bodyPad - $headerH - 10;
     $fs = 7;
     foreach ([15, 14, 13, 12, 11, 10, 9, 8] as $candidate) {
-        if ($estimateHeight($candidate, 1) <= $budget) {
+        if ($estimateHeight($candidate) <= $budget) {
             $fs = $candidate;
             break;
         }
     }
     $pad = 1;
-    // Leftover height goes to row padding (air between lines) instead of an
-    // unused strip at the bottom; only 80% of the estimated slack, at most 4px.
-    $printedLines = $seatsByDeck->sum(fn ($d) => $d->chunk(4)->sum(fn ($b) => min($b->count(), 2)));
-    $pad += max(0, min(4, (int) floor(($budget - $estimateHeight($fs, 1)) * 0.8 / max(1, 2 * $printedLines))));
-    $lineH = $fs + 2 * $pad + 3;
     $small = max(7, $fs - 2);
-    // Seat boxes: every column has an explicit pixel width (DomPDF otherwise
-    // shares the width unevenly and the boxes come out crooked), every box
-    // has the same size in every row, and there is a visible gap between seats.
-    $aisleW = 16;                                              // the pasillo between the two pairs
-    $gap = 6;                                                  // space between neighbouring seats (3px each side)
-    $boxW = (int) floor(($mapColW - $aisleW - 4 * $gap) / 4); // one seat box
-    $cellW = $boxW + $gap;
-    $mapTableW = 4 * $cellW + $aisleW;
-    $boxH = (int) round(2 * $lineH - 3);                       // same height for ALL boxes
 
     // Seats per type for the legend (planta > especial > ida/regreso/redondo).
     $allRes = $reservationsBySeat->flatten(1);
@@ -110,7 +118,7 @@
     table.manifest { width: 100%; border-collapse: collapse; margin-top: 4px; }
     table.manifest tr { page-break-inside: avoid; }
     table.manifest td { padding: {{ $pad }}px 6px; vertical-align: middle; border-bottom: 1px solid #c9bfc1; font-size: {{ $fs }}px; }
-    table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth + 12) }}px; }
+    table.manifest td.col-left, table.manifest td.col-right { width: {{ round($cellWidth) }}px; }
     table.manifest td.col-left { border-right: 1px solid #8a7f81; }
     table.manifest tr.block-end td { border-bottom: 1px solid #6b5c5e; }
     table.manifest td.esp { background: #c8e6c1; }
@@ -123,16 +131,16 @@
     .name.redondo { color: #2B1113; }
     .name.planta { color: #6B21A8; }
     .name-sep { font-weight: bold; color: #6b5c5e; margin: 0 2px; }
-    .amount { font-size: {{ $small }}px; font-weight: bold; color: #92400e; margin-left: 3px; }
     .tag { font-size: {{ $small }}px; font-weight: bold; color: #065f46; margin-left: 3px; }
 
     /* Recuadros de la fila (1 2 | 3 4) a la izquierda, planos y coloreados por tipo. */
-    table.manifest td.map-cell { width: {{ $mapColW }}px; padding: {{ $pad }}px 6px {{ $pad }}px 0; border-bottom: 1px solid #6b5c5e; vertical-align: middle; }
-    table.mrow { width: {{ $mapTableW }}px; table-layout: fixed; border-collapse: collapse; }
-    table.mrow td { width: {{ $cellW }}px; padding: 0 {{ $gap / 2 }}px; border: 0; vertical-align: middle; }
-    table.mrow td.aisle { width: {{ $aisleW }}px; padding: 0; } /* the pasillo keeps its space but is not drawn */
-    /* Casillas sin color (el color va en los nombres); solo borde y el número un poco más grande. */
-    .mbox { border: 1px solid #2B1113; background: #ffffff; font-size: 10px; font-weight: bold; line-height: 11px; text-align: left; height: {{ $boxH }}px; }
+    table.manifest td.map-cell { width: {{ $mapTableW }}px; padding: {{ $pad }}px 6px {{ $pad }}px 0; border-bottom: 1px solid #6b5c5e; vertical-align: middle; }
+    /* Casillas: bloques en línea de tamaño fijo (la tabla interna repartía el ancho en columnas iguales e ignoraba los anchos). */
+    .mrow { white-space: nowrap; }
+    .aisle { display: inline-block; width: {{ $aisleW }}px; height: 1px; vertical-align: top; } /* the pasillo keeps its space but is not drawn */
+    /* Casillas cuadradas de ~1.5 cm, sin color (el color va en los nombres); solo borde y el número. */
+    .mbox { display: inline-block; vertical-align: top; box-sizing: content-box; width: {{ $boxS - 2 }}px; height: {{ $boxS - 2 }}px; margin: 0 {{ $gap / 2 }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 12px; font-weight: bold; line-height: 13px; text-align: left; }
+    .mbox.ghost { visibility: hidden; }
 </style>
 </head>
 <body>
@@ -154,7 +162,6 @@
             <span class="legend-item"><span class="legend-dot planta"></span>Predeterminado ({{ $typeCounts->get('planta', 0) }})</span>
             <span class="legend-item"><span class="legend-esp"></span>Especial (resaltado)</span>
             <span class="legend-item"><span class="legend-dot paid"></span>Pagado</span>
-            <span class="legend-item"><span style="color: #92400e;">$ pendiente</span></span>
         </p>
     </div>
 
@@ -177,8 +184,7 @@
                 return $r ? $typeClass($r) : '';
             };
             // "Especial" seats are sold as a mancuerna (2+ seats, ONE charge) —
-            // only they get the ESPECIAL tag, and the amount prints once per
-            // group (on its first seat) so the pair isn't charged as two.
+            // only they get the ESPECIAL tag, naming the seats of the pair.
             $especialGroups = $reservationsBySeat->flatten(1)
                 ->filter(fn ($r) => $r->trip_type === \App\Models\TripTicketPrice::TYPE_ESPECIAL)
                 ->groupBy(fn ($r) => $r->groupRootId())
@@ -188,7 +194,6 @@
                 if (! $group) {
                     return null;
                 }
-                $isFirst = $group->first()->id === $r->id;
                 $labels = $group->map(fn ($x) => $x->seat?->label)->filter()->implode(' + ');
 
                 $mode = match ($group->first()->especialMode()) {
@@ -197,7 +202,7 @@
                     default => '',
                 };
 
-                return ['first' => $isFirst, 'labels' => $mode.$labels, 'total' => $group->sum(fn ($x) => (float) $x->unit_price), 'abono' => $group->sum(fn ($x) => (float) $x->abono)];
+                return ['labels' => $mode.$labels];
             };
         @endphp
 
@@ -222,15 +227,7 @@
                                     <td class="map-cell" rowspan="{{ $lineCount }}">
                                         {{-- Left pair | pasillo | right pair: fixed columns, so the
                                              aisle and the boxes line up in every row. --}}
-                                        <table class="mrow"><tr>
-                                            @foreach ([0, 1] as $i)
-                                                <td>@if ($sides[0]->has($i))<div class="mbox {{ $mapTypeClass($sides[0][$i]->id) }}">{{ $sides[0][$i]->label }}</div>@endif</td>
-                                            @endforeach
-                                            <td class="aisle"></td>
-                                            @foreach ([0, 1] as $i)
-                                                <td>@if ($sides[1]->has($i))<div class="mbox {{ $mapTypeClass($sides[1][$i]->id) }}">{{ $sides[1][$i]->label }}</div>@endif</td>
-                                            @endforeach
-                                        </tr></table>
+                                        <div class="mrow">@foreach ([0, 1] as $i)@if ($sides[0]->has($i))<div class="mbox {{ $mapTypeClass($sides[0][$i]->id) }}">{{ $sides[0][$i]->label }}</div>@else<div class="mbox ghost"></div>@endif{{ '' }}@endforeach<div class="aisle"></div>@foreach ([0, 1] as $i)@if ($sides[1]->has($i))<div class="mbox {{ $mapTypeClass($sides[1][$i]->id) }}">{{ $sides[1][$i]->label }}</div>@else<div class="mbox ghost"></div>@endif{{ '' }}@endforeach</div>
                                     </td>
                                 @endif
                                 @foreach ($sides as $sideIndex => $side)
@@ -248,9 +245,6 @@
                                                 @php $esp = $especialTag($r); @endphp
                                                 @if ($esp)
                                                     <span class="tag">ESPECIAL {{ $esp['labels'] }}</span>
-                                                @endif
-                                                @if (! $r->isPaymentCompleted() && (! $esp || $esp['first']))
-                                                    <span class="amount">${{ number_format(max(0, ($esp ? $esp['total'] - $esp['abono'] : (float) $r->unit_price - (float) $r->abono)), 2) }}</span>
                                                 @endif
                                             @endforeach
                                         @endif
