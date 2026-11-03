@@ -751,13 +751,18 @@ function updateForm() {
         // redondo/especial it's always free/already paid, so asking
         // "¿pagado?" there would be meaningless.
         const showReturnPaid = currentTripType === 'one_way';
-        const minReturnDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+        // Local dates (toISOString is UTC and shifts the day at night). A seat
+        // that already has its regreso today must pick another day; any other
+        // seat may come back the same day.
+        const localIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const todayIso = localIso(new Date());
+        const tomorrowIso = localIso(new Date(Date.now() + 86400000));
         const rows = seats.map((s) => {
             const options = PAYMENT_METHOD_OPTIONS.map(([value, label]) =>
                 `<option value="${value}" ${seatPaymentMethods.get(s.id) === value ? 'selected' : ''}>${label}</option>`
             ).join('');
             const returnDateField = showReturnDate
-                ? `<input type="date" name="return_date[${s.id}]" data-seat-return="${s.id}" min="${minReturnDate}" value="${seatReturnDates.get(s.id) || ''}" placeholder="Fecha de regreso" ${needsOtherReturnDate(s.id) ? 'required' : ''} title="${needsOtherReturnDate(s.id) ? 'Este asiento ya tiene regreso hoy: indica otra fecha de regreso' : '¿Ya sabe cuándo regresa? (opcional)'}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">`
+                ? `<input type="date" name="return_date[${s.id}]" data-seat-return="${s.id}" min="${needsOtherReturnDate(s.id) ? tomorrowIso : todayIso}" value="${seatReturnDates.get(s.id) || ''}" placeholder="Fecha de regreso" ${needsOtherReturnDate(s.id) ? 'required' : ''} title="${needsOtherReturnDate(s.id) ? 'Este asiento ya tiene regreso hoy: indica otra fecha de regreso' : '¿Ya sabe cuándo regresa? (opcional)'}" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">`
                 : '';
             const returnPaidField = showReturnPaid
                 ? `<select name="return_paid[${s.id}]" data-seat-return-paid="${s.id}" title="¿El regreso ya está pagado?" class="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">

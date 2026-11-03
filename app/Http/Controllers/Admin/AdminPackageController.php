@@ -131,35 +131,45 @@ class AdminPackageController extends Controller
 
     public function legacyStore(Request $request): RedirectResponse
     {
+        // Gratis: el costo y el saldo no se capturan; quedan en $0.
+        if ($request->input('payment_method') === 'gratis') {
+            $request->merge(['price' => 0, 'owed' => 0]);
+        }
+
         $data = $request->validate([
             'client_name' => ['required', 'string', 'max:255'],
-            'price' => ['required', 'numeric', 'min:0'],
+            'price' => ['required_unless:payment_method,gratis', 'nullable', 'numeric', 'min:0'],
             'owed' => ['nullable', 'numeric', 'min:0', 'lte:price'],
+            'package_count' => ['required', 'integer', 'min:1', 'max:1000'],
+            'payment_method' => ['required', 'in:efectivo,transferencia,tarjeta,gratis'],
             'delivered_on' => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
-        $price = (float) $data['price'];
-        $owed = (float) ($data['owed'] ?? 0);
+        // Gratis: no se cobra, queda en $0 y sin saldo pendiente.
+        $free = $data['payment_method'] === 'gratis';
+        $price = $free ? 0.0 : (float) $data['price'];
+        $owed = $free ? 0.0 : (float) ($data['owed'] ?? 0);
         $deliveredAt = isset($data['delivered_on']) ? \Illuminate\Support\Carbon::parse($data['delivered_on'])->endOfDay()->min(now()) : now();
 
         // No se da de alta en Clientes (no hay teléfono ni folio): queda solo
         // con el nombre. Lo pagado se registra como cobro en la fecha de
         // entrega para que salga en el corte de ese día; lo que debe sale
         // en la lista de pendientes del corte.
-        $package = DB::transaction(function () use ($data, $price, $owed, $deliveredAt, $request) {
+        $package = DB::transaction(function () use ($data, $price, $owed, $free, $deliveredAt, $request) {
             $package = Package::create([
                 'tracking_code' => Package::generateTrackingCode(),
                 'status' => Package::STATUS_ENTREGADO,
                 'client_name' => trim($data['client_name']),
                 'price' => $price,
+                'package_count' => (int) $data['package_count'],
                 'amount_paid' => round($price - $owed, 2),
                 'collected_by' => $request->user()->id,
                 'collected_at' => $deliveredAt,
                 'delivered_at' => $deliveredAt,
             ]);
 
-            if ($price - $owed > 0) {
-                $package->payments()->create(['amount' => round($price - $owed, 2), 'user_id' => $request->user()->id, 'paid_at' => $deliveredAt]);
+            if ($free || $price - $owed > 0) {
+                $package->payments()->create(['amount' => round($price - $owed, 2), 'method' => $data['payment_method'], 'user_id' => $request->user()->id, 'paid_at' => $deliveredAt]);
             }
 
             return $package;

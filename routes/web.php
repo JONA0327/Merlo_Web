@@ -271,6 +271,8 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::get('/paqueteria/corte', [AdminPackageCorteController::class, 'show'])->name('paqueteria.corte');
     Route::get('/paqueteria/corte/imprimir', [AdminPackageCorteController::class, 'print'])->name('paqueteria.corte.imprimir');
     Route::post('/paqueteria/corte', [AdminPackageCorteController::class, 'store'])->name('paqueteria.corte.store');
+    Route::put('/paqueteria/corte/cobros/{payment}', [AdminPackageCorteController::class, 'updatePayment'])->name('paqueteria.corte.payments.update');
+    Route::delete('/paqueteria/corte/cobros/{payment}', [AdminPackageCorteController::class, 'destroyPayment'])->name('paqueteria.corte.payments.destroy');
     Route::post('/paqueteria/corte/egresos', [AdminPackageCorteController::class, 'storeExpense'])->name('paqueteria.corte.expenses.store');
     Route::delete('/paqueteria/corte/egresos/{expense}', [AdminPackageCorteController::class, 'destroyExpense'])->name('paqueteria.corte.expenses.destroy');
 });

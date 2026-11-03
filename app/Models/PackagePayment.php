@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class PackagePayment extends Model
 {
-    protected $fillable = ['amount', 'user_id', 'paid_at'];
+    protected $fillable = ['amount', 'method', 'user_id', 'paid_at'];
 
     protected function casts(): array
     {

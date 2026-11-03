@@ -495,8 +495,8 @@ class AdminPaymentController extends Controller
     {
         $trip = $reservation->landingRoute;
         $tripDate = $reservation->isReturnLeg()
-            ? ($trip->return_date?->toSpanishLongDate() ?? '—')
-            : ($trip->day?->toSpanishLongDate() ?? '—');
+            ? ($trip->return_date?->toSpanishWeekdayDate() ?? '—')
+            : ($trip->day?->toSpanishWeekdayDate() ?? '—');
         $unitName = $trip->busUnit->name ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         $total = '$' . number_format((float) $reservation->total, 2);

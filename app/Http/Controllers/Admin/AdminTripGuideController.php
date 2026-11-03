@@ -531,7 +531,7 @@ class AdminTripGuideController extends Controller
             // stages the return leg too (see SeatReservation::
             // createReturnLegTicket()'s guide-staging branch).
             'return_date' => ['nullable', 'array'],
-            'return_date.*' => ['nullable', 'date', 'after_or_equal:tomorrow'],
+            'return_date.*' => ['nullable', 'date', 'after_or_equal:today'],
             'return_paid' => ['nullable', 'array'],
             'return_paid.*' => ['nullable', 'boolean'],
             // General — not per seat: same as Apartar asientos, marks

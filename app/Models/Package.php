@@ -59,6 +59,7 @@ class Package extends Model
         'client_email',
         'phone',
         'price',
+        'package_count',
         'photo_path',
         'package_group_id',
         'generated_by',

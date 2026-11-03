@@ -20,8 +20,25 @@
             </div>
 
             <div>
+                <x-input-label for="package_count" value="Cantidad de paquetes" />
+                <x-text-input id="package_count" name="package_count" type="number" step="1" min="1" class="block mt-1.5 w-full" :value="old('package_count', 1)" required />
+                <x-input-error :messages="$errors->get('package_count')" class="mt-2" />
+            </div>
+
+            <div>
+                <x-input-label for="payment_method" value="Método de pago" />
+                <select id="payment_method" name="payment_method" required onchange="document.getElementById('cost-fields').classList.toggle('hidden', this.value === 'gratis')" class="block mt-1.5 w-full rounded-md border-gray-300 shadow-sm focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
+                    @foreach (['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'tarjeta' => 'Tarjeta', 'gratis' => 'Gratis (no se cobra)'] as $value => $label)
+                        <option value="{{ $value }}" @selected(old('payment_method', 'efectivo') === $value)>{{ $label }}</option>
+                    @endforeach
+                </select>
+                <x-input-error :messages="$errors->get('payment_method')" class="mt-2" />
+            </div>
+
+            <div id="cost-fields" class="space-y-5 {{ old('payment_method') === 'gratis' ? 'hidden' : '' }}">
+            <div>
                 <x-input-label for="price" value="Costo del envío ($)" />
-                <x-text-input id="price" name="price" type="number" step="0.01" min="0" class="block mt-1.5 w-full" :value="old('price')" required />
+                <x-text-input id="price" name="price" type="number" step="0.01" min="0" class="block mt-1.5 w-full" :value="old('price')" />
                 <x-input-error :messages="$errors->get('price')" class="mt-2" />
             </div>
 
@@ -31,6 +48,8 @@
                 <p class="mt-1.5 text-xs text-[#2B1113]/50">Deja 0 si ya lo pagó completo. Lo demás se considera cobrado y entra al corte de la fecha de entrega.</p>
                 <x-input-error :messages="$errors->get('owed')" class="mt-2" />
             </div>
+            </div>
+
 
             <div>
                 <x-input-label for="delivered_on" value="Fecha de entrega (opcional)" />

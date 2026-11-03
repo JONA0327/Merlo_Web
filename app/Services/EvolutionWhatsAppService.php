@@ -370,7 +370,7 @@ class EvolutionWhatsAppService
         // Use locals so the double quotes don't have to nest nullsafe +
         // null-coalescing inside an interpolation expression — the parser
         // sometimes gets confused by `?-> ... ??` directly inside `{}`.
-        $departureDate = $departureDay?->toSpanishLongDate() ?? '—';
+        $departureDate = $departureDay?->toSpanishWeekdayDate() ?? '—';
         $unitName = BusUnit::find($route['bus_unit_id'])?->name ?? '—';
         $seatLabels = $group->map(fn (SeatReservation $r) => $r->seat?->label ?? '—')->implode(', ');
         // Every seat in a group ("mancuerna" or otherwise) is charged its
@@ -443,7 +443,7 @@ class EvolutionWhatsAppService
             ->unique(fn ($d) => $d->toDateString())
             ->sortBy(fn ($d) => $d->toDateString())
             // Se agenda por día de salida; al cliente se le avisa el día siguiente.
-            ->map(fn ($d) => $d->copy()->addDay()->toSpanishLongDate());
+            ->map(fn ($d) => $d->copy()->addDay()->toSpanishWeekdayDate());
 
         if ($rescheduled) {
             $lines[] = '';
@@ -494,7 +494,7 @@ class EvolutionWhatsAppService
         $group->each->loadMissing(['landingRoute', 'tripGuide', 'seat']);
         $route = $first->outboundRouteInfo();
         $departureDay = $first->landing_route_id !== null ? $first->landingRoute?->day : $first->travel_date;
-        $departureDate = $departureDay?->toSpanishLongDate() ?? '—';
+        $departureDate = $departureDay?->toSpanishWeekdayDate() ?? '—';
         $unitName = BusUnit::find($route['bus_unit_id'])?->name ?? '—';
 
         $lines = [
@@ -683,8 +683,8 @@ class EvolutionWhatsAppService
 
     private function buildCaption(SeatReservation $reservation, $trip): string
     {
-        $returnDate = $trip->return_date?->toSpanishLongDate() ?? '—';
-        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishLongDate() ?? '—');
+        $returnDate = $trip->return_date?->toSpanishWeekdayDate() ?? '—';
+        $tripDate = $reservation->isReturnLeg() ? $returnDate : ($trip->day?->toSpanishWeekdayDate() ?? '—');
         $unitName = $trip->busUnit->name ?? '—';
         $seat = $reservation->seat?->label ?? '—';
         $price = $reservation->unit_price ? $reservation->display_price_label : '—';

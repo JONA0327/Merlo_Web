@@ -37,7 +37,43 @@
                     $unit = $p->payable;
                     $folios = $unit instanceof \App\Models\PackageGroup ? $unit->packages->sortBy('folio_number')->pluck('folio_label')->implode(', ') : $unit?->folio_label;
                 @endphp
-                <li class="flex justify-between py-2"><span class="text-[#2B1113]/70">{{ $p->paid_at->format('H:i') }} · {{ $unit?->client_name }} · {{ $folios ?: 'Sin folio' }}</span><span class="font-semibold text-[#2B1113]">{{ $money($p->amount) }}</span></li>
+                @php $legacy = $unit instanceof \App\Models\Package && $unit->folio_number === null; @endphp
+                <li class="py-2">
+                    <div class="flex justify-between">
+                        <span class="text-[#2B1113]/70">{{ $p->paid_at->format('H:i') }} · {{ $unit?->client_name }} · {{ $folios ?: 'Sin folio' }}@if ($p->method) · {{ ucfirst($p->method) }}@endif @if ($legacy && $unit->package_count > 1) · {{ $unit->package_count }} paquetes @endif</span>
+                        <span class="flex items-center gap-3">
+                            <span class="font-semibold text-[#2B1113]">{{ $money($p->amount) }}</span>
+                            <button type="button" onclick="document.getElementById('edit-{{ $p->id }}').classList.toggle('hidden')" class="text-xs font-bold text-[#8C1D2B] hover:underline">Editar</button>
+                            <form method="POST" action="{{ route('admin.paqueteria.corte.payments.destroy', $p) }}" onsubmit="return confirm('{{ $legacy ? '¿Borrar este registro sin folio por completo?' : '¿Quitar este cobro? El saldo del envío se recalcula.' }}')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-xs font-bold text-[#2B1113]/40 hover:text-red-600">Borrar</button>
+                            </form>
+                        </span>
+                    </div>
+                    <form id="edit-{{ $p->id }}" method="POST" action="{{ route('admin.paqueteria.corte.payments.update', $p) }}" class="{{ $errors->has('amount') && old('_edit') == $p->id ? '' : 'hidden' }} mt-2 flex flex-wrap items-end gap-3 rounded-xl bg-[#FFFBF6] p-3">
+                        @csrf
+                        @method('PUT')
+                        <input type="hidden" name="_edit" value="{{ $p->id }}">
+                        @if ($legacy)
+                            <label class="block min-w-44 flex-1"><span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Cliente</span>
+                                <input type="text" name="client_name" value="{{ $unit->client_name }}" required class="mt-1 w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"></label>
+                            <label class="block"><span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Costo</span>
+                                <input type="number" name="price" step="0.01" min="0" value="{{ $unit->price }}" required class="mt-1 w-28 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"></label>
+                            <label class="block"><span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Paquetes</span>
+                                <input type="number" name="package_count" min="1" value="{{ $unit->package_count }}" required class="mt-1 w-20 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"></label>
+                        @endif
+                        <label class="block"><span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Pagó</span>
+                            <input type="number" name="amount" step="0.01" min="0" value="{{ $p->amount }}" required class="mt-1 w-28 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"></label>
+                        <label class="block"><span class="text-[11px] font-bold uppercase tracking-wider text-[#2B1113]/60">Método</span>
+                            <select name="method" required onchange="if(this.value==='gratis'){var f=this.form;f.amount.value=0;if(f.price)f.price.value=0}" class="mt-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm">
+                                @foreach (['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'tarjeta' => 'Tarjeta'] + ($legacy ? ['gratis' => 'Gratis'] : []) as $v => $l)
+                                    <option value="{{ $v }}" @selected(($p->method ?? 'efectivo') === $v)>{{ $l }}</option>
+                                @endforeach
+                            </select></label>
+                        <button type="submit" class="rounded-xl bg-[#8C1D2B] px-4 py-2 text-xs font-bold text-white hover:opacity-90">Guardar</button>
+                    </form>
+                </li>
             @empty
                 <li class="py-4 text-[#2B1113]/50">No hubo cobros este día.</li>
             @endforelse

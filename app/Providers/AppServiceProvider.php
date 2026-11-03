@@ -55,5 +55,13 @@ class AppServiceProvider extends ServiceProvider
 
             return "{$this->day} de {$month} del {$this->year}";
         });
+
+        // WhatsApp variant with weekday: "sábado 7 de noviembre del 2026".
+        Carbon::macro('toSpanishWeekdayDate', function () {
+            /** @var Carbon $this */
+            $es = $this->copy()->locale('es');
+
+            return $es->translatedFormat('l').' '.$es->day.' de '.$es->translatedFormat('F').' del '.$es->year;
+        });
     }
 }
