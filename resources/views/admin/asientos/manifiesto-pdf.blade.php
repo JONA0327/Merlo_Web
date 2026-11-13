@@ -31,7 +31,18 @@
     // (DomPDF otherwise shares it unevenly and the boxes come out crooked).
     $aisleW = 16;   // the pasillo between the two pairs
     $gap = 6;       // space between neighbouring seats (3px each side)
-    $blockCount = $seatsByDeck->sum(fn ($d) => (int) ceil($d->count() / 4));
+    // A "stacked" block (stairs / toilet beside it, see App\Support\ManifestLayout)
+    // draws its seat boxes on two rows, so it is as tall as two normal blocks.
+    $stackedBlocks = $stackedBlocks ?? [];
+    $isStacked = fn ($deck, $block) => $block->count() === 4 && isset($stackedBlocks[$deck][(string) $block->first()->label]);
+    $stackedCount = 0;
+    foreach ($seatsByDeck as $deckKey => $deckSeatsForCount) {
+        foreach ($deckSeatsForCount->chunk(4) as $blockForCount) {
+            $stackedCount += $isStacked($deckKey, $blockForCount) ? 1 : 0;
+        }
+    }
+    $blockCount = $seatsByDeck->sum(fn ($d) => (int) ceil($d->count() / 4)) + $stackedCount;
+    $budget -= 18 * $stackedCount; // a stacked block also needs room for its row gaps, rule and rounding
     $titlesH = $unit->has_upper_deck ? 24 * $seatsByDeck->count() : 0;
     $boxS = (int) max(24, min(56, floor(($budget - $titlesH) / max(1, $blockCount)) - 6));
     // CSS cell widths EXCLUDE their padding, so every column below is declared as
@@ -41,11 +52,14 @@
     $mapTableW = 4 * $cellW + $aisleW;
     $cellWidth = ($contentW - $mapTableW - 6) / 2 - 12;      // px of one name cell (content)
     $boxBlockH = $boxS + 6; // a block is at least as tall as its box (+ padding, rule, row rounding)
+    $stackedBoxH = 2 * $boxS + 3 + 6;                        // two rows of boxes
+    $specialW = 2 * $boxS + $gap - 2;                        // the stairs/WC box spans two seat columns (content width)
+    $specialH = 2 * $boxS + 3 - 2;                           // ...and both rows (content height)
 
     // Estimated printed height of the decks at a given font: a seat's line wraps
     // to 2+ lines when its names are wider than the cell, and a block is never
     // shorter than its seat boxes.
-    $estimateHeight = function (int $fs) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit, $boxBlockH) {
+    $estimateHeight = function (int $fs) use ($seatsByDeck, $reservationsBySeat, $cellWidth, $unit, $boxBlockH, $stackedBoxH, $isStacked) {
         $lineH = $fs + 2 + 3;
         $small = max(7, $fs - 2); // tag font
         $cellLines = function ($seat) use ($reservationsBySeat, $fs, $small, $cellWidth) {
@@ -61,7 +75,7 @@
             return max(1, (int) ceil($width / $cellWidth));
         };
         $total = 0;
-        foreach ($seatsByDeck as $deckSeats) {
+        foreach ($seatsByDeck as $deckKey => $deckSeats) {
             $total += $unit->has_upper_deck ? 24 : 0; // deck title
             foreach ($deckSeats->chunk(4) as $block) {
                 $left = $block->slice(0, 2)->values();
@@ -70,7 +84,7 @@
                 for ($i = 0, $n = max($left->count(), $right->count()); $i < $n; $i++) {
                     $names += max($left->has($i) ? $cellLines($left[$i]) : 1, $right->has($i) ? $cellLines($right[$i]) : 1) * $lineH;
                 }
-                $total += max($names, $boxBlockH);
+                $total += max($names, $isStacked($deckKey, $block) ? $stackedBoxH : $boxBlockH);
             }
         }
 
@@ -141,6 +155,12 @@
     /* Casillas cuadradas de ~1.5 cm, sin color (el color va en los nombres); solo borde y el número. */
     .mbox { display: inline-block; vertical-align: top; box-sizing: content-box; width: {{ $boxS - 2 }}px; height: {{ $boxS - 2 }}px; margin: 0 {{ $gap / 2 }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 12px; font-weight: bold; line-height: 13px; text-align: left; }
     .mbox.ghost { visibility: hidden; }
+    /* Bloque "apilado" (escaleras / baño a la derecha): dos filas de casillas y una caja que abarca las dos. */
+    .mstack { display: inline-block; vertical-align: top; }
+    .mstack .mbox { display: block; float: none; margin-bottom: 3px; }
+    .mstack .mpair { white-space: nowrap; font-size: 0; }
+    .mstack .mpair .mbox { display: inline-block; margin-bottom: 3px; font-size: 12px; }
+    .mspecial { display: inline-block; vertical-align: top; box-sizing: content-box; width: {{ $specialW }}px; height: {{ $specialH }}px; line-height: {{ $specialH }}px; margin: 0 {{ $gap / 2 }}px; border: 1px solid #2B1113; background: #ffffff; font-size: 11px; font-weight: bold; text-align: center; color: #2B1113; }
 </style>
 </head>
 <body>
@@ -227,7 +247,13 @@
                                     <td class="map-cell" rowspan="{{ $lineCount }}">
                                         {{-- Left pair | pasillo | right pair: fixed columns, so the
                                              aisle and the boxes line up in every row. --}}
+                                        @php $special = $isStacked($deck, $block) ? $stackedBlocks[$deck][(string) $block->first()->label] : null; @endphp
+                                        @if ($special)
+                                            {{-- seats 1-2 on one row, 3-4 right under them, and the stairs/WC box on the right spanning both --}}
+                                            <div class="mrow"><div class="mstack">@foreach ([$sides[0], $sides[1]] as $pair)<div class="mpair">@foreach ($pair as $seatBox)<div class="mbox {{ $mapTypeClass($seatBox->id) }}">{{ $seatBox->label }}</div>@endforeach</div>@endforeach</div><div class="aisle"></div><div class="mspecial">{{ $special }}</div></div>
+                                        @else
                                         <div class="mrow">@foreach ([0, 1] as $i)@if ($sides[0]->has($i))<div class="mbox {{ $mapTypeClass($sides[0][$i]->id) }}">{{ $sides[0][$i]->label }}</div>@else<div class="mbox ghost"></div>@endif{{ '' }}@endforeach<div class="aisle"></div>@foreach ([0, 1] as $i)@if ($sides[1]->has($i))<div class="mbox {{ $mapTypeClass($sides[1][$i]->id) }}">{{ $sides[1][$i]->label }}</div>@else<div class="mbox ghost"></div>@endif{{ '' }}@endforeach</div>
+                                        @endif
                                     </td>
                                 @endif
                                 @foreach ($sides as $sideIndex => $side)

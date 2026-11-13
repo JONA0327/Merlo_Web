@@ -1704,6 +1704,8 @@ class AdminTripGuideController extends Controller
             'trip' => $trip,
             'seats' => $seats,
             'reservationsBySeat' => $reservationsBySeat,
+            // Stairs / toilet boxes drawn next to some blocks — list only, not the map.
+            'stackedBlocks' => \App\Support\ManifestLayout::stackedBlocks($trip->busUnit?->name),
         ])->setPaper('a4', 'portrait');
 
         return $pdf->stream('lista-asientos-'.$trip->id.'.pdf');

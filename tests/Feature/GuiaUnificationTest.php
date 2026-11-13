@@ -740,3 +740,50 @@ test('the staged-date edit panel also offers the free seats of that date', funct
     $panelOfSeat1 = substr($html, strpos($html, 'Ahora: 1'), 600);
     expect($panelOfSeat1)->not->toContain('<option value="'.$taken->id.'">2</option>');
 });
+
+// ---------------------------------------------------------------------------
+// "Lista de asientos" (PDF): the stairs / toilet boxes of unit 5740 are drawn in
+// the LIST only — a block of 4 seats is shown on two rows with the box on its
+// right. Other units and the seat map are untouched.
+// ---------------------------------------------------------------------------
+
+function manifestHtml(string $unitName): string
+{
+    $bus = BusUnit::create(['name' => $unitName, 'has_upper_deck' => true]);
+    $seats = collect(range(1, 48))->map(fn ($n) => BusUnitSeat::create([
+        'bus_unit_id' => $bus->id, 'label' => (string) $n, 'type' => 'normal', 'deck' => 'upper',
+        'pos_x' => ($n - 1) % 4 * 50, 'pos_y' => intdiv($n - 1, 4) * 50,
+    ]));
+    $trip = LandingRoute::create([
+        'from' => 'SLP', 'to' => 'CDMX', 'duration' => '1h', 'price' => '$1', 'available_seats' => 9,
+        'bus_unit_id' => $bus->id, 'is_active' => true, 'day' => now()->addDay()->toDateString(),
+    ]);
+
+    return view('admin.asientos.manifiesto-pdf', [
+        'trip' => $trip->load('busUnit'),
+        'seats' => $seats,
+        'reservationsBySeat' => collect(),
+        'stackedBlocks' => \App\Support\ManifestLayout::stackedBlocks($unitName),
+    ])->render();
+}
+
+test('unit 5740 list draws the stairs and the toilet boxes beside their seats', function () {
+    $html = manifestHtml('5740');
+
+    expect($html)->toContain('>ESCALERAS<')->and($html)->toContain('>WC<');
+    // seats 9-10 / 11-12 stacked, with the stairs box right after them in the same row
+    expect($html)->toMatch('/class="mstack">.*?>9<.*?>10<.*?>11<.*?>12<.*?<div class="mspecial">ESCALERAS<\/div>/s');
+    expect($html)->toMatch('/class="mstack">.*?>45<.*?>46<.*?>47<.*?>48<.*?<div class="mspecial">WC<\/div>/s');
+});
+
+test('other units keep the normal list (no stairs / toilet boxes)', function () {
+    $html = manifestHtml('5716');
+
+    expect($html)->not->toContain('mspecial">')->and($html)->not->toContain('class="mstack"');
+});
+
+test('the layout is only a list setting: the seat map data does not include it', function () {
+    expect(\App\Support\ManifestLayout::stackedBlocks('5740'))->toBe(['upper' => ['9' => 'ESCALERAS', '45' => 'WC']])
+        ->and(\App\Support\ManifestLayout::stackedBlocks('9999'))->toBe([])
+        ->and(\App\Support\ManifestLayout::stackedBlocks(null))->toBe([]);
+});
