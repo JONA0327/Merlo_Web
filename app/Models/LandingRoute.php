@@ -118,17 +118,37 @@ class LandingRoute extends Model
             return null;
         }
 
+        $isRecurring = ! empty($recurringWeekdays);
+
         return static::where('bus_unit_id', $busUnitId)
             ->where('is_active', true)
-            ->where(fn ($q) => $q->where('from', '!=', $from)->orWhere('to', '!=', $to))
             ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
             ->get()
-            ->first(function (self $other) use ($weekdays) {
+            ->first(function (self $other) use ($weekdays, $isRecurring, $from, $to, $day) {
                 $otherWeekdays = $other->isRecurring()
                     ? $other->recurring_weekdays
                     : ($other->day ? [$other->day->dayOfWeek] : []);
 
-                return ! empty(array_intersect($weekdays, $otherWeekdays));
+                if (empty(array_intersect($weekdays, $otherWeekdays))) {
+                    return false;
+                }
+
+                // Another route on the same unit: always a conflict.
+                if ($other->from !== $from || $other->to !== $to) {
+                    return true;
+                }
+
+                // Same route AND same unit: a second trip to the same place is fine with
+                // ANOTHER unit, but the same unit twice is a duplicate. A recurring
+                // template and its own dated instances (see activateRecurringFor()) are
+                // not duplicates of each other, so only trips of the SAME kind clash.
+                if ($isRecurring && $other->isRecurring()) {
+                    return true;
+                }
+
+                return ! $isRecurring && ! $other->isRecurring()
+                    && $day !== null && $other->day !== null
+                    && Carbon::parse($day)->isSameDay($other->day);
             });
     }
 

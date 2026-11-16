@@ -483,7 +483,7 @@ test('the open-trip seat map receives who holds each seat (hover tooltip)', func
         ->get(route('admin.guias.show', [$guide, 'fecha' => $trip->day->toDateString()]))
         ->assertOk()->getContent();
 
-    preg_match('/seatHolders: (\{.*?\}),?
+    preg_match('/seatHolders: (\{.*?\}),??
 /s', $html, $m);
     $holders = json_decode($m[1] ?? '{}', true);
 

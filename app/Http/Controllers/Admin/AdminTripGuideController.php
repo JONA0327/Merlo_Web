@@ -61,6 +61,9 @@ class AdminTripGuideController extends Controller
             // provisionGuideReservations()). Runs for every guide, not only
             // recurring-trip ones — a manually created guide's own standing
             // assignments work the same way.
+            // A recurring manual guide made without an end date keeps extending itself.
+            TripGuide::where('source', TripGuide::SOURCE_MANUAL)->where('rolling', true)->get()->each->extendRollingWindow();
+
             foreach (TripGuide::all() as $guide) {
                 StandingReservation::provisionGuideReservations($guide);
             }
@@ -101,12 +104,25 @@ class AdminTripGuideController extends Controller
         // checking "did this guide match TODAY's recurring filter" was
         // the bug: on a day the trip doesn't run, that's false, so the
         // guide wrongly looked "manual" and got shown anyway.
+        //
+        // Only AUTOMATIC guides are ever matched to a trip: a guide made by hand from
+        // "Nueva guía" is its own thing, never absorbed by a trip of the same route/unit.
+        $autoGuides = $guides->reject(fn (TripGuide $g) => $g->isManual())->values();
+        $manualGuides = $guides->filter(fn (TripGuide $g) => $g->isManual())->values();
         $recurringGuideIds = collect($recurringTrips->all())
-            ->map(fn (LandingRoute $trip) => $guides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id))
+            ->map(fn (LandingRoute $trip) => $autoGuides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id))
             ->filter()
             ->pluck('id');
 
-        $days = collect(range(0, 6))->map(function (int $i) use ($weekStart, $recurringTrips, $guides, $recurringGuideIds, $dayCounts) {
+        // One-off trips of the week (soft-deleted ones included, so past days keep
+        // their color): an automatic guide's tab takes the color of ITS trip that day.
+        $weekTrips = LandingRoute::withTrashed()
+            ->whereNull('recurring_weekdays')
+            ->whereBetween('day', [$weekStart->toDateString(), $weekEnd->toDateString()])
+            ->get(['id', 'from', 'to', 'bus_unit_id', 'day', 'color'])
+            ->groupBy(fn (LandingRoute $t) => $t->day->toDateString());
+
+        $days = collect(range(0, 6))->map(function (int $i) use ($weekStart, $recurringTrips, $autoGuides, $manualGuides, $recurringGuideIds, $dayCounts, $weekTrips) {
             $date = $weekStart->copy()->addDays($i);
 
             // EVERY recurring trip shows up every day — not just the ones
@@ -122,8 +138,8 @@ class AdminTripGuideController extends Controller
             // crashes once the items are arrays. Plain Collection::merge()
             // doesn't have that assumption.
             $recurringTabs = collect($recurringTrips->all())
-                ->map(function (LandingRoute $trip) use ($guides, $date, $dayCounts) {
-                    $guide = $guides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id);
+                ->map(function (LandingRoute $trip) use ($autoGuides, $date, $dayCounts) {
+                    $guide = $autoGuides->first(fn (TripGuide $g) => $g->from === $trip->from && $g->to === $trip->to && $g->bus_unit_id === $trip->bus_unit_id);
 
                     return $guide ? [
                         'label' => "{$trip->from} → {$trip->to}",
@@ -141,11 +157,27 @@ class AdminTripGuideController extends Controller
             // unconditionally (see $recurringGuideIds above). Manual
             // guides have no weekday pattern to "block" against — any day
             // inside their range is simply valid, so they're always active.
-            $manualTabs = collect($guides->all())
+            $dayTrips = $weekTrips->get($date->toDateString(), collect());
+            $autoTabs = collect($autoGuides->all())
                 ->filter(fn (TripGuide $g) => ! $recurringGuideIds->contains($g->id) && $g->coversDate($date))
                 ->map(fn (TripGuide $g) => [
                     'label' => "{$g->from} → {$g->to}",
                     'guide' => $g,
+                    'color' => $dayTrips->first(fn (LandingRoute $t) => $t->from === $g->from && $t->to === $g->to && $t->bus_unit_id === $g->bus_unit_id)?->color,
+                    'active' => true,
+                    'pending_count' => $dayCounts->get($g->id.'|'.$date->toDateString(), 0),
+                ])
+                ->values();
+
+            // Manual guides (Nueva guía): always their own blue tab; a recurring one only
+            // shows on its own weekdays, a ranged one on every day of its range.
+            $manualTabs = collect($manualGuides->all())
+                ->filter(fn (TripGuide $g) => $g->runsOn($date))
+                ->map(fn (TripGuide $g) => [
+                    'label' => "{$g->from} → {$g->to}",
+                    'guide' => $g,
+                    'color' => 'manual',
+                    'manual' => true,
                     'active' => true,
                     'pending_count' => $dayCounts->get($g->id.'|'.$date->toDateString(), 0),
                 ])
@@ -164,7 +196,7 @@ class AdminTripGuideController extends Controller
                 // visible for a past date, this just surfaces that same
                 // state up in the week view instead of only after clicking in.
                 'isPast' => $date->lt(Carbon::today()),
-                'tabs' => $recurringTabs->merge($manualTabs)->where('active', true)->values(),
+                'tabs' => $recurringTabs->merge($autoTabs)->merge($manualTabs)->where('active', true)->values(),
             ];
         });
 
@@ -217,18 +249,53 @@ class AdminTripGuideController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $recurring = $request->input('schedule_mode') === 'weekday';
+
         $data = $request->validate([
             'from' => ['required', 'string', 'max:255'],
             'to' => ['required', 'string', 'max:255'],
             'bus_unit_id' => ['required', 'exists:bus_units,id'],
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date', 'after_or_equal:date_from'],
+            'schedule_mode' => ['nullable', 'in:date,weekday'],
+            // Fechas: "Desde" is required; "Hasta" empty = the same day.
+            // Recurrente: both optional ("Desde" empty = today, "Hasta" empty = keeps going).
+            'date_from' => [$recurring ? 'nullable' : 'required', 'date'],
+            'date_to' => ['nullable', 'date', $request->filled('date_from') ? 'after_or_equal:date_from' : 'after_or_equal:today'],
+            'recurring_weekdays' => [$recurring ? 'required' : 'nullable', 'array', 'min:1'],
+            'recurring_weekdays.*' => ['integer', 'between:0,6'],
             'notes' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'recurring_weekdays.required' => 'Elige al menos un día de la semana.',
         ]);
 
-        $guide = TripGuide::create($data);
+        $from = isset($data['date_from']) ? Carbon::parse($data['date_from'])->startOfDay() : now()->startOfDay();
 
-        return redirect()->route('admin.guias.show', $guide)->with('success', 'Guía creada. Ya puedes apartar asientos por fecha.');
+        if ($recurring) {
+            $rolling = empty($data['date_to']);
+            $to = $rolling ? $from->copy()->addWeeks(4) : Carbon::parse($data['date_to'])->startOfDay();
+            $weekdays = collect($data['recurring_weekdays'])->map(fn ($d) => (int) $d)->unique()->sort()->values()->all();
+        } else {
+            $rolling = false;
+            $to = empty($data['date_to']) ? $from->copy() : Carbon::parse($data['date_to'])->startOfDay();
+            $weekdays = null;
+        }
+
+        $guide = TripGuide::create([
+            'from' => $data['from'],
+            'to' => $data['to'],
+            'bus_unit_id' => $data['bus_unit_id'],
+            'date_from' => $from->toDateString(),
+            'date_to' => $to->toDateString(),
+            'notes' => $data['notes'] ?? null,
+            'source' => TripGuide::SOURCE_MANUAL,
+            'recurring_weekdays' => $weekdays,
+            'rolling' => $rolling,
+        ]);
+
+        return redirect()
+            ->route('admin.guias.show', [$guide, 'fecha' => $guide->nextRunningDate()->toDateString()])
+            ->with('success', $recurring
+                ? "Guía recurrente creada ({$guide->weekdaysLabel()}). Ya puedes apartar asientos para esos días."
+                : 'Guía creada. Ya puedes apartar asientos por fecha.');
     }
 
     public function show(Request $request, TripGuide $guide): View
@@ -527,7 +594,13 @@ class AdminTripGuideController extends Controller
             'trip_type' => ['required', 'string', 'in:one_way,round_trip,especial,regreso'],
             // Only meaningful for 'especial' (same price: ida, redondo or regreso).
             'especial_mode' => ['nullable', 'string', 'in:one_way,round_trip,return'],
-            'travel_date' => ['required', 'date', 'after_or_equal:'.$guide->date_from->toDateString(), 'before_or_equal:'.$guide->date_to->toDateString()],
+            'travel_date' => ['required', 'date', 'after_or_equal:'.$guide->date_from->toDateString(), 'before_or_equal:'.$guide->date_to->toDateString(),
+                // A recurring guide only runs on its own weekdays.
+                function (string $attribute, mixed $value, \Closure $fail) use ($guide) {
+                    if ($guide->isRecurring() && ! $guide->runsOn(Carbon::parse($value))) {
+                        $fail("Esta guía solo corre {$guide->weekdaysLabel()}.");
+                    }
+                }],
             'seat_ids' => ['required', 'array', 'min:1'],
             'seat_ids.*' => [
                 'integer',
@@ -1980,7 +2053,7 @@ class AdminTripGuideController extends Controller
         if ($requested) {
             try {
                 $date = Carbon::parse($requested)->startOfDay();
-                if ($guide->coversDate($date)) {
+                if ($guide->runsOn($date)) {
                     return $date;
                 }
             } catch (\Throwable) {
@@ -1994,7 +2067,7 @@ class AdminTripGuideController extends Controller
         // reason to skip ahead to the next unresolved date anymore.
         $today = now()->startOfDay();
 
-        return $guide->coversDate($today) ? $today : $guide->date_from->copy()->startOfDay();
+        return $guide->runsOn($today) ? $today : $guide->nextRunningDate($today);
     }
 
     private function matchingTrip(TripGuide $guide, Carbon $date): ?LandingRoute

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,6 +23,11 @@ class TripGuide extends Model
 {
     use HasFactory;
 
+    // Made by hand from "Nueva guía" vs. created automatically for a trip. They
+    // never share a row (see the migration that added `source`).
+    public const SOURCE_MANUAL = 'manual';
+    public const SOURCE_TRIP = 'trip';
+
     protected $fillable = [
         'from',
         'to',
@@ -29,12 +35,82 @@ class TripGuide extends Model
         'date_from',
         'date_to',
         'notes',
+        'source',
+        'recurring_weekdays',
+        'rolling',
     ];
 
     protected $casts = [
         'date_from' => 'date',
         'date_to' => 'date',
+        'recurring_weekdays' => 'array',
+        'rolling' => 'boolean',
     ];
+
+    public function isManual(): bool
+    {
+        return $this->source === self::SOURCE_MANUAL;
+    }
+
+    /** Guides created automatically for a trip (everything that is not manual). */
+    public function scopeAuto(Builder $query): Builder
+    {
+        return $query->where(fn ($q) => $q->whereNull('source')->orWhere('source', '!=', self::SOURCE_MANUAL));
+    }
+
+    /** A manual guide that repeats on certain weekdays instead of covering every day of its range. */
+    public function isRecurring(): bool
+    {
+        return ! empty($this->recurring_weekdays);
+    }
+
+    /** True when the guide is active on $date: inside its range and, if recurring, on one of its weekdays. */
+    public function runsOn(\DateTimeInterface $date): bool
+    {
+        return $this->coversDate($date)
+            && (! $this->isRecurring() || in_array((int) $date->format('w'), array_map('intval', $this->recurring_weekdays), true));
+    }
+
+    /** "Lun, Mié" for a recurring guide, null otherwise. */
+    public function weekdaysLabel(): ?string
+    {
+        if (! $this->isRecurring()) {
+            return null;
+        }
+
+        $names = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+        return collect($this->recurring_weekdays)->map(fn ($d) => (int) $d)->sort()->map(fn ($d) => $names[$d] ?? '?')->implode(', ');
+    }
+
+    /** First date on/after $from on which the guide runs (falls back to date_from). */
+    public function nextRunningDate(?\Carbon\Carbon $from = null): \Carbon\Carbon
+    {
+        $day = ($from ?? now())->copy()->startOfDay();
+        if ($day->lt($this->date_from)) {
+            $day = $this->date_from->copy();
+        }
+        for ($i = 0; $i < 366 && $day->lte($this->date_to); $i++, $day->addDay()) {
+            if ($this->runsOn($day)) {
+                return $day->copy();
+            }
+        }
+
+        return $this->date_from->copy();
+    }
+
+    /** A rolling manual guide keeps its end ~$weeks weeks ahead, like a recurring trip's guide does. */
+    public function extendRollingWindow(int $weeks = 4): void
+    {
+        if (! $this->rolling) {
+            return;
+        }
+
+        $horizon = now()->startOfDay()->addWeeks($weeks);
+        if ($horizon->gt($this->date_to)) {
+            $this->update(['date_to' => $horizon->toDateString()]);
+        }
+    }
 
     public function busUnit(): BelongsTo
     {
@@ -130,6 +206,7 @@ class TripGuide extends Model
             'date_from' => $date->toDateString(),
             'date_to' => $date->toDateString(),
             'notes' => $notes,
+            'source' => self::SOURCE_TRIP,
         ]);
     }
 
@@ -463,7 +540,7 @@ class TripGuide extends Model
             return null;
         }
 
-        return static::forRouteOnDate($trip->from, $trip->to, $trip->bus_unit_id, $trip->day, 'Creada automáticamente para el viaje del '.$trip->day->format('d/m/Y').'.');
+        return static::forTripOnDate($trip->from, $trip->to, $trip->bus_unit_id, $trip->day, 'Creada automáticamente para el viaje del '.$trip->day->format('d/m/Y').'.');
     }
 
     public static function ensureForRecurringTrip(LandingRoute $trip, int $weeksAhead = 4): ?self
@@ -475,7 +552,8 @@ class TripGuide extends Model
         $today = now()->startOfDay();
         $horizon = $today->copy()->addWeeks($weeksAhead);
 
-        $guide = static::where('from', $trip->from)
+        $guide = static::auto()
+            ->where('from', $trip->from)
             ->where('to', $trip->to)
             ->where('bus_unit_id', $trip->bus_unit_id)
             ->first();
@@ -495,6 +573,50 @@ class TripGuide extends Model
             'date_from' => $today->toDateString(),
             'date_to' => $horizon->toDateString(),
             'notes' => 'Creada automáticamente para el viaje recurrente ('.$trip->recurringWeekdaysLabel().').',
+            'source' => self::SOURCE_TRIP,
+        ]);
+    }
+
+    /**
+     * The automatic guide of a one-off dated trip: same route AND same bus (so two
+     * trips to the same place with different units each keep their own guide, and
+     * their own tab/color in the weekly strip), reusing the one already covering the
+     * day, else stretching the nearest, else creating it. It never touches a manual
+     * guide, however similar. Call inside a transaction.
+     */
+    public static function forTripOnDate(string $from, string $to, int $busUnitId, \Carbon\Carbon $date, string $notes): self
+    {
+        $guides = static::auto()
+            ->where('from', $from)
+            ->where('to', $to)
+            ->where('bus_unit_id', $busUnitId)
+            ->lockForUpdate()
+            ->get();
+
+        $guide = $guides->first(fn (self $g) => $g->coversDate($date));
+
+        if (! $guide) {
+            $guide = $guides->sortBy(fn (self $g) => min(
+                abs($g->date_from->diffInDays($date)),
+                abs($g->date_to->diffInDays($date))
+            ))->first();
+
+            if ($guide) {
+                $guide->update([
+                    'date_from' => $date->lt($guide->date_from) ? $date->toDateString() : $guide->date_from,
+                    'date_to' => $date->gt($guide->date_to) ? $date->toDateString() : $guide->date_to,
+                ]);
+            }
+        }
+
+        return $guide ?? static::create([
+            'from' => $from,
+            'to' => $to,
+            'bus_unit_id' => $busUnitId,
+            'date_from' => $date->toDateString(),
+            'date_to' => $date->toDateString(),
+            'notes' => $notes,
+            'source' => self::SOURCE_TRIP,
         ]);
     }
 }

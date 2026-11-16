@@ -9,12 +9,24 @@
             <p class="mt-1 text-sm text-[#2B1113]/60">
                 Plantilla: {{ $guide->busUnit->name }} ·
                 {{ $guide->date_from->format('d/m/Y') }} – {{ $guide->date_to->format('d/m/Y') }}
+                @if ($guide->isRecurring())
+                    · <span class="font-semibold text-blue-700">Recurrente: {{ $guide->weekdaysLabel() }}</span>
+                @endif
                 @if ($dateUnit->id !== $guide->bus_unit_id)
                     · <span class="font-semibold text-[#8C1D2B]">el {{ $date->format('d/m') }} usa {{ $dateUnit->name }}</span>
                 @endif
             </p>
         </div>
-        <a href="{{ route('admin.guias.edit', $guide) }}" class="text-xs font-semibold text-[#2B1113]/60 hover:text-[#2B1113]">Editar guía</a>
+        <div class="flex items-center gap-4">
+            <a href="{{ route('admin.guias.edit', $guide) }}" class="text-xs font-semibold text-[#2B1113]/60 hover:text-[#2B1113]">Editar guía</a>
+            @if ($guide->isManual())
+                <form method="POST" action="{{ route('admin.guias.destroy', $guide) }}" data-confirm="¿Eliminar esta guía? Se cancelarán sus apartados pendientes que aún no se hayan vinculado a un viaje real.">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="text-xs font-semibold text-red-600 hover:text-red-700">Eliminar guía</button>
+                </form>
+            @endif
+        </div>
     </div>
 
     @if (session('success'))

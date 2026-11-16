@@ -8,7 +8,7 @@
     </div>
 
     <section class="max-w-xl rounded-3xl bg-white p-6 ring-1 ring-black/5 shadow-sm">
-        <form method="POST" action="{{ route('admin.guias.store') }}" class="space-y-4">
+        <form method="POST" action="{{ route('admin.guias.store') }}" class="space-y-4" x-data="{ mode: '{{ old('schedule_mode', 'date') === 'weekday' ? 'weekday' : 'date' }}' }">
             @csrf
 
             <div>
@@ -45,18 +45,47 @@
                 @error('bus_unit_id') <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p> @enderror
             </div>
 
+            {{-- Fechas específicas o recurrente (todos los Lun, Mié…) --}}
+            <div>
+                <span class="mb-1.5 block text-sm font-semibold text-[#2B1113]">¿Cuándo?</span>
+                <div class="grid grid-cols-2 gap-2 rounded-xl bg-[#2B1113]/5 p-1">
+                    <label class="cursor-pointer rounded-lg px-3 py-2 text-center text-sm font-bold transition-colors" :class="mode === 'date' ? 'bg-white text-[#8C1D2B] shadow-sm' : 'text-[#2B1113]/60'">
+                        <input type="radio" name="schedule_mode" value="date" x-model="mode" class="sr-only"> Fecha(s)
+                    </label>
+                    <label class="cursor-pointer rounded-lg px-3 py-2 text-center text-sm font-bold transition-colors" :class="mode === 'weekday' ? 'bg-white text-[#8C1D2B] shadow-sm' : 'text-[#2B1113]/60'">
+                        <input type="radio" name="schedule_mode" value="weekday" x-model="mode" class="sr-only"> Recurrente
+                    </label>
+                </div>
+            </div>
+
+            <div x-show="mode === 'weekday'" x-cloak>
+                <span class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Días de la semana</span>
+                <div class="flex flex-wrap gap-2">
+                    @foreach (['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as $i => $dayName)
+                        <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#FFFBF6] px-3 py-2 text-sm font-semibold text-[#2B1113] ring-1 ring-black/10">
+                            <input type="checkbox" name="recurring_weekdays[]" value="{{ $i }}" class="h-4 w-4 rounded text-[#8C1D2B] focus:ring-[#8C1D2B]" {{ in_array($i, old('recurring_weekdays', [])) ? 'checked' : '' }}>
+                            {{ $dayName }}
+                        </label>
+                    @endforeach
+                </div>
+                <p class="mt-1.5 text-xs text-[#2B1113]/50">Solo aparece (y se puede apartar) esos días de la semana.</p>
+                @error('recurring_weekdays') <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p> @enderror
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label for="date_from" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Desde</label>
-                    <input id="date_from" name="date_from" type="date" value="{{ old('date_from') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                    <input id="date_from" name="date_from" type="date" value="{{ old('date_from') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" :required="mode !== 'weekday'">
                     @error('date_from') <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <label for="date_to" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Hasta</label>
-                    <input id="date_to" name="date_to" type="date" value="{{ old('date_to') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                    <label for="date_to" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Hasta <span class="font-normal text-[#2B1113]/40">(opcional)</span></label>
+                    <input id="date_to" name="date_to" type="date" value="{{ old('date_to') }}" class="w-full rounded-xl border border-black/10 bg-[#FFFBF6] px-4 py-3 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none">
                     @error('date_to') <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p> @enderror
                 </div>
             </div>
+            <p class="-mt-2 text-xs text-[#2B1113]/50" x-show="mode === 'date'">Si solo eliges "Desde", la guía es de ese mismo día.</p>
+            <p class="-mt-2 text-xs text-[#2B1113]/50" x-show="mode === 'weekday'" x-cloak>Sin "Desde" empieza hoy; sin "Hasta" se mantiene corriendo semana tras semana.</p>
 
             <div>
                 <label for="notes" class="mb-1.5 block text-sm font-semibold text-[#2B1113]">Notas (opcional)</label>
