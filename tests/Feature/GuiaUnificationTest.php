@@ -787,3 +787,53 @@ test('the layout is only a list setting: the seat map data does not include it',
         ->and(\App\Support\ManifestLayout::stackedBlocks('9999'))->toBe([])
         ->and(\App\Support\ManifestLayout::stackedBlocks(null))->toBe([]);
 });
+
+// ---------------------------------------------------------------------------
+// A seat with only a staged RETURN leg for a date must stay pickable for a
+// NEW outbound (ida/redondo/especial) sale on that same seat/date — they're
+// different passengers on different runs, same rule store() itself already
+// applies (its own conflict check is scoped by leg). Regression for the
+// picker blocking "especial" ida sales on seats that already had a regreso
+// staged there.
+// ---------------------------------------------------------------------------
+
+test('a staged return leg does not block the seat map for a new outbound sale on the same date', function () {
+    [$a] = guiaTwoBuses();
+    $d = now()->addDays(10)->toDateString();
+    $guide = TripGuide::create(['from' => 'SLP', 'to' => 'CDMX', 'bus_unit_id' => $a->id, 'date_from' => $d, 'date_to' => $d]);
+    $seatId = $a->seats()->where('label', '1')->value('id');
+
+    SeatReservation::create([
+        'trip_guide_id' => $guide->id, 'bus_unit_seat_id' => $seatId, 'travel_date' => $d,
+        'trip_type' => 'one_way', 'leg' => 'return', 'unit_price' => 0,
+        'customer_name' => 'Regreso Cliente', 'customer_phone' => '4444416578', 'status' => 'pending', 'payment_status' => 'completed',
+    ]);
+
+    $html = $this->actingAs(guiaAdmin())
+        ->get(route('admin.guias.show', [$guide, 'fecha' => $d]))
+        ->assertOk()->getContent();
+
+    preg_match('/seatStatuses: (\{.*?\}),\n/s', $html, $statusMatch);
+    $statuses = json_decode($statusMatch[1] ?? '{}', true);
+    expect($statuses)->not->toHaveKey((string) $seatId); // not an outbound status — must not block ida/especial
+
+    preg_match('/returnLegSeatIds: (\[.*?\]),\n/s', $html, $returnMatch);
+    $returnLegSeatIds = json_decode($returnMatch[1] ?? '[]', true);
+    expect($returnLegSeatIds)->toContain($seatId); // still reported, so it blocks a NEW "regreso" there
+
+    $response = $this->actingAs(guiaAdmin())->post(route('admin.guias.reservations.store', $guide), [
+        'travel_date' => $d,
+        'seat_ids' => [$seatId],
+        'trip_type' => 'especial',
+        'customer_name' => 'Pasajero Especial',
+        'customer_phone' => '4444416579',
+        'paid' => '0',
+        'payment_method' => [$seatId => 'cash'],
+    ]);
+
+    $response->assertSessionDoesntHaveErrors()->assertSessionHas('success');
+    $this->assertDatabaseHas('seat_reservations', [
+        'trip_guide_id' => $guide->id, 'bus_unit_seat_id' => $seatId, 'leg' => 'outbound', 'trip_type' => 'especial',
+        'customer_name' => 'Pasajero Especial',
+    ]);
+});

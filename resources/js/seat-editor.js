@@ -1332,7 +1332,7 @@ saveButton.addEventListener('click', async () => {
     try {
         await saveUnitData();
 
-        const response = await axios.put(config.syncUrl, { seats });
+        const response = await axios.put(config.syncUrl, { seats_json: JSON.stringify(seats) });
         const groups = allSeatGroups();
         const savedByKey = new Map(
             response.data.seats.map((seat) => [`${seat.deck}:${seat.label}`, seat])

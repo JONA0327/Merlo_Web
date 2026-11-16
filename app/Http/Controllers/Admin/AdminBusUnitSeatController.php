@@ -13,6 +13,14 @@ class AdminBusUnitSeatController extends Controller
 {
     public function sync(Request $request, BusUnit $busUnit): JsonResponse
     {
+        // The editor sends the whole map as ONE JSON string: with ~15 fields per
+        // seat, a plain JSON body blows past ModSecurity's 1000-argument limit
+        // (rule 200007 → 400) on large units.
+        if ($request->has('seats_json')) {
+            $decoded = json_decode((string) $request->input('seats_json'), true);
+            $request->merge(['seats' => is_array($decoded) ? $decoded : null]);
+        }
+
         $validated = $request->validate([
             'seats' => ['present', 'array'],
             'seats.*.id' => ['nullable', 'integer'],

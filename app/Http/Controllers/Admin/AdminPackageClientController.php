@@ -71,4 +71,25 @@ class AdminPackageClientController extends Controller
 
         return back()->with('success', 'Pago registrado.');
     }
+
+    /**
+     * Borra el cliente. Los paquetes/envíos que ya llevó no se tocan — el
+     * nombre que se mostró en su momento queda guardado directo en el
+     * paquete/grupo, así que el historial no depende de que el cliente siga
+     * existiendo; su columna package_client_id solo se queda en null.
+     */
+    public function destroy(PackageClient $client): RedirectResponse
+    {
+        if ($client->pendingAmount() > 0) {
+            return back()->withErrors(['client' => 'No se puede borrar: tiene saldo pendiente de pago.']);
+        }
+
+        if ($client->enCursoQuery()->exists()) {
+            return back()->withErrors(['client' => 'No se puede borrar: tiene paquetes en camino todavía.']);
+        }
+
+        $client->delete();
+
+        return redirect()->route('admin.paqueteria.clientes')->with('success', 'Cliente eliminado.');
+    }
 }

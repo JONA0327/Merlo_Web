@@ -18,18 +18,18 @@ class Package extends Model
 
     public const STATUS_RECOLECTADO = 'recolectado';
 
-    public const STATUS_EN_RECORRIDO = 'en_recorrido';
-
     public const STATUS_ENTREGADO = 'entregado';
 
-    public const STATUS_NO_ENTREGADO = 'no_entregado';
-
+    /**
+     * Solo 3 estados: sin_asignar es una etiqueta de folio impresa pero sin
+     * usar (nunca se le muestra al staff como "un paquete"); recolectado se
+     * pone al registrar, entregado al entregar — no hay transiciones
+     * manuales entre medio.
+     */
     public const STATUSES = [
         self::STATUS_SIN_ASIGNAR,
         self::STATUS_RECOLECTADO,
-        self::STATUS_EN_RECORRIDO,
         self::STATUS_ENTREGADO,
-        self::STATUS_NO_ENTREGADO,
     ];
 
     /**
@@ -38,17 +38,15 @@ class Package extends Model
     public const ACTIVE_STATUSES = [
         self::STATUS_SIN_ASIGNAR,
         self::STATUS_RECOLECTADO,
-        self::STATUS_EN_RECORRIDO,
     ];
 
     /**
-     * Closed out, one way or another — this is the permanent "Historial"
-     * record. Nothing in the app ever deletes a package once it leaves
-     * sin_asignar, so these rows accumulate forever as the delivery log.
+     * Closed out — this is the permanent "Historial" record. Nothing in the
+     * app ever deletes a package once it leaves sin_asignar, so these rows
+     * accumulate forever as the delivery log.
      */
     public const HISTORY_STATUSES = [
         self::STATUS_ENTREGADO,
-        self::STATUS_NO_ENTREGADO,
     ];
 
     protected $fillable = [
@@ -66,6 +64,7 @@ class Package extends Model
         'collected_by',
         'collected_at',
         'delivered_at',
+        'delivered_by',
         'package_client_id',
         'amount_paid',
         'delivery_photo_path',
@@ -103,6 +102,11 @@ class Package extends Model
     public function collectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'collected_by');
+    }
+
+    public function deliveredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'delivered_by');
     }
 
     public function client(): BelongsTo

@@ -541,7 +541,7 @@ class EvolutionWhatsAppService
      * @throws RuntimeException when not configured, the phone is invalid,
      *                         or the API call itself fails.
      */
-    public function sendPackageRegistration(string $phone, string $customerName, string $folioRangeLabel, int $qty, ?float $total): void
+    public function sendPackageRegistration(string $phone, string $customerName, string $folioRangeLabel, int $qty): void
     {
         $this->assertConfigured();
 
@@ -557,14 +557,9 @@ class EvolutionWhatsAppService
             '',
             '🏷️ Folio'.($qty > 1 ? 's' : '').": *{$folioRangeLabel}*",
             "📦 Cantidad: {$qty}",
+            '',
+            'Guarda este mensaje como comprobante.',
         ];
-
-        if ($total !== null) {
-            $lines[] = '💵 Total a pagar: $'.number_format($total, 2).' MXN';
-        }
-
-        $lines[] = '';
-        $lines[] = 'Guarda este mensaje como comprobante.';
 
         $response = $this->client()->post('/message/sendText/'.$this->settings->evolution_instance, [
             'number' => $number,

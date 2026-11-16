@@ -3,9 +3,7 @@
         $statusMeta = [
             'sin_asignar' => ['label' => 'Sin asignar', 'class' => 'bg-black/5 text-[#2B1113]/60'],
             'recolectado' => ['label' => 'Recolectado', 'class' => 'bg-[#F5B301]/15 text-[#8C6B00]'],
-            'en_recorrido' => ['label' => 'En recorrido', 'class' => 'bg-blue-100 text-blue-700'],
             'entregado' => ['label' => 'Entregado', 'class' => 'bg-emerald-100 text-emerald-700'],
-            'no_entregado' => ['label' => 'No entregado', 'class' => 'bg-red-100 text-red-700'],
         ];
     @endphp
 
@@ -44,7 +42,7 @@
             </form>
         </div>
     @else
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="max-w-xl">
             <div class="rounded-2xl bg-white p-6 sm:p-8 ring-1 ring-black/5 shadow-sm">
                 <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Datos del envío</h3>
                 <dl class="mt-4 space-y-3 text-sm">
@@ -67,7 +65,12 @@
                     @if ($package->delivered_at)
                         <div class="flex justify-between">
                             <dt class="text-[#2B1113]/50">Entregado</dt>
-                            <dd class="font-semibold text-[#2B1113]">{{ $package->delivered_at->format('d/m/Y H:i') }}</dd>
+                            <dd class="font-semibold text-[#2B1113]">
+                                {{ $package->delivered_at->format('d/m/Y H:i') }}
+                                @if ($package->deliveredBy)
+                                    <span class="text-[#2B1113]/50 font-normal">· {{ $package->deliveredBy->name }}</span>
+                                @endif
+                            </dd>
                         </div>
                     @endif
                 </dl>
@@ -97,28 +100,6 @@
                         </div>
                     </div>
                 @endif
-            </div>
-
-            <div class="rounded-2xl bg-white p-6 sm:p-8 ring-1 ring-black/5 shadow-sm">
-                <h3 class="font-[Poppins] text-lg font-bold text-[#2B1113]">Actualizar estado</h3>
-                <p class="mt-1 text-sm text-[#2B1113]/60">Cambia el estado conforme el paquete avanza.</p>
-
-                <form method="POST" action="{{ route('admin.paqueteria.paquetes.update-status', $package) }}" class="mt-6 space-y-4">
-                    @csrf
-                    <div>
-                        <x-input-label for="status" value="Nuevo estado" />
-                        <select id="status" name="status" class="mt-1.5 block w-full rounded-xl border-black/10 focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
-                            @foreach (['recolectado', 'en_recorrido', 'no_entregado'] as $option)
-                                <option value="{{ $option }}" @selected($package->status === $option)>{{ $statusMeta[$option]['label'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="flex justify-end pt-2">
-                        <x-primary-button type="submit">
-                            Guardar
-                        </x-primary-button>
-                    </div>
-                </form>
             </div>
         </div>
 
@@ -169,7 +150,7 @@
                                         <input type="checkbox" name="package_ids[]" value="{{ $m->id }}" checked class="rounded border-black/20 text-[#8C1D2B] focus:ring-[#8C1D2B]">
                                     @endif
                                     <span class="font-semibold">{{ $m->folio_label }}</span>
-                                    <span class="text-xs">{{ $m->status === 'entregado' ? 'Entregado' : 'Pendiente' }}</span>
+                                    <span class="text-xs">{{ $m->status === 'entregado' ? 'Entregado'.($m->deliveredBy ? ' por '.$m->deliveredBy->name : '') : 'Pendiente' }}</span>
                                 </label>
                             @endforeach
                         </div>
@@ -186,15 +167,37 @@
                             <x-text-input id="amount_paid" name="amount_paid" type="number" step="0.01" min="0" class="block mt-1.5 w-full" value="{{ old('amount_paid') }}" />
                             <p class="mt-1 text-xs text-[#2B1113]/50">Lo que falte para el costo total queda como pendiente del cliente.</p>
                         </div>
-                        <div x-data="{ photoPreview: null }">
+                        <div x-data="{
+                                preview: null,
+                                pick(event) {
+                                    const file = event.target.files[0];
+                                    event.target.value = '';
+                                    if (! file) return;
+                                    if (this.preview) URL.revokeObjectURL(this.preview);
+                                    this.preview = URL.createObjectURL(file);
+                                    const transfer = new DataTransfer();
+                                    transfer.items.add(file);
+                                    this.$refs.photoInput.files = transfer.files;
+                                },
+                                clear() {
+                                    if (this.preview) URL.revokeObjectURL(this.preview);
+                                    this.preview = null;
+                                    this.$refs.photoInput.value = '';
+                                },
+                            }">
                             <x-input-label value="Evidencia de entrega (opcional)" />
-                            <p class="mt-1 text-xs text-[#2B1113]/50">Toca para tomar una foto del paquete entregado.</p>
-                            <label class="mt-2 flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-black/15 bg-[#FFFBF6] hover:border-[#8C1D2B]/40 transition-colors">
-                                <img x-show="photoPreview" x-cloak :src="photoPreview" class="h-full w-full object-cover">
-                                <svg x-show="! photoPreview" class="h-7 w-7 text-[#2B1113]/25" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 3a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd"/></svg>
-                                <input type="file" name="photo" accept="image/*" capture="environment" class="hidden"
-                                       @change="photoPreview = $event.target.files[0] ? URL.createObjectURL($event.target.files[0]) : null">
-                            </label>
+                            <p class="mt-1 text-xs text-[#2B1113]/50">Toma una foto del paquete entregado.</p>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                <div x-show="preview" x-cloak class="relative h-24 w-24 overflow-hidden rounded-xl ring-1 ring-black/10">
+                                    <img :src="preview" class="h-full w-full object-cover">
+                                    <button type="button" @click="clear()" aria-label="Quitar foto" class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#2B1113]/80 text-xs font-bold text-white hover:bg-[#8C1D2B]">&times;</button>
+                                </div>
+                                <label x-show="! preview" class="flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-black/15 bg-[#FFFBF6] text-[#2B1113]/40 hover:border-[#8C1D2B]/40 transition-colors">
+                                    <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 5h2l1.5-2h5L14 5h2a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2zm6 2.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z"/></svg>
+                                    <span class="text-[10px] font-bold">Tomar foto</span>
+                                    <input type="file" name="photo" accept="image/*" capture="environment" x-ref="photoInput" class="hidden" @change="pick($event)">
+                                </label>
+                            </div>
                         </div>
                         <div class="flex justify-end pt-2"><x-primary-button type="submit">Registrar entrega</x-primary-button></div>
                     </form>

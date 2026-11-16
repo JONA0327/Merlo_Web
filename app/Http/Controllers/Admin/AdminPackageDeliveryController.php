@@ -64,6 +64,7 @@ class AdminPackageDeliveryController extends Controller
                 $p->update([
                     'status' => Package::STATUS_ENTREGADO,
                     'delivered_at' => now(),
+                    'delivered_by' => $request->user()->id,
                     'delivery_photo_path' => $photoPath,
                 ]);
             }

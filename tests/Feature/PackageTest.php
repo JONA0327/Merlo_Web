@@ -3,7 +3,6 @@
 use App\Models\Package;
 use App\Models\PackageFolioSequence;
 use App\Models\PackageGroup;
-use App\Models\PackageQrBatch;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -35,42 +34,59 @@ test('printing a folio guide reserves a contiguous range of blank folios', funct
     expect(Package::pluck('tracking_code')->unique())->toHaveCount(5);
 });
 
-test('a second folio guide continues the same global series, never restarting', function () {
+test('a second folio guide continues the same global series, never restarting, once leftovers are declined', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
 
     $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 5]);
-    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 3]);
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), [
+        'qty' => 3,
+        'confirmed' => 1,
+        'include_leftovers' => 0,
+    ]);
 
+    expect(Package::count())->toBe(8);
     expect(Package::pluck('folio_number')->sort()->values()->all())->toBe([1, 2, 3, 4, 5, 6, 7, 8]);
 });
 
-test('printing a folio guide saves a PDF on disk, organized by date, and it can be downloaded', function () {
-    Storage::fake('local');
+test('printing again while unused folios remain asks before reprinting them, instead of reprinting silently', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
 
-    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 3]);
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 5]);
 
-    expect(PackageQrBatch::count())->toBe(1);
-    $batch = PackageQrBatch::first();
-    expect($batch->qty)->toBe(3);
-    expect($batch->generated_by)->toBe($admin->id);
-    expect($batch->pdf_path)->toStartWith('paqueteria/folio-lotes/'.now()->format('Y/m').'/');
-    Storage::disk('local')->assertExists($batch->pdf_path);
+    $response = $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 3]);
 
-    $response = $this->actingAs($admin)->get(route('admin.paqueteria.qr.batches.download', $batch));
     $response->assertOk();
-    $response->assertHeader('content-type', 'application/pdf');
+    $response->assertSee('Sobraron 5 folios');
+    expect(Package::count())->toBe(5);
 });
 
-test('a failed PDF render does not prevent the folio batch itself from being created', function () {
-    Storage::shouldReceive('disk')->andThrow(new RuntimeException('disk unavailable'));
+test('confirming to include leftovers reuses them instead of minting past them', function () {
     $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
 
-    $response = $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 2]);
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 5]);
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), [
+        'qty' => 3,
+        'confirmed' => 1,
+        'include_leftovers' => 1,
+    ]);
 
-    $response->assertOk();
-    expect(Package::count())->toBe(2);
-    expect(PackageQrBatch::count())->toBe(0);
+    expect(Package::count())->toBe(5);
+    expect(Package::pluck('folio_number')->sort()->values()->all())->toBe([1, 2, 3, 4, 5]);
+});
+
+test('declining leftovers mints fresh folios without touching the unused ones', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_SUPERADMIN, 'email_verified_at' => now()]);
+
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), ['qty' => 5]);
+    $this->actingAs($admin)->post(route('admin.paqueteria.folios.store'), [
+        'qty' => 3,
+        'confirmed' => 1,
+        'include_leftovers' => 0,
+    ]);
+
+    expect(Package::count())->toBe(8);
+    expect(Package::where('status', Package::STATUS_SIN_ASIGNAR)->pluck('folio_number')->sort()->values()->all())
+        ->toBe([1, 2, 3, 4, 5, 6, 7, 8]);
 });
 
 test('printing a new folio guide never touches a package that has ever been registered', function () {
@@ -129,7 +145,6 @@ test('registering a single package assigns it a folio and sends a WhatsApp notic
         'client_name' => 'Juan Pérez',
         'qty' => 1,
         'phone' => '4444416578',
-        'price' => 250,
         'photo' => UploadedFile::fake()->image('evidencia.jpg'),
     ]);
 
@@ -140,7 +155,8 @@ test('registering a single package assigns it a folio and sends a WhatsApp notic
     expect($package->status)->toBe(Package::STATUS_RECOLECTADO);
     expect($package->folio_number)->toBe(1);
     expect($package->collected_by)->toBe($staff->id);
-    expect((float) $package->price)->toBe(250.0);
+    // El costo no se captura al registrar: queda para cuando se entregue.
+    expect($package->price)->toBeNull();
     expect($package->phone)->toBe('4444416578');
     expect($package->photo_path)->not->toBeNull();
     Storage::disk('local')->assertExists($package->photo_path);
@@ -157,7 +173,6 @@ test('registering several packages bundles them into one group with contiguous f
         'client_name' => 'María López',
         'qty' => 5,
         'phone' => '4444416578',
-        'price' => 500,
         'photo' => UploadedFile::fake()->image('evidencia.jpg'),
     ]);
 
@@ -165,7 +180,7 @@ test('registering several packages bundles them into one group with contiguous f
 
     expect(PackageGroup::count())->toBe(1);
     $group = PackageGroup::first();
-    expect((float) $group->total_price)->toBe(500.0);
+    expect($group->total_price)->toBeNull();
     expect($group->phone)->toBe('4444416578');
     expect($group->photo_path)->not->toBeNull();
 
@@ -178,7 +193,7 @@ test('registering several packages bundles them into one group with contiguous f
         expect($package->phone)->toBeNull();
         expect($package->photo_path)->toBeNull();
         expect($package->status)->toBe(Package::STATUS_RECOLECTADO);
-        expect($package->displayPrice())->toBe('500.00');
+        expect($package->displayPrice())->toBeNull();
         expect($package->displayPhone())->toBe('4444416578');
         expect($package->displayPhotoPath())->not->toBeNull();
     }
@@ -476,12 +491,12 @@ test('a visitor without a session opens the registration form straight from the 
         ->and($html)->toContain('name="website"');              // honeypot
 });
 
-test('logged-in staff keep the full form (known clients and price)', function () {
+test('logged-in staff keep the full form (known clients), but still no price field', function () {
     \App\Models\PackageClient::forRegistration('Cliente Conocido', '4441112222');
 
     $html = $this->actingAs(paqueteriaUser())->get(route('admin.paqueteria.registrar.create'))->assertOk()->getContent();
 
-    expect($html)->toContain('Cliente Conocido')->and($html)->toContain('name="price"');
+    expect($html)->toContain('Cliente Conocido')->and($html)->not->toContain('name="price"');
 });
 
 test('a visitor can register packages: folios are assigned, price is ignored, a thank-you page is shown', function () {
@@ -562,4 +577,63 @@ test('owed amount cannot exceed the cost for a no-folio package', function () {
         'client_name' => 'X', 'price' => 100, 'owed' => 150,
     ])->assertSessionHasErrors('owed');
     expect(Package::count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// Deleting clients
+// ---------------------------------------------------------------------------
+
+test('a client can be deleted when there is nothing pending, and their packages keep the client name', function () {
+    $user = paqueteriaUser();
+    $client = \App\Models\PackageClient::forRegistration('Clienta Borrable', '4441234567');
+    $package = Package::factory()->create([
+        'status' => Package::STATUS_ENTREGADO,
+        'client_name' => 'Clienta Borrable',
+        'package_client_id' => $client->id,
+        'price' => 100,
+        'amount_paid' => 100,
+        'delivered_at' => now(),
+    ]);
+
+    $this->actingAs($user)->delete(route('admin.paqueteria.clientes.destroy', $client))
+        ->assertRedirect(route('admin.paqueteria.clientes'));
+
+    expect(\App\Models\PackageClient::find($client->id))->toBeNull();
+    $package->refresh();
+    expect($package->package_client_id)->toBeNull();
+    expect($package->client_name)->toBe('Clienta Borrable');
+});
+
+test('a client with a pending balance cannot be deleted', function () {
+    $user = paqueteriaUser();
+    $client = \App\Models\PackageClient::forRegistration('Debe Dinero', '4449998888');
+    Package::factory()->create([
+        'status' => Package::STATUS_ENTREGADO,
+        'client_name' => 'Debe Dinero',
+        'package_client_id' => $client->id,
+        'price' => 200,
+        'amount_paid' => 50,
+        'delivered_at' => now(),
+    ]);
+
+    $this->actingAs($user)->delete(route('admin.paqueteria.clientes.destroy', $client))
+        ->assertSessionHasErrors('client');
+
+    expect(\App\Models\PackageClient::find($client->id))->not->toBeNull();
+});
+
+test('a client with a package still in transit cannot be deleted', function () {
+    $user = paqueteriaUser();
+    $client = \App\Models\PackageClient::forRegistration('En Camino', '4447776666');
+    Package::factory()->create([
+        'status' => Package::STATUS_RECOLECTADO,
+        'client_name' => 'En Camino',
+        'package_client_id' => $client->id,
+        'collected_at' => now(),
+    ]);
+
+    $this->actingAs($user)->delete(route('admin.paqueteria.clientes.destroy', $client))
+        ->assertSessionHasErrors('client');
+
+    expect(\App\Models\PackageClient::find($client->id))->not->toBeNull();
 });

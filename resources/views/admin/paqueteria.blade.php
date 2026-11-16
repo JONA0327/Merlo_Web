@@ -1,14 +1,4 @@
 <x-admin-layout active="paqueteria" title="Paquetería">
-    @php
-        $statusMeta = [
-            'sin_asignar' => ['label' => 'Sin asignar', 'class' => 'bg-black/5 text-[#2B1113]/60'],
-            'recolectado' => ['label' => 'Recolectado', 'class' => 'bg-[#F5B301]/15 text-[#8C6B00]'],
-            'en_recorrido' => ['label' => 'En recorrido', 'class' => 'bg-blue-100 text-blue-700'],
-            'entregado' => ['label' => 'Entregado', 'class' => 'bg-emerald-100 text-emerald-700'],
-            'no_entregado' => ['label' => 'No entregado', 'class' => 'bg-red-100 text-red-700'],
-        ];
-    @endphp
-
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
             <h2 class="font-[Poppins] text-2xl font-bold text-[#2B1113]">Paquetería</h2>
@@ -18,18 +8,8 @@
             <a href="{{ route('admin.paqueteria.corte') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                 Corte del día
             </a>
-            <a href="{{ route('admin.paqueteria.qr-universal') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
-                QR universal
-            </a>
-            <a href="{{ route('admin.paqueteria.folios.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
-                Imprimir guía de folios
-            </a>
             <a href="{{ route('admin.paqueteria.sin-folio.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#2B1113] ring-1 ring-black/10 hover:bg-black/5 transition-colors">
                 Registrar entregado sin folio
-            </a>
-            <a href="{{ route('admin.paqueteria.registrar.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-[#8C1D2B] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#8C1D2B]/25 hover:bg-[#6F1622] transition-colors">
-                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
-                Registrar nuevo
             </a>
         </div>
     </div>
@@ -40,167 +20,68 @@
         </div>
     @endif
 
-    <div class="mb-6 inline-flex rounded-xl bg-black/5 p-1">
-        <a href="{{ route('admin.paqueteria') }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $vista === 'clientes' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
-            Clientes
-        </a>
-        <a href="{{ route('admin.paqueteria', ['vista' => 'folios']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $vista === 'folios' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
-            Folios
-        </a>
+    <div class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div class="rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm">
+            <p class="font-[Poppins] text-2xl font-extrabold text-[#2B1113]">{{ $recolectadosHoy }}</p>
+            <p class="text-sm text-[#2B1113]/60">Recolectados hoy</p>
+        </div>
+        <div class="rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm">
+            <p class="font-[Poppins] text-2xl font-extrabold text-[#2B1113]">{{ $entregadosHoy }}</p>
+            <p class="text-sm text-[#2B1113]/60">Entregados hoy</p>
+        </div>
     </div>
 
-    @if ($vista === 'clientes')
-    <div class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-        <form method="GET" action="{{ route('admin.paqueteria') }}" class="flex flex-col sm:flex-row gap-3">
-            @if ($filtro === 'en_curso')<input type="hidden" name="filtro" value="en_curso">@endif
-            <input type="text" name="q" value="{{ $search }}" autofocus placeholder="Buscar cliente por nombre o teléfono…" class="flex-1 rounded-xl border-black/10 focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
-            <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2B1113] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#2B1113]/90 transition-colors">Buscar</button>
-        </form>
-    </div>
-
-    <div class="mb-6 flex flex-wrap gap-2">
-        <a href="{{ route('admin.paqueteria', array_filter(['q' => $search])) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $filtro === 'todos' ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">Todos</a>
-        <a href="{{ route('admin.paqueteria', array_filter(['filtro' => 'en_curso', 'q' => $search])) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $filtro === 'en_curso' ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">Con paquetes en curso</a>
-    </div>
-
-    <div class="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-        <table class="min-w-full divide-y divide-black/5 text-sm">
-            <thead class="bg-black/[0.02]">
-                <tr>
-                    <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Cliente</th>
-                    <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Teléfono</th>
-                    <th class="px-5 py-3 text-right font-bold text-[#2B1113]/60">Paquetes en curso</th>
-                    <th class="px-5 py-3 text-right font-bold text-[#2B1113]/60">Pendiente de pago</th>
-                    <th class="px-5 py-3"></th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-black/5">
-                @forelse ($clients as $c)
-                    <tr>
-                        <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $c->name }}</td>
-                        <td class="px-5 py-3 text-[#2B1113]/70">{{ $c->phone_formatted }}</td>
-                        <td class="px-5 py-3 text-right">
-                            @if ($c->en_curso > 0)
-                                <span class="rounded-full bg-[#F5B301]/15 px-2.5 py-1 text-xs font-bold text-[#8C6B00]">{{ $c->en_curso }}</span>
-                            @else
-                                <span class="text-[#2B1113]/30">—</span>
-                            @endif
-                        </td>
-                        <td class="px-5 py-3 text-right font-semibold {{ $c->pending > 0 ? 'text-red-600' : 'text-[#2B1113]/40' }}">${{ number_format($c->pending, 2) }}</td>
-                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.clientes.show', $c) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Ver</a></td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5" class="px-5 py-8 text-center text-[#2B1113]/50">{{ $search || $filtro === 'en_curso' ? 'No hay clientes con ese filtro.' : 'Todavía no hay clientes. Registra un paquete para empezar.' }}</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-    <div class="mt-6">{{ $clients->links() }}</div>
-    @else
-    <div class="mb-6 inline-flex rounded-xl bg-black/5 p-1">
-        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'activos']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'activos' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
-            Activos
-        </a>
-        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => 'historial']) }}" class="rounded-lg px-4 py-2 text-sm font-bold transition-colors {{ $tab === 'historial' ? 'bg-white text-[#2B1113] shadow-sm' : 'text-[#2B1113]/50' }}">
-            Historial
-        </a>
-    </div>
-    @if ($tab === 'historial')
-        <p class="-mt-4 mb-6 text-xs text-[#2B1113]/50">Registro permanente de paquetes entregados o no entregados. Nunca se borra, ni al generar nuevos lotes de folios.</p>
-    @endif
-
-    <div class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-        <form method="POST" action="{{ route('admin.paqueteria.paquetes.lookup') }}" class="flex flex-col sm:flex-row gap-3">
-            @csrf
-            <input
-                type="text"
-                name="code"
-                autofocus
-                placeholder="Escribe el folio del paquete (ej. F-000101)"
-                class="flex-1 rounded-xl border-black/10 uppercase tracking-widest placeholder:tracking-normal placeholder:normal-case focus:border-[#8C1D2B] focus:ring-[#8C1D2B]"
-            >
-            <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2B1113] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#2B1113]/90 transition-colors">
-                Buscar
-            </button>
-        </form>
-        @error('code')
-            <p class="mt-2 text-xs font-semibold text-red-600">{{ $message }}</p>
-        @enderror
-    </div>
-
-    <div class="mb-6 flex flex-wrap gap-2">
-        <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => $tab]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ ! $status ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
-            Todos
-        </a>
-        @foreach ($statuses as $option)
-            <a href="{{ route('admin.paqueteria', ['vista' => 'folios', 'tab' => $tab, 'status' => $option]) }}" class="rounded-full px-4 py-2 text-xs font-bold transition-colors {{ $status === $option ? 'bg-[#8C1D2B] text-white' : 'bg-white text-[#2B1113]/60 ring-1 ring-black/5' }}">
-                {{ $statusMeta[$option]['label'] }}
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        @foreach ([
+            [
+                'label' => 'Registrar nuevo',
+                'route' => 'admin.paqueteria.registrar.create',
+                'description' => 'Captura los datos del cliente y asigna folio(s) a su envío.',
+                'icon' => '<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/>',
+                'highlight' => true,
+            ],
+            [
+                'label' => 'Generar folios',
+                'route' => 'admin.paqueteria.folios.create',
+                'description' => 'Imprime etiquetas de folio en blanco para pegar en los paquetes antes de registrarlos.',
+                'icon' => '<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/>',
+            ],
+            [
+                'label' => 'Clientes',
+                'route' => 'admin.paqueteria.clientes',
+                'description' => 'Busca un cliente, revisa sus envíos y cobra saldos pendientes.',
+                'icon' => '<path d="M10 9a3 3 0 100-6 3 3 0 000 6zM4 18a6 6 0 1112 0H4z"/>',
+            ],
+            [
+                'label' => 'Paquetes',
+                'route' => 'admin.paqueteria.paquetes.index',
+                'description' => 'Los paquetes del día: cuáles van recolectados y cuáles ya se entregaron.',
+                'icon' => '<path fill-rule="evenodd" d="M9.504 1.132a1 1 0 01.992 0l1.75 1a1 1 0 11-.992 1.736L10 3.152l-1.254.716a1 1 0 11-.992-1.736l1.75-1zM5.618 4.504a1 1 0 01-.372 1.364L5.016 6l.23.132a1 1 0 11-.992 1.736L4 7.723V8a1 1 0 01-2 0V6a.996.996 0 01.52-.878l1.734-.99a1 1 0 011.364.372zm8.764 0a1 1 0 011.364-.372l1.734.99A1.001 1.001 0 0118 6v2a1 1 0 11-2 0v-.277l-.254.145a1 1 0 11-.992-1.736l.23-.132-.23-.132a1 1 0 01-.372-1.364zm-7 4a1 1 0 011.364-.372L10 8.848l1.254-.716a1 1 0 11.992 1.736L11 10.58v1.42a1 1 0 11-2 0v-1.42l-1.246-.712a1 1 0 01-.372-1.364zM3 11a1 1 0 011 1v1.42l1.254.716a1 1 0 11-.992 1.736l-1.75-1A1 1 0 012 14v-2a1 1 0 011-1zm14 0a1 1 0 011 1v2a1 1 0 01-.512.874l-1.75 1a1 1 0 11-.992-1.736L16 13.42V12a1 1 0 011-1zm-9.618 5.504a1 1 0 011.364-.372l.254.145V16a1 1 0 112 0v.277l.254-.145a1 1 0 11.992 1.736l-1.75 1a1 1 0 01-.992 0l-1.75-1a1 1 0 01-.372-1.364z" clip-rule="evenodd"/>',
+            ],
+            [
+                'label' => 'Código QR',
+                'route' => 'admin.paqueteria.qr-universal',
+                'description' => 'El QR fijo para registrar sin entrar al panel — descárgalo o imprímelo.',
+                'icon' => '<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v2h2V5H5zM3 12a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm2 1v2h2v-2H5zM11 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm2 1v2h2V5h-2zM11 12a1 1 0 011-1h1a1 1 0 110 2h-1v1h1a1 1 0 110 2h-2a1 1 0 01-1-1v-3zM16 12a1 1 0 112 0v1a1 1 0 11-2 0v-1zM15 16a1 1 0 100 2h2a1 1 0 100-2h-2z" clip-rule="evenodd"/>',
+            ],
+            [
+                'label' => 'Historial',
+                'route' => 'admin.paqueteria.historial',
+                'description' => 'Registro permanente de entregas, con el cliente de cada envío — nunca se borra.',
+                'icon' => '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>',
+            ],
+        ] as $card)
+            <a href="{{ route($card['route']) }}" class="group rounded-2xl bg-white p-5 ring-1 ring-black/5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl {{ $card['highlight'] ?? false ? 'bg-[#8C1D2B] text-white' : 'bg-[#8C1D2B]/10 text-[#8C1D2B]' }}">
+                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{!! $card['icon'] !!}</svg>
+                </span>
+                <p class="mt-4 font-[Poppins] font-bold text-[#2B1113]">{{ $card['label'] }}</p>
+                <p class="mt-1 text-sm text-[#2B1113]/60">{{ $card['description'] }}</p>
+                <span class="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#8C1D2B]">
+                    Ir a la sección
+                    <svg class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z" clip-rule="evenodd"/></svg>
+                </span>
             </a>
         @endforeach
     </div>
-
-    @if ($packages->isEmpty())
-        <x-empty-state
-            title="No hay paquetes en esta vista"
-            :description="$tab === 'historial' ? 'Aquí aparecerán los paquetes entregados o no entregados — quedan guardados aunque generes nuevos lotes de folios.' : 'Escanea el QR universal o entra a Registrar nuevo para empezar a registrar envíos.'"
-        >
-            <x-slot name="icon">
-                <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.504 1.132a1 1 0 01.992 0l1.75 1a1 1 0 11-.992 1.736L10 3.152l-1.254.716a1 1 0 11-.992-1.736l1.75-1zM5.618 4.504a1 1 0 01-.372 1.364L5.016 6l.23.132a1 1 0 11-.992 1.736L4 7.723V8a1 1 0 01-2 0V6a.996.996 0 01.52-.878l1.734-.99a1 1 0 011.364.372zm8.764 0a1 1 0 011.364-.372l1.734.99A1.001 1.001 0 0118 6v2a1 1 0 11-2 0v-.277l-.254.145a1 1 0 11-.992-1.736l.23-.132-.23-.132a1 1 0 01-.372-1.364zm-7 4a1 1 0 011.364-.372L10 8.848l1.254-.716a1 1 0 11.992 1.736L11 10.58v1.42a1 1 0 11-2 0v-1.42l-1.246-.712a1 1 0 01-.372-1.364zM3 11a1 1 0 011 1v1.42l1.254.716a1 1 0 11-.992 1.736l-1.75-1A1 1 0 012 14v-2a1 1 0 011-1zm14 0a1 1 0 011 1v2a1 1 0 01-.512.874l-1.75 1a1 1 0 11-.992-1.736L16 13.42V12a1 1 0 011-1zm-9.618 5.504a1 1 0 011.364-.372l.254.145V16a1 1 0 112 0v.277l.254-.145a1 1 0 11.992 1.736l-1.75 1a1 1 0 01-.992 0l-1.75-1a1 1 0 01-.372-1.364z" clip-rule="evenodd"/></svg>
-            </x-slot>
-        </x-empty-state>
-    @else
-        <div class="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-            <table class="min-w-full divide-y divide-black/5 text-sm">
-                <thead class="bg-black/[0.02]">
-                    <tr>
-                        <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Folio</th>
-                        <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Cliente</th>
-                        <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">Estado</th>
-                        <th class="px-5 py-3 text-left font-bold text-[#2B1113]/60">{{ $tab === 'historial' ? 'Entregado' : 'Recolectado' }}</th>
-                        <th class="px-5 py-3"></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-black/5">
-                    @foreach ($packages as $package)
-                        <tr>
-                            <td class="px-5 py-3 font-mono text-xs font-bold text-[#2B1113]">{{ $package->folio_label ?? ($package->delivered_at && ! $package->phone && ! $package->displayPhone() ? 'Sin folio' : $package->tracking_code) }}</td>
-                            <td class="px-5 py-3 text-[#2B1113]/80">
-                                {{ $package->displayClientName() ?? '—' }}
-                                @if ($package->isGrouped())
-                                    <span class="ml-1 text-xs text-[#2B1113]/40">(envío conjunto)</span>
-                                @endif
-                            </td>
-                            <td class="px-5 py-3">
-                                <span class="rounded-full px-2.5 py-1 text-xs font-bold {{ $statusMeta[$package->status]['class'] }}">
-                                    {{ $statusMeta[$package->status]['label'] }}
-                                </span>
-                            </td>
-                            <td class="px-5 py-3 text-[#2B1113]/60">
-                                {{ ($tab === 'historial' ? $package->delivered_at : $package->collected_at)?->format('d/m/Y H:i') ?? '—' }}
-                            </td>
-                            <td class="px-5 py-3 text-right">
-                                <div class="flex items-center justify-end gap-3">
-                                    <a href="{{ route('admin.paqueteria.paquetes.show', $package) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Ver</a>
-                                    @if ($package->status === \App\Models\Package::STATUS_SIN_ASIGNAR)
-                                        <form method="POST" action="{{ route('admin.paqueteria.paquetes.destroy', $package) }}">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="text-xs font-bold text-red-600 hover:text-red-700" onclick="return confirm('¿Eliminar el folio {{ $package->folio_label }}? La etiqueta impresa dejará de funcionar.')">
-                                                Eliminar
-                                            </button>
-                                        </form>
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
-
-        <div class="mt-6">
-            {{ $packages->links() }}
-        </div>
-    @endif
-    @endif
 </x-admin-layout>

@@ -406,16 +406,19 @@
                 'pos_x' => $s->pos_x,
                 'pos_y' => $s->pos_y,
             ])) !!},
+            // Outbound (ida/redondo/especial) legs only — a return leg
+            // staged via SeatReservation::createReturnLegTicket() lives on
+            // this SAME guide (not a reversed one — see TripGuide::
+            // linkTrip()) but is reported separately below as
+            // returnLegSeatIds, same split showOpenTrip() does for a real
+            // trip, so it blocks a new "regreso" on that seat without also
+            // blocking ida/redondo/especial — they're different passengers
+            // on different runs of the same seat+date.
             seatStatuses: {!! json_encode($pendingReservationsForDate->map(fn ($r) => $r->status)) !!},
-            // A return leg staged via SeatReservation::createReturnLegTicket()
-            // lives on this SAME guide (not a reversed one — see
-            // TripGuide::linkTrip()), flagged by carrying a
-            // source_reservation_id. Painted red so it reads apart from a
-            // normal forward-staged apartado at a glance.
-            seatIsReturnLeg: {!! json_encode($pendingReservationsForDate->map(fn ($r) => $r->source_reservation_id !== null)) !!},
             // Already-synced apartados (now on the real trip) still occupy their
             // seat on this date — painted as taken so they stay visible.
             takenIds: {!! json_encode($syncedForDate->pluck('bus_unit_seat_id')->unique()->values()) !!},
+            returnLegSeatIds: {!! json_encode($returnLegSeatIdsForDate) !!},
             seatIsStanding: {!! json_encode($standingSeatIds->mapWithKeys(fn ($id) => [$id => true])) !!},
             // Who holds each seat (hover tooltip on the map).
             seatHolders: {!! json_encode($seatHolders, JSON_UNESCAPED_UNICODE) !!},

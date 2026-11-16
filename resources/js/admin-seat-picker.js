@@ -26,12 +26,6 @@ const OTHER_TYPE_COLORS = { fill: '#E5E7EB', stroke: '#9CA3AF' };
 
 const seatStatuses = config.seatStatuses ?? {};
 const seatTripTypes = config.seatTripTypes ?? {};
-// Guías only: a pending reservation staged here that's actually a
-// return leg of an outbound ticket (SeatReservation::createReturnLegTicket()),
-// painted red regardless of the currently-selected category — unlike
-// the Apartar asientos "regreso" marking, this isn't gated by category
-// since the guide page isn't choosing between trip types the same way.
-const seatIsReturnLeg = config.seatIsReturnLeg ?? {};
 // Seats with an active StandingReservation ("de planta") for this
 // route/bus — booked automatically on every matching trip from now on.
 // Only painted while the seat is otherwise free; once it's actually
@@ -207,7 +201,6 @@ function colorsFor(seat) {
     if (currentTripType === 'regreso' && returnLegSeatIds.has(seat.id)) return SOLD_COLORS;
     if (needsOtherReturnDate(seat.id)) return RETURN_TRIP_COLORS;
     const status = seatStatuses[seat.id];
-    if (status && seatIsReturnLeg[seat.id]) return SOLD_COLORS;
     if (status && isReleasedForRegreso(seat)) return AVAILABLE_COLORS;
     // A seat already claimed by a "regreso" apartado reads red, same as
     // the printed manifest's color for that category — but only while

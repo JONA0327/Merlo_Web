@@ -1,13 +1,22 @@
 <x-admin-layout active="paqueteria" title="{{ $client->name }} · Paquetería">
     @php
         $money = fn ($v) => '$'.number_format((float) $v, 2);
-        $statusLabel = ['recolectado' => 'Recolectado', 'en_recorrido' => 'En recorrido', 'entregado' => 'Entregado', 'no_entregado' => 'No entregado'];
+        $statusLabel = ['recolectado' => 'Recolectado', 'entregado' => 'Entregado'];
     @endphp
 
-    <div class="mb-6">
-        <a href="{{ route('admin.paqueteria.clientes') }}" class="text-sm font-semibold text-[#8C1D2B] hover:underline">&larr; Volver a Clientes</a>
-        <h2 class="mt-2 font-[Poppins] text-2xl font-bold text-[#2B1113]">{{ $client->name }}</h2>
-        <p class="mt-1 text-sm text-[#2B1113]/60">{{ $client->phone_formatted }}</p>
+    <div class="mb-6 flex items-start justify-between gap-4">
+        <div>
+            <a href="{{ route('admin.paqueteria.clientes') }}" class="text-sm font-semibold text-[#8C1D2B] hover:underline">&larr; Volver a Clientes</a>
+            <h2 class="mt-2 font-[Poppins] text-2xl font-bold text-[#2B1113]">{{ $client->name }}</h2>
+            <p class="mt-1 text-sm text-[#2B1113]/60">{{ $client->phone_formatted }}</p>
+        </div>
+        <form method="POST" action="{{ route('admin.paqueteria.clientes.destroy', $client) }}" onsubmit="return confirm('¿Borrar a {{ $client->name }}? Su historial de envíos no se borra, solo deja de estar ligado a este cliente.');">
+            @csrf
+            @method('DELETE')
+            <button type="submit" class="shrink-0 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-100 transition-colors">
+                Borrar cliente
+            </button>
+        </form>
     </div>
 
     @if (session('success'))
@@ -50,7 +59,7 @@
                     <tr class="border-b border-black/5">
                         <td class="px-5 py-3 font-semibold text-[#2B1113]">{{ $p->folio_label ?? 'Sin folio' }}</td>
                         <td class="px-5 py-3">
-                            @if (in_array($p->status, ['recolectado', 'en_recorrido'], true))
+                            @if ($p->status === 'recolectado')
                                 <span class="rounded-full bg-[#F5B301]/15 px-2.5 py-1 text-xs font-bold text-[#8C6B00]">{{ $statusLabel[$p->status] }}</span>
                             @else
                                 <span class="text-[#2B1113]/70">{{ $statusLabel[$p->status] ?? $p->status }}</span>
@@ -58,7 +67,7 @@
                         </td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->collected_at?->format('d/m/Y') ?? '—' }}</td>
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $p->delivered_at?->format('d/m/Y') ?? '—' }}</td>
-                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.paquetes.show', $p) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">{{ in_array($p->status, ['recolectado', 'en_recorrido'], true) ? 'Ver / entregar' : 'Ver' }}</a></td>
+                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.paquetes.show', $p) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">{{ $p->status === 'recolectado' ? 'Ver / entregar' : 'Ver' }}</a></td>
                     </tr>
                 @empty
                     <tr><td colspan="5" class="px-5 py-8 text-center text-[#2B1113]/50">Sin paquetes todavía.</td></tr>

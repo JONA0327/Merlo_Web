@@ -161,3 +161,17 @@ test('searching clients by name does not match everyone, and a folio jumps to it
     $this->actingAs($this->staff)->get(route('admin.paqueteria', ['q' => 'Beto']))->assertSee('Beto Ruiz')->assertDontSee('Ana Lopez');
     $this->actingAs($this->staff)->get(route('admin.paqueteria', ['q' => 'F-000710']))->assertRedirect(route('admin.paqueteria.paquetes.show', $package));
 });
+
+test('marking a delivery records which staff member did it, visible on the package and its group mates', function () {
+    [$group, $packages] = groupOfThree();
+
+    $this->actingAs($this->staff)->post(route('admin.paqueteria.paquetes.deliver', $packages[0]), [
+        'package_ids' => [$packages[0]->id], 'amount_paid' => 100,
+    ])->assertRedirect();
+
+    expect($packages[0]->fresh()->delivered_by)->toBe($this->staff->id);
+    expect($packages[1]->fresh()->delivered_by)->toBeNull();
+
+    $this->actingAs($this->staff)->get(route('admin.paqueteria.paquetes.show', $packages[0]))
+        ->assertOk()->assertSee($this->staff->name);
+});

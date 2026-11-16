@@ -5,6 +5,13 @@
         <p class="mt-1 text-sm text-[#2B1113]/60">Historial de envíos y saldos pendientes por cliente (identificado por teléfono).</p>
     </div>
 
+    @if (session('success'))
+        <div class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{{ session('success') }}</div>
+    @endif
+    @if ($errors->any())
+        <div class="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{{ $errors->first() }}</div>
+    @endif
+
     <form method="GET" class="mb-4">
         <input type="text" name="q" value="{{ $search }}" placeholder="Buscar por nombre o teléfono…" class="w-full sm:w-80 rounded-xl border-black/10 text-sm focus:border-[#8C1D2B] focus:ring-[#8C1D2B]">
     </form>
@@ -21,7 +28,14 @@
                         <td class="px-5 py-3 text-[#2B1113]/70">{{ $c->phone_formatted }}</td>
                         <td class="px-5 py-3 text-right text-[#2B1113]/70">{{ $c->packages_count + $c->groups_count }}</td>
                         <td class="px-5 py-3 text-right font-semibold {{ $c->pending > 0 ? 'text-red-600' : 'text-[#2B1113]/40' }}">${{ number_format($c->pending, 2) }}</td>
-                        <td class="px-5 py-3 text-right"><a href="{{ route('admin.paqueteria.clientes.show', $c) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Abrir</a></td>
+                        <td class="px-5 py-3 text-right whitespace-nowrap">
+                            <a href="{{ route('admin.paqueteria.clientes.show', $c) }}" class="text-xs font-bold text-[#8C1D2B] hover:underline">Abrir</a>
+                            <form method="POST" action="{{ route('admin.paqueteria.clientes.destroy', $c) }}" class="inline" onsubmit="return confirm('¿Borrar a {{ $c->name }}? Su historial de envíos no se borra, solo deja de estar ligado a este cliente.');">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="ml-3 text-xs font-bold text-red-500 hover:underline">Borrar</button>
+                            </form>
+                        </td>
                     </tr>
                 @empty
                     <tr><td colspan="5" class="px-5 py-8 text-center text-[#2B1113]/50">Todavía no hay clientes.</td></tr>

@@ -248,7 +248,20 @@ class AdminTripGuideController extends Controller
 
         $pendingForDate = $guide->pendingSeatReservations()
             ->whereDate('travel_date', $date->toDateString())
-            ->get(['id', 'bus_unit_seat_id', 'status', 'source_reservation_id']);
+            ->get(['id', 'bus_unit_seat_id', 'status', 'source_reservation_id', 'leg']);
+
+        // Same split showOpenTrip() does for a real trip (see its own
+        // $outboundBySeat/$returnLegSeatIds there): an outbound (ida/
+        // redondo/especial) and a "regreso" booking on this exact seat+
+        // date are different passengers on different runs and don't
+        // conflict — see the leg-scoped check in store() above. Mixing
+        // both legs into one seatStatuses map blocked the picker from
+        // selling the outbound leg whenever the seat already had a
+        // return-leg ticket staged here (e.g. via createReturnLegTicket()),
+        // even though the backend itself would have allowed it.
+        $outboundPendingForDate = $pendingForDate->where('leg', '!=', SeatReservation::LEG_RETURN);
+        $returnLegSeatIdsForDate = $pendingForDate->where('leg', SeatReservation::LEG_RETURN)
+            ->pluck('bus_unit_seat_id')->unique()->values();
 
         $allPending = $guide->pendingSeatReservations()
             ->with('seat')
@@ -329,7 +342,11 @@ class AdminTripGuideController extends Controller
             'date' => $date,
             'dateUnit' => $dateUnit,
             'busUnits' => BusUnit::where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            'pendingReservationsForDate' => $pendingForDate->keyBy('bus_unit_seat_id'),
+            'pendingReservationsForDate' => $outboundPendingForDate->keyBy('bus_unit_seat_id'),
+            // Mirrors showOpenTrip()'s own $returnLegSeatIds — blocks only
+            // a NEW "regreso" selection on these seats, never ida/redondo/
+            // especial (see admin-seat-picker.js's isSeatSelectable()).
+            'returnLegSeatIdsForDate' => $returnLegSeatIdsForDate,
             'rootsByCustomer' => $rootsByCustomer,
             'filters' => $filters,
             // For the "asiento no disponible en este autobús" warning's

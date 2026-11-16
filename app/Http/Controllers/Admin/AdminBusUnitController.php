@@ -82,4 +82,74 @@ class AdminBusUnitController extends Controller
 
         return redirect()->route('admin.unidades')->with('success', 'Unidad eliminada.');
     }
+
+    /**
+     * Flips is_active from the units list — the only thing that decides
+     * whether a unit shows up as a "plantilla" choice in Guías/viajes
+     * (see e.g. AdminTripGuideController's own BusUnit::where('is_active',
+     * true) lookups). A duplicate() copy starts inactive on purpose, so
+     * this is how the admin turns it on once it's ready without having
+     * to open the full editor form just to flip one checkbox.
+     */
+    public function toggleActive(BusUnit $busUnit): RedirectResponse
+    {
+        $busUnit->update(['is_active' => ! $busUnit->is_active]);
+
+        return redirect()->route('admin.unidades')->with(
+            'success',
+            $busUnit->is_active
+                ? "Unidad \"{$busUnit->name}\" activada — ya aparece para elegirla como plantilla en las guías."
+                : "Unidad \"{$busUnit->name}\" desactivada."
+        );
+    }
+
+    /**
+     * Clones $busUnit's whole seat map (every seat, its position, shape,
+     * zone, allowed_trip_type, etc.) into a brand-new unit under a
+     * different name — for a second physical bus that's laid out the
+     * same way, instead of rebuilding the distribution seat-by-seat in
+     * the editor.
+     */
+    public function duplicate(Request $request, BusUnit $busUnit): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $busUnit->load('seats');
+
+        $copy = BusUnit::create([
+            'name' => $validated['name'],
+            'description' => $busUnit->description,
+            'has_upper_deck' => $busUnit->has_upper_deck,
+            'canvas_width' => $busUnit->canvas_width,
+            'canvas_height' => $busUnit->canvas_height,
+            // Starts inactive — kept out of the "choose a bus" lists for
+            // new trips/plantillas until whoever made the copy has
+            // checked the seat map and turned it on deliberately.
+            'is_active' => false,
+        ]);
+
+        $copy->seats()->insert($busUnit->seats->map(fn ($seat) => [
+            'bus_unit_id' => $copy->id,
+            'deck' => $seat->deck,
+            'kind' => $seat->kind,
+            'allowed_trip_type' => $seat->allowed_trip_type,
+            'zone' => $seat->zone,
+            'label' => $seat->label,
+            'type' => $seat->type,
+            'shape' => $seat->shape,
+            'width' => $seat->width,
+            'height' => $seat->height,
+            'corner_radius' => $seat->corner_radius,
+            'border_width' => $seat->border_width,
+            'color' => $seat->color,
+            'pos_x' => $seat->pos_x,
+            'pos_y' => $seat->pos_y,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->all());
+
+        return redirect()->route('admin.unidades.edit', $copy)->with('success', "Unidad \"{$copy->name}\" creada a partir del mapa de \"{$busUnit->name}\".");
+    }
 }

@@ -889,9 +889,9 @@ class SeatReservation extends Model
                 // matches on bus_unit_id), so try the exact same seat
                 // first — only falls back to "whichever's free" if that
                 // one's already taken by someone else.
-                $seat = $available->firstWhere('id', $this->bus_unit_seat_id) ?? $available->first();
+                $seat = $available->firstWhere('id', $this->bus_unit_seat_id);
 
-                abort_if(! $seat, 409, 'Ya no hay asientos disponibles en la fecha elegida.');
+                abort_if(! $seat, 409, 'El asiento de regreso ya no está disponible en la fecha elegida; asígnalo manualmente.');
 
                 $ticket = self::create($base + [
                     'landing_route_id' => $target->id,
@@ -934,30 +934,31 @@ class SeatReservation extends Model
                 ->where('leg', self::LEG_RETURN)
                 ->pluck('bus_unit_seat_id');
 
-            // No allowed_trip_type filter here either — see the matching
-            // comment in the real-trip branch above.
-            $available = $guide->busUnit->seats()
-                ->bookable()
-                ->whereNotIn('id', $takenIds)
-                ->get();
+            // The seat never changes: same seat (by id on the same bus, by
+            // LABEL when that day runs a different "plantilla"). The bus
+            // that matters is the one the guide runs on the RETURN date
+            // (per-date override), not the guide's default. If that exact
+            // seat isn't free, nothing is guessed: the original seat id
+            // stays in place so hasSeatMismatch() flags the ticket as
+            // "pendiente de asignar" and the admin picks one by hand.
+            $this->loadMissing('seat');
+            $originalSeat = $this->seat;
+            $targetUnitId = $guide->busUnitIdFor($date);
 
-            if ($guide->bus_unit_id === $busUnitId) {
-                // Same bus as the outbound leg — try the exact same seat
-                // first, same as always.
-                $seat = $available->firstWhere('id', $this->bus_unit_seat_id) ?? $available->first();
-                abort_if(! $seat, 409, 'No hay asientos disponibles en esa unidad para esa fecha.');
-                $seatId = $seat->id;
+            if ($originalSeat && $originalSeat->bus_unit_id === $targetUnitId) {
+                abort_if(
+                    $takenIds->contains($originalSeat->id),
+                    409,
+                    'El asiento '.$originalSeat->label.' ya tiene regreso agendado para esa fecha.'
+                );
+                $seatId = $originalSeat->id;
             } else {
-                // The guide's plantilla changed since the outbound leg was
-                // booked — match by seat LABEL instead of id (same idea as
-                // TripGuide's own remap helpers). If that exact number is
-                // free here, take it. If not (taken, or doesn't exist on
-                // this bus), don't silently hand them a random seat —
-                // leave the original (now wrong-bus) seat id in place so
-                // hasSeatMismatch() flags it and the admin gets the usual
-                // "elige un asiento disponible" warning + select instead.
-                $label = $this->loadMissing('seat')->seat?->label;
-                $sameLabelSeat = $label !== null ? $available->first(fn ($s) => $s->label === $label) : null;
+                $sameLabelSeat = $originalSeat
+                    ? BusUnitSeat::where('bus_unit_id', $targetUnitId)->bookable()
+                        ->where('label', $originalSeat->label)
+                        ->whereNotIn('id', $takenIds)
+                        ->first()
+                    : null;
                 $seatId = $sameLabelSeat->id ?? $this->bus_unit_seat_id;
             }
 

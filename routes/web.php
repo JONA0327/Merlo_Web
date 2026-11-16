@@ -146,6 +146,8 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
     Route::post('/unidades', [AdminBusUnitController::class, 'store'])->name('unidades.store');
     Route::get('/unidades/{busUnit}/editar', [AdminBusUnitController::class, 'edit'])->name('unidades.edit');
     Route::put('/unidades/{busUnit}', [AdminBusUnitController::class, 'update'])->name('unidades.update');
+    Route::post('/unidades/{busUnit}/duplicar', [AdminBusUnitController::class, 'duplicate'])->name('unidades.duplicate');
+    Route::patch('/unidades/{busUnit}/activar', [AdminBusUnitController::class, 'toggleActive'])->name('unidades.toggle-active');
     Route::put('/unidades/{busUnit}/asientos', [AdminBusUnitSeatController::class, 'sync'])->name('unidades.seats.sync');
     Route::delete('/unidades/{busUnit}', [AdminBusUnitController::class, 'destroy'])->name('unidades.destroy');
     Route::get('/pagos', [AdminPaymentController::class, 'index'])->name('pagos.index');
@@ -239,13 +241,14 @@ Route::middleware(['auth', 'verified', 'superadmin'])->prefix('admin')->name('ad
 });
 
 // Paquetería registration is PUBLIC: the universal QR is scanned by people who
-// have no account. The URL is the one already printed on the QR, so it stays.
+// have no account. The path is deliberately outside /admin so scanning it (or
+// reading the fallback link on the sheet) never reveals the admin panel.
 // The POST is rate-limited (see the 'package-register' limiter) because anyone
 // can reach it; a logged-in staff member simply gets the full form.
-Route::prefix('admin')->name('admin.')->group(function () {
-    Route::get('/paqueteria/registrar', [AdminPackageController::class, 'registerCreate'])->name('paqueteria.registrar.create');
-    Route::post('/paqueteria/registrar', [AdminPackageController::class, 'registerStore'])->middleware('throttle:package-register')->name('paqueteria.registrar.store');
-    Route::get('/paqueteria/registrado', [AdminPackageController::class, 'registerDone'])->name('paqueteria.registrar.done');
+Route::prefix('paquete')->name('admin.')->group(function () {
+    Route::get('/registrar', [AdminPackageController::class, 'registerCreate'])->name('paqueteria.registrar.create');
+    Route::post('/registrar', [AdminPackageController::class, 'registerStore'])->middleware('throttle:package-register')->name('paqueteria.registrar.store');
+    Route::get('/registrado', [AdminPackageController::class, 'registerDone'])->name('paqueteria.registrar.done');
 });
 
 Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->name('admin.')->group(function () {
@@ -253,21 +256,21 @@ Route::middleware(['auth', 'verified', 'paqueteria.access'])->prefix('admin')->n
     Route::get('/paqueteria/qr', [AdminPackageController::class, 'qrUniversal'])->name('paqueteria.qr-universal');
     Route::get('/paqueteria/folios/crear', [AdminPackageController::class, 'folioGuideCreate'])->name('paqueteria.folios.create');
     Route::post('/paqueteria/folios', [AdminPackageController::class, 'folioGuideStore'])->name('paqueteria.folios.store');
-    Route::get('/paqueteria/folios/lotes', [AdminPackageController::class, 'qrBatches'])->name('paqueteria.qr.batches');
-    Route::get('/paqueteria/folios/lotes/{batch}/pdf', [AdminPackageController::class, 'qrBatchDownload'])->name('paqueteria.qr.batches.download');
     Route::get('/paqueteria/sin-folio', [AdminPackageController::class, 'legacyCreate'])->name('paqueteria.sin-folio.create');
     Route::post('/paqueteria/sin-folio', [AdminPackageController::class, 'legacyStore'])->name('paqueteria.sin-folio.store');
     Route::post('/paqueteria/buscar', [AdminPackageController::class, 'lookup'])->name('paqueteria.paquetes.lookup');
+    Route::get('/paqueteria/paquetes', [AdminPackageController::class, 'packagesIndex'])->name('paqueteria.paquetes.index');
+    Route::get('/paqueteria/historial', [AdminPackageController::class, 'historialIndex'])->name('paqueteria.historial');
     Route::get('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'show'])->name('paqueteria.paquetes.show');
     Route::get('/paqueteria/paquetes/{package}/foto', [AdminPackageController::class, 'photo'])->name('paqueteria.paquetes.photo');
     Route::get('/paqueteria/paquetes/{package}/fotos/{photo}', [AdminPackageController::class, 'extraPhoto'])->name('paqueteria.paquetes.extra-photo');
-    Route::post('/paqueteria/paquetes/{package}/estado', [AdminPackageController::class, 'updateStatus'])->name('paqueteria.paquetes.update-status');
     Route::delete('/paqueteria/paquetes/{package}', [AdminPackageController::class, 'destroy'])->name('paqueteria.paquetes.destroy');
     Route::post('/paqueteria/paquetes/{package}/entregar', [AdminPackageDeliveryController::class, 'store'])->name('paqueteria.paquetes.deliver');
     Route::get('/paqueteria/paquetes/{package}/foto-entrega', [AdminPackageController::class, 'deliveryPhoto'])->name('paqueteria.paquetes.delivery-photo');
     Route::get('/paqueteria/clientes', [AdminPackageClientController::class, 'index'])->name('paqueteria.clientes');
     Route::get('/paqueteria/clientes/{client}', [AdminPackageClientController::class, 'show'])->name('paqueteria.clientes.show');
     Route::post('/paqueteria/clientes/{client}/pagos', [AdminPackageClientController::class, 'pay'])->name('paqueteria.clientes.pay');
+    Route::delete('/paqueteria/clientes/{client}', [AdminPackageClientController::class, 'destroy'])->name('paqueteria.clientes.destroy');
     Route::get('/paqueteria/corte', [AdminPackageCorteController::class, 'show'])->name('paqueteria.corte');
     Route::get('/paqueteria/corte/imprimir', [AdminPackageCorteController::class, 'print'])->name('paqueteria.corte.imprimir');
     Route::post('/paqueteria/corte', [AdminPackageCorteController::class, 'store'])->name('paqueteria.corte.store');

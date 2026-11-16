@@ -67,6 +67,16 @@
                                 <a href="{{ route('admin.unidades.edit', $busUnit) }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">
                                     Editar mapa
                                 </a>
+                                <button type="button" class="text-sm font-semibold text-[#8C1D2B] hover:text-[#6F1622]" data-duplicate-toggle="{{ $busUnit->id }}">
+                                    Duplicar
+                                </button>
+                                <form method="POST" action="{{ route('admin.unidades.toggle-active', $busUnit) }}" class="inline">
+                                    @csrf
+                                    @method('PATCH')
+                                    <button type="submit" class="text-sm font-semibold {{ $busUnit->is_active ? 'text-slate-600 hover:text-slate-700' : 'text-emerald-600 hover:text-emerald-700' }}">
+                                        {{ $busUnit->is_active ? 'Desactivar' : 'Activar' }}
+                                    </button>
+                                </form>
                                 <form method="POST" action="{{ route('admin.unidades.destroy', $busUnit) }}" class="inline">
                                     @csrf
                                     @method('DELETE')
@@ -75,10 +85,32 @@
                                     </button>
                                 </form>
                             </div>
+
+                            <form method="POST" action="{{ route('admin.unidades.duplicate', $busUnit) }}" data-duplicate-form="{{ $busUnit->id }}" class="mt-3 hidden items-center gap-2">
+                                @csrf
+                                <input type="text" name="name" value="{{ $busUnit->name }} (copia)" placeholder="Nombre de la nueva unidad" class="flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-[#2B1113] focus:border-[#8C1D2B] focus:ring-2 focus:ring-[#8C1D2B]/20 outline-none" required>
+                                <button type="submit" class="rounded-xl bg-[#8C1D2B] px-3 py-2 text-xs font-bold text-white hover:bg-[#6F1622] transition-colors">
+                                    Crear copia
+                                </button>
+                            </form>
                         </div>
                     @endforeach
                 </div>
             @endif
         </section>
     </div>
+
+    <script>
+        document.querySelectorAll('[data-duplicate-toggle]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const form = document.querySelector(`[data-duplicate-form="${button.dataset.duplicateToggle}"]`);
+                if (! form) return;
+                form.classList.toggle('hidden');
+                form.classList.toggle('flex');
+                if (! form.classList.contains('hidden')) {
+                    form.querySelector('input[name="name"]').focus();
+                }
+            });
+        });
+    </script>
 </x-admin-layout>

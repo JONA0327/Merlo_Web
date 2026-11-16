@@ -8,9 +8,7 @@ use App\Models\PackageClient;
 use App\Models\PackageFolioSequence;
 use App\Models\PackageGroup;
 use App\Models\PackagePhoto;
-use App\Models\PackageQrBatch;
 use App\Services\EvolutionWhatsAppService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Writer\SvgWriter;
 use Illuminate\Http\RedirectResponse;
@@ -25,65 +23,59 @@ use Throwable;
 
 class AdminPackageController extends Controller
 {
-    public function index(Request $request): View|RedirectResponse
+    /** Portada: tarjetas hacia cada sección, con un par de contadores del día. */
+    public function index(): View
     {
-        // Vista principal: clientes. Los folios sueltos se ven en ?vista=folios.
-        if ($request->query('vista') !== 'folios') {
-            return $this->clientsIndex($request);
-        }
-
-        $tab = $request->query('tab') === 'historial' ? 'historial' : 'activos';
-        $tabStatuses = $tab === 'historial' ? Package::HISTORY_STATUSES : Package::ACTIVE_STATUSES;
-
-        $status = $request->query('status');
-        $status = in_array($status, $tabStatuses, true) ? $status : null;
-
-        $packages = Package::query()
-            ->whereIn('status', $tabStatuses)
-            ->when($status, fn ($query, $value) => $query->status($value))
-            ->latest()
-            ->paginate(20)
-            ->withQueryString();
-
         return view('admin.paqueteria', [
-            'vista' => 'folios',
-            'packages' => $packages,
-            'statuses' => $tabStatuses,
-            'status' => $status,
-            'tab' => $tab,
+            'recolectadosHoy' => Package::status(Package::STATUS_RECOLECTADO)->whereDate('collected_at', today())->count(),
+            'entregadosHoy' => Package::status(Package::STATUS_ENTREGADO)->whereDate('delivered_at', today())->count(),
         ]);
     }
 
-    private function clientsIndex(Request $request): View|RedirectResponse
+    /**
+     * Paquetes reales (recolectado/entregado) agrupados por día de
+     * recolección — los folios sin_asignar (etiquetas impresas sin usar)
+     * son un detalle interno de "Generar folios" y nunca se listan aquí.
+     */
+    public function packagesIndex(Request $request): View
+    {
+        $date = \Illuminate\Support\Carbon::parse($request->query('fecha', today()->toDateString()))->startOfDay();
+
+        $packages = Package::query()
+            ->whereIn('status', [Package::STATUS_RECOLECTADO, Package::STATUS_ENTREGADO])
+            ->whereDate('collected_at', $date)
+            ->orderBy('folio_number')
+            ->get();
+
+        return view('admin.paqueteria.paquetes', [
+            'date' => $date,
+            'packages' => $packages,
+        ]);
+    }
+
+    /** Registro permanente de lo entregado, con el cliente de cada envío. */
+    public function historialIndex(Request $request): View
     {
         $search = trim((string) $request->query('q'));
-        $filtro = $request->query('filtro') === 'en_curso' ? 'en_curso' : 'todos';
+        $folio = $request->query('folio');
+        $folio = in_array($folio, ['con', 'sin'], true) ? $folio : 'todos';
 
-        // Si lo escrito es un folio (F-000101), va directo a ese paquete.
-        if (preg_match('/^F-?\s*0*(\d+)$/i', $search, $m) && ($package = Package::where('folio_number', (int) $m[1])->first())) {
-            return redirect()->route('admin.paqueteria.paquetes.show', $package);
-        }
-
-        $enCurso = [Package::STATUS_RECOLECTADO, Package::STATUS_EN_RECORRIDO];
-
-        $clients = PackageClient::query()
+        $packages = Package::query()
+            ->status(Package::STATUS_ENTREGADO)
             ->when($search, fn ($q) => $q->where(fn ($w) => $w
-                ->where('name', 'like', "%{$search}%")
-                // el teléfono solo se busca si lo escrito trae dígitos (si no, '%%' coincidiría con todos)
-                ->when(preg_replace('/\D/', '', $search) !== '', fn ($w) => $w->orWhere('phone', 'like', '%'.preg_replace('/\D/', '', $search).'%'))))
-            ->when($filtro === 'en_curso', fn ($q) => $q->where(fn ($w) => $w
-                ->whereHas('packages', fn ($p) => $p->whereIn('status', $enCurso))
-                ->orWhereHas('groups.packages', fn ($p) => $p->whereIn('status', $enCurso))))
-            ->orderBy('name')
-            ->paginate(20)
+                ->where('client_name', 'like', "%{$search}%")
+                ->orWhereHas('group', fn ($g) => $g->where('client_name', 'like', "%{$search}%"))))
+            ->when($folio === 'con', fn ($q) => $q->whereNotNull('folio_number'))
+            ->when($folio === 'sin', fn ($q) => $q->whereNull('folio_number'))
+            ->latest('delivered_at')
+            ->paginate(30)
             ->withQueryString();
 
-        $clients->getCollection()->each(function (PackageClient $c) {
-            $c->setAttribute('en_curso', $c->enCursoQuery()->count());
-            $c->setAttribute('pending', $c->pendingAmount());
-        });
-
-        return view('admin.paqueteria', ['vista' => 'clientes', 'clients' => $clients, 'search' => $search, 'filtro' => $filtro]);
+        return view('admin.paqueteria.historial', [
+            'packages' => $packages,
+            'search' => $search,
+            'folio' => $folio,
+        ]);
     }
 
     /**
@@ -93,20 +85,23 @@ class AdminPackageController extends Controller
      */
     public function qrUniversal(): View
     {
+        $url = route('admin.paqueteria.registrar.create');
+
         $svg = (new Builder(
             writer: new SvgWriter,
-            data: url('/admin/paqueteria/registrar'),
+            data: $url,
             size: 280,
             margin: 10,
         ))->build()->getString();
 
-        return view('admin.paqueteria.qr-universal', ['svg' => $svg]);
+        return view('admin.paqueteria.qr-universal', ['svg' => $svg, 'url' => $url]);
     }
 
     /**
      * Opened by the universal QR. The people who scan it are not users, so
      * this page needs NO login: a visitor gets a stripped-down form (no list
-     * of known clients, no price); staff who are logged in keep the full one.
+     * of known clients); staff who are logged in keep the full one. Neither
+     * sets a price here — that's captured later, at delivery.
      */
     public function registerCreate(Request $request): View
     {
@@ -166,6 +161,7 @@ class AdminPackageController extends Controller
                 'collected_by' => $request->user()->id,
                 'collected_at' => $deliveredAt,
                 'delivered_at' => $deliveredAt,
+                'delivered_by' => $request->user()->id,
             ]);
 
             if ($free || $price - $owed > 0) {
@@ -211,18 +207,12 @@ class AdminPackageController extends Controller
             'client_name' => ['required', 'string', 'max:255'],
             'qty' => ['required', 'integer', 'min:1', 'max:50'],
             'phone' => ['required', 'string', 'max:20'],
-            'price' => ['nullable', 'numeric', 'min:0'],
             // One or several evidence photos: `photos[]` (new form) or the
             // single `photo` field (kept so older clients keep working).
             'photo' => ['required_without:photos', 'nullable', 'image', 'max:8192'],
             'photos' => ['required_without:photo', 'nullable', 'array', 'min:1', 'max:10'],
             'photos.*' => ['image', 'max:8192'],
         ]);
-
-        // A visitor cannot set the price: staff fill that in afterwards.
-        if (! $isStaff) {
-            $validated['price'] = null;
-        }
 
         $qty = (int) $validated['qty'];
         $paths = collect([$request->file('photo')])->merge($request->file('photos', []))->filter()
@@ -246,7 +236,6 @@ class AdminPackageController extends Controller
                 $package->update([
                     'client_name' => $validated['client_name'],
                     'phone' => $validated['phone'],
-                    'price' => $validated['price'] ?? null,
                     'photo_path' => $photoPath,
                     'package_client_id' => $client->id,
                     'status' => Package::STATUS_RECOLECTADO,
@@ -263,7 +252,6 @@ class AdminPackageController extends Controller
             $group = PackageGroup::create([
                 'client_name' => $validated['client_name'],
                 'phone' => $validated['phone'],
-                'total_price' => $validated['price'] ?? null,
                 'photo_path' => $photoPath,
                 'tracking_code' => PackageGroup::generateTrackingCode(),
                 'package_client_id' => $client->id,
@@ -298,7 +286,6 @@ class AdminPackageController extends Controller
                 $validated['client_name'],
                 $folioRange,
                 $qty,
-                isset($validated['price']) ? (float) $validated['price'] : null,
             );
         } catch (Throwable $e) {
             $whatsappSent = false;
@@ -380,86 +367,92 @@ class AdminPackageController extends Controller
     }
 
     /**
-     * Pre-prints $qty blank folio labels (no QR anymore — just the
-     * number) to stick on physical packages ahead of time. Reserves the
-     * range immediately so two batches can never collide; never expires,
-     * so leftovers from one print run are just as valid the next time
-     * registerStore() needs folios.
+     * Pre-prints $qty blank folio labels, each with its own folio number
+     * and a QR linking straight to that package's page, to stick on
+     * physical packages ahead of time. Reserves the range immediately so
+     * two batches can never collide; never expires, so leftovers from one
+     * print run are just as valid the next time registerStore() needs
+     * folios.
      */
     public function folioGuideCreate(): View
     {
         return view('admin.paqueteria.folios-crear');
     }
 
+    /**
+     * Mints $qty folios for printing. Unlike registerStore() (which always
+     * claims any sin_asignar leftovers first, since that's just recording
+     * data — not reprinting paper), reprinting the same folio numbers on a
+     * new physical sheet risks ending up with two paper labels for the same
+     * number. So if there are leftovers, we stop and ask the user whether
+     * to include them in this batch instead of silently reusing them.
+     */
     public function folioGuideStore(Request $request): View
     {
         $validated = $request->validate([
             'qty' => ['required', 'integer', 'min:1', 'max:200'],
+            'confirmed' => ['nullable', 'boolean'],
+            'include_leftovers' => ['nullable', 'boolean'],
         ]);
 
-        [$first, $last] = PackageFolioSequence::reserve((int) $validated['qty']);
+        $qty = (int) $validated['qty'];
 
-        $packages = collect(range($first, $last))->map(fn (int $folio) => Package::create([
-            'tracking_code' => Package::generateTrackingCode(),
-            'folio_number' => $folio,
-            'status' => Package::STATUS_SIN_ASIGNAR,
-            'generated_by' => $request->user()->id,
-        ]));
+        $leftovers = Package::query()
+            ->where('status', Package::STATUS_SIN_ASIGNAR)
+            ->whereNotNull('folio_number')
+            ->orderBy('folio_number')
+            ->get();
 
-        // The printable on-screen sheet is what actually matters for this
-        // request — if PDF rendering/storage fails for any reason, the
-        // batch of folios already exists and is already usable, so don't
-        // let this turn a successful batch generation into an error page.
-        try {
-            $this->saveBatchPdf($packages, $request->user()->id);
-        } catch (Throwable $e) {
-            Log::warning('Folio guide PDF generation failed', ['error' => $e->getMessage()]);
+        if ($leftovers->isNotEmpty() && ! $request->boolean('confirmed')) {
+            return view('admin.paqueteria.folios-sobrantes', [
+                'qty' => $qty,
+                'leftoverCount' => $leftovers->count(),
+                'leftoverRange' => $this->folioRangeLabel($leftovers),
+            ]);
         }
+
+        $includeLeftovers = $request->boolean('include_leftovers');
+
+        $packages = DB::transaction(fn () => $includeLeftovers
+            ? $this->claimOrMintFolios($qty, $request->user()->id)
+            : $this->mintFreshFolios($qty, $request->user()->id));
+        $packages = $packages->sortBy('folio_number')->values();
+        $packages->each(fn (Package $p) => $p->setAttribute('qr_svg', $this->packageQrSvg($p)));
 
         return view('admin.paqueteria.folios-lote', ['packages' => $packages]);
     }
 
     /**
-     * Renders the same batch as a PDF and stores it on the private disk
-     * under a Y/m folder so past batches stay organized by the date they
-     * were generated, for reprinting later.
-     *
-     * @param  Collection<int, Package>  $packages
+     * The QR on a printed folio label: opens that exact package's page
+     * (behind login) so staff can see its details and mark it delivered
+     * straight from a phone, without typing the folio in by hand.
      */
-    private function saveBatchPdf(Collection $packages, ?int $generatedBy): void
+    private function packageQrSvg(Package $package): string
     {
-        $pdfBytes = Pdf::loadView('admin.paqueteria.folios-lote-pdf', [
-            'packages' => $packages,
-        ])->output();
+        return (new Builder(
+            writer: new SvgWriter,
+            data: route('admin.paqueteria.paquetes.show', $package),
+            size: 130,
+            margin: 4,
+        ))->build()->getString();
+    }
 
-        $path = 'paqueteria/folio-lotes/'.now()->format('Y/m').'/'.now()->format('Y-m-d_His').'.pdf';
-        Storage::disk('local')->put($path, $pdfBytes);
+    /**
+     * Mints $qty brand-new folios, ignoring any sin_asignar leftovers —
+     * used when the user explicitly chose not to reprint them.
+     *
+     * @return Collection<int, Package>
+     */
+    private function mintFreshFolios(int $qty, ?int $generatedBy): Collection
+    {
+        [$first, $last] = PackageFolioSequence::reserve($qty);
 
-        PackageQrBatch::create([
-            'qty' => $packages->count(),
-            'pdf_path' => $path,
+        return collect(range($first, $last))->map(fn (int $folio) => Package::create([
+            'tracking_code' => Package::generateTrackingCode(),
+            'folio_number' => $folio,
+            'status' => Package::STATUS_SIN_ASIGNAR,
             'generated_by' => $generatedBy,
-        ]);
-    }
-
-    public function qrBatches(): View
-    {
-        $batches = PackageQrBatch::with('generatedBy')
-            ->latest()
-            ->limit(100)
-            ->get()
-            ->groupBy(fn (PackageQrBatch $batch) => $batch->created_at->format('d/m/Y'));
-
-        return view('admin.paqueteria.folios-lotes', [
-            'batchesByDate' => $batches,
-        ]);
-    }
-
-    public function qrBatchDownload(PackageQrBatch $batch)
-    {
-        abort_unless(Storage::disk('local')->exists($batch->pdf_path), 404);
-
-        return Storage::disk('local')->download($batch->pdf_path, 'paqueteria-folios-'.$batch->created_at->format('Y-m-d_His').'.pdf');
+        ]));
     }
 
     public function lookup(Request $request): RedirectResponse
@@ -488,15 +481,15 @@ class AdminPackageController extends Controller
     public function show(Package $package): View
     {
         return view('admin.paqueteria.paquete', [
-            'package' => $package->load('group.packages'),
+            'package' => $package->load('deliveredBy', 'group.packages.deliveredBy'),
             'unit' => $package->billingUnit()->load('payments.user'),
         ]);
     }
 
     /**
      * Deletes one unused folio label at a time. Anything already
-     * registered (recolectado, en_recorrido, entregado, no_entregado) is
-     * permanent history and can never be deleted here.
+     * registered (recolectado, entregado) is permanent history and can
+     * never be deleted here.
      */
     public function destroy(Package $package): RedirectResponse
     {
@@ -544,28 +537,5 @@ class AdminPackageController extends Controller
         abort_unless($package->delivery_photo_path && Storage::disk('local')->exists($package->delivery_photo_path), 404);
 
         return Storage::disk('local')->response($package->delivery_photo_path);
-    }
-
-    public function updateStatus(Request $request, Package $package): RedirectResponse
-    {
-        // La entrega pasa por su propio formulario (folios, cobro, evidencia y aviso).
-        abort_if($request->input('status') === Package::STATUS_ENTREGADO, 409, 'Usa el formulario Entregar.');
-
-        $validated = $request->validate([
-            'status' => ['required', 'string', 'in:'.implode(',', [
-                Package::STATUS_RECOLECTADO,
-                Package::STATUS_EN_RECORRIDO,
-                Package::STATUS_NO_ENTREGADO,
-            ])],
-        ]);
-
-        abort_if($package->status === Package::STATUS_SIN_ASIGNAR, 409, 'Este paquete aún no ha sido registrado.');
-
-        $package->update([
-            'status' => $validated['status'],
-        ]);
-
-        return redirect()->route('admin.paqueteria.paquetes.show', $package)
-            ->with('success', 'Estado actualizado.');
     }
 }
